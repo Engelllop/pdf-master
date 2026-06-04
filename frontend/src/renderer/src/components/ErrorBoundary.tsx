@@ -1,0 +1,48 @@
+import { Component, type ReactNode } from 'react'
+
+interface Props {
+  children: ReactNode
+  fallback?: ReactNode
+}
+
+interface State {
+  hasError: boolean
+  error?: Error
+}
+
+export default class ErrorBoundary extends Component<Props, State> {
+  state: State = { hasError: false }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error('[ErrorBoundary]', error, info.componentStack)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback || (
+          <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white p-8">
+            <h1 className="text-2xl font-bold mb-2">Algo salió mal</h1>
+            <p className="text-sm text-gray-400 mb-4 max-w-md text-center">
+              PDF Master encontró un error inesperado. Guarda tu trabajo y reinicia la aplicación.
+            </p>
+            <pre className="text-xs bg-slate-800 p-3 rounded max-w-lg overflow-auto">
+              {this.state.error?.message}
+            </pre>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
+            >
+              Reiniciar
+            </button>
+          </div>
+        )
+      )
+    }
+    return this.props.children
+  }
+}

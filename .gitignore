@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# PyInstaller
+backend/dist/
+backend/build/
+
+# Node
+node_modules/
+npm-debug.log*
+*.log
+
+# Electron build outputs
+frontend/out/
+frontend/dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# PDF test files (opcional)
+*.pdf
+!**/test*.pdf

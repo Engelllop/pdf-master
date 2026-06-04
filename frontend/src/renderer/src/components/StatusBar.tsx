@@ -1,0 +1,46 @@
+import { usePdfStore } from '../store/usePdfStore'
+import { Monitor, CheckCircle2, Loader2 } from 'lucide-react'
+
+export default function StatusBar() {
+  const store = usePdfStore()
+  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen } = store
+  const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+
+  const zoomPercent = activeDoc ? Math.round(activeDoc.zoom * 100) : 100
+  const pageLabel = activeDoc
+    ? `Página ${activeDoc.currentPage + 1} / ${activeDoc.page_count}`
+    : 'Sin documento'
+  const dims = activeDoc
+    ? `${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.width || 0)} × ${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.height || 0)} pt`
+    : ''
+
+  return (
+    <div className="h-7 bg-slate-950 border-t border-slate-700 flex items-center px-3 text-xs text-slate-400 select-none gap-4">
+      <span className="min-w-[140px]">{pageLabel}</span>
+      {dims && <span className="min-w-[100px] text-slate-500">{dims}</span>}
+      <span className="min-w-[60px]">Zoom {zoomPercent}%</span>
+
+      <div className="flex-1" />
+
+      {saveStatus === 'saving' && (
+        <span className="flex items-center gap-1 text-blue-400">
+          <Loader2 size={12} className="animate-spin" />
+          Guardando...
+        </span>
+      )}
+      {saveStatus === 'saved' && (
+        <span className="flex items-center gap-1 text-emerald-400">
+          <CheckCircle2 size={12} />
+          Guardado
+        </span>
+      )}
+
+      {(sidebarOpen || toolsPanelOpen) && (
+        <span className="text-slate-500">
+          <Monitor size={12} className="inline mr-1" />
+          {sidebarOpen && toolsPanelOpen ? 'Paneles' : sidebarOpen ? 'Sidebar' : 'Tools'}
+        </span>
+      )}
+    </div>
+  )
+}

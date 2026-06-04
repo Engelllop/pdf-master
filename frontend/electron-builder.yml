@@ -1,0 +1,42 @@
+appId: com.pdfmaster.app
+productName: PDF Master
+copyright: Copyright © 2025 PDF Master
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: resources/backend
+    to: backend
+    filter:
+      - '**/*'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  publisherName: PDF Master
+  icon: build/icon.png
+fileAssociations:
+  - ext: pdf
+    name: PDF
+    description: PDF Document
+    role: Viewer
+
+publish:
+  provider: github
+  owner: Engelllop
+  repo: pdf-master
+  releaseType: release
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: PDF Master
+  artifactName: PDF-Master-Setup-${version}.exe
+  include: build/installer.nsh
