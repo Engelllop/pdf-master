@@ -9,6 +9,11 @@ from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 
+
+class PasswordRequiredError(Exception):
+    """fitz no define PasswordError; esta señala al router que devuelva 401."""
+
+
 class PdfService:
     def __init__(self):
         self._docs: Dict[str, fitz.Document] = {}
@@ -95,10 +100,12 @@ class PdfService:
         doc = fitz.open(file_path)
         if doc.needs_pass:
             if not password:
-                raise fitz.PasswordError("Document requires a password")
+                doc.close()
+                raise PasswordRequiredError("Document requires a password")
             auth_result = doc.authenticate(password)
             if not auth_result:
-                raise fitz.PasswordError("Incorrect password")
+                doc.close()
+                raise PasswordRequiredError("Incorrect password")
         doc_id = str(uuid.uuid4())
 
         page_sizes = []
@@ -619,26 +626,39 @@ class PdfService:
             return False
 
     def save(self, doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return None
-        save_path = output_path or doc.name
-        try:
-            # Atomic save: write to temp then rename to avoid corruption
-            import tempfile
-            dir_name = os.path.dirname(os.path.abspath(save_path))
-            fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
-            os.close(fd)
-            doc.save(temp_path, garbage=4, deflate=True)
-            # On Windows, remove existing file first to allow rename
-            if os.path.exists(save_path):
-                os.replace(temp_path, save_path)
-            else:
-                os.rename(temp_path, save_path)
-            self._dirty[doc_id] = False
-            return save_path
-        except Exception as e:
-            return None
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            save_path = output_path or doc.name
+            in_place = os.path.abspath(save_path) == os.path.abspath(doc.name)
+            temp_path = None
+            try:
+                import tempfile
+                dir_name = os.path.dirname(os.path.abspath(save_path))
+                fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
+                os.close(fd)
+                doc.save(temp_path, garbage=4, deflate=True)
+                if in_place:
+                    # On Windows the open fitz.Document holds the file handle, so
+                    # os.replace onto doc.name fails with PermissionError. Close,
+                    # replace, then reopen from the saved file.
+                    doc.close()
+                    self._docs.pop(doc_id, None)
+                    os.replace(temp_path, save_path)
+                    self._dirty[doc_id] = False
+                    self._acquire(doc_id)  # reopen so the doc stays usable
+                else:
+                    os.replace(temp_path, save_path)
+                    self._dirty[doc_id] = False
+                return save_path
+            except Exception:
+                try:
+                    if temp_path and os.path.exists(temp_path):
+                        os.remove(temp_path)
+                except Exception:
+                    pass
+                return None
 
     def insert_text(self, doc_id: str, page_num: int, x: float, y: float, text: str, color: str = "#000000", fontsize: float = 12) -> bool:
         doc = self._acquire(doc_id)

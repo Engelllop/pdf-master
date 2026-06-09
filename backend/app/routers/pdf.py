@@ -12,7 +12,7 @@ from app.models.pdf import (
     RotatePagesRequest, HeaderFooterRequest, OcrResult,
     ReplaceTextRequest, MetadataRequest, PageText, TextBlock,
 )
-from app.services.pdf_service import pdf_service
+from app.services.pdf_service import pdf_service, PasswordRequiredError
 
 router = APIRouter()
 
@@ -24,7 +24,7 @@ def open_pdf(request: OpenPdfRequest):
         anns = pdf_service.load_annotations(info.doc_id)
         # We'll return annotations in a separate call, but we could attach them here
         return info
-    except fitz.PasswordError as e:
+    except PasswordRequiredError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
