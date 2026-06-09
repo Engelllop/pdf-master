@@ -1,7 +1,10 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { usePdfStore, type Annotation, type PdfState } from '../store/usePdfStore'
 
 const API_BASE = 'http://localhost:8745'
+const SNAP_TOLERANCE_SCREEN_PX = 10
+
+const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area']
 
 export type DrawPreview = Partial<Annotation> & { type?: Annotation['type'] | 'textselect' | 'measure_calibrate' | 'measure_distance' | 'measure_area' }
 
@@ -32,6 +35,26 @@ export function useAnnotationDraw(
   const [textPos, setTextPos] = useState<{ x: number; y: number } | null>(null)
   const [areaPoints, setAreaPoints] = useState<Array<{ x: number; y: number }>>([])
   const [drawingArea, setDrawingArea] = useState(false)
+  const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null)
+  const snapPointsRef = useRef<Array<{ x: number; y: number }>>([])
+
+  const isMeasureTool = !!activeTool && MEASURE_TOOLS.includes(activeTool)
+
+  // Carga los puntos de snap (vértices del contenido vectorial del plano) al
+  // activar una herramienta de medición; se cachean en el backend por página.
+  useEffect(() => {
+    snapPointsRef.current = []
+    setSnapPoint(null)
+    if (!isMeasureTool || !activeDoc) return
+    const ctrl = new AbortController()
+    fetch(`${API_BASE}/pdf/snap-points/${activeDoc.doc_id}/${activeDoc.currentPage}`, { signal: ctrl.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data) snapPointsRef.current = data.points
+      })
+      .catch(() => {})
+    return () => ctrl.abort()
+  }, [isMeasureTool, activeDoc?.doc_id, activeDoc?.currentPage])
 
   const toPdfCoords = useCallback((screenX: number, screenY: number) => {
     if (!pageData) return { x: 0, y: 0 }
@@ -41,9 +64,28 @@ export function useAnnotationDraw(
     }
   }, [pageData])
 
+  const maybeSnap = useCallback((pdf: { x: number; y: number }) => {
+    if (!isMeasureTool || !pageData || snapPointsRef.current.length === 0) return pdf
+    const tolerance = SNAP_TOLERANCE_SCREEN_PX * (pageData.originalWidth / pageData.width)
+    let best: { x: number; y: number } | null = null
+    let bestDist = tolerance
+    for (const p of snapPointsRef.current) {
+      const dx = p.x - pdf.x
+      const dy = p.y - pdf.y
+      if (Math.abs(dx) > bestDist || Math.abs(dy) > bestDist) continue
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < bestDist) {
+        bestDist = dist
+        best = p
+      }
+    }
+    setSnapPoint(best)
+    return best ?? pdf
+  }, [isMeasureTool, pageData])
+
   const handleMouseDown = (svgPoint: { x: number; y: number }) => {
     if (!activeDoc || !pageData || !activeTool) return false
-    const pdf = toPdfCoords(svgPoint.x, svgPoint.y)
+    const pdf = maybeSnap(toPdfCoords(svgPoint.x, svgPoint.y))
     setDrawing(true)
 
     if (activeTool === 'note') {
@@ -96,8 +138,13 @@ export function useAnnotationDraw(
   }
 
   const handleMouseMove = (svgPoint: { x: number; y: number }) => {
-    if (!drawing || !drawPreview || !activeDoc || !pageData || !activeTool) return
-    const pdf = toPdfCoords(svgPoint.x, svgPoint.y)
+    if (!activeDoc || !pageData || !activeTool) return
+    if (!drawing || !drawPreview) {
+      // Hover sin arrastrar: muestra el imán de snap para apuntar con precisión
+      if (isMeasureTool) maybeSnap(toPdfCoords(svgPoint.x, svgPoint.y))
+      return
+    }
+    const pdf = maybeSnap(toPdfCoords(svgPoint.x, svgPoint.y))
 
     if (activeTool === 'draw' || activeTool === 'signature') {
       setDrawPoints((prev) => [...prev, { x: pdf.x, y: pdf.y }])
@@ -361,6 +408,7 @@ export function useAnnotationDraw(
     setTextPos(null)
     setDrawingArea(false)
     setAreaPoints([])
+    setSnapPoint(null)
   }
 
   return {
@@ -384,5 +432,6 @@ export function useAnnotationDraw(
     toPdfCoords,
     drawingArea,
     closeArea,
+    snapPoint,
   }
 }

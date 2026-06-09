@@ -183,7 +183,7 @@ export default function Viewer() {
     textInput, setTextInput, textPos, setTextPos,
     handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp,
     saveNote, saveText, cancelDraw,
-    drawingArea, closeArea,
+    drawingArea, closeArea, snapPoint,
   } = useAnnotationDraw(activeDoc, pageData)
 
   // Coordinate helpers
@@ -1021,6 +1021,20 @@ export default function Viewer() {
 
                 {/* Preview while drawing */}
                 {drawPreview && (drawPreview as any).type !== 'textselect' && renderAnnotation(drawPreview as Annotation, true)}
+
+                {/* Imán de snap para mediciones */}
+                {snapPoint && (() => {
+                  const sp = toScreenCoords(snapPoint.x, snapPoint.y)
+                  return (
+                    <g pointerEvents="none">
+                      <circle cx={sp.x} cy={sp.y} r={7} fill="none" stroke="#22c55e" strokeWidth={2} />
+                      <line x1={sp.x - 11} y1={sp.y} x2={sp.x - 4} y2={sp.y} stroke="#22c55e" strokeWidth={1.5} />
+                      <line x1={sp.x + 4} y1={sp.y} x2={sp.x + 11} y2={sp.y} stroke="#22c55e" strokeWidth={1.5} />
+                      <line x1={sp.x} y1={sp.y - 11} x2={sp.x} y2={sp.y - 4} stroke="#22c55e" strokeWidth={1.5} />
+                      <line x1={sp.x} y1={sp.y + 4} x2={sp.x} y2={sp.y + 11} stroke="#22c55e" strokeWidth={1.5} />
+                    </g>
+                  )
+                })()}
                 {(drawPreview as any)?.type === 'textselect' && drawPreview?.width && (
                   <rect x={toScreenCoords(Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0)), Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))).x}
                     y={toScreenCoords(Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0)), Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))).y}

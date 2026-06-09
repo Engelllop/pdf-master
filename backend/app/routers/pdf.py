@@ -273,6 +273,13 @@ def get_text_clip(doc_id: str, page_num: int, req: TextClipRequest):
 def get_page_spans(doc_id: str, page_num: int):
     return {"spans": pdf_service.get_page_spans(doc_id, page_num)}
 
+@router.get("/snap-points/{doc_id}/{page_num}")
+def get_snap_points(doc_id: str, page_num: int):
+    points = pdf_service.get_snap_points(doc_id, page_num)
+    if points is None:
+        raise HTTPException(status_code=404, detail="Document or page not found")
+    return {"points": points}
+
 @router.post("/duplicate-page/{doc_id}", response_model=SaveResult)
 def duplicate_page(doc_id: str, page_num: int = Query(...)):
     if not pdf_service.duplicate_page(doc_id, page_num):

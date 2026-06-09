@@ -201,6 +201,28 @@ export interface PdfState {
   setStampColor: (color: string) => void
 }
 
+const SCALES_KEY = 'pdfmaster_scales'
+
+function loadPersistedScale(filePath: string): MeasurementScale | null {
+  try {
+    const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
+    return map[filePath] || null
+  } catch {
+    return null
+  }
+}
+
+function persistScale(filePath: string, scale: MeasurementScale | null) {
+  try {
+    const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
+    if (scale) map[filePath] = scale
+    else delete map[filePath]
+    localStorage.setItem(SCALES_KEY, JSON.stringify(map))
+  } catch {
+    // localStorage lleno o bloqueado: la escala sigue viva en memoria
+  }
+}
+
 function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0]): PdfDoc {
   const sizes = info.page_sizes || []
   const fitZoom = sizes.length > 0 ? (800 - 64) / sizes[0].width : 1
@@ -219,7 +241,7 @@ function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0]): PdfDoc {
     annotations: [],
     dirty: false,
     outline: [],
-    measurementScale: null,
+    measurementScale: loadPersistedScale(info.file_path),
     docVersion: 0,
   }
 }
@@ -688,11 +710,15 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   setMeasurementScale: (docId, scale) => {
-    set((state) => ({
-      docs: state.docs.map((d) =>
-        d.doc_id === docId ? { ...d, measurementScale: scale, dirty: true } : d
-      ),
-    }))
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (doc) persistScale(doc.file_path, scale)
+      return {
+        docs: state.docs.map((d) =>
+          d.doc_id === docId ? { ...d, measurementScale: scale } : d
+        ),
+      }
+    })
   },
 
   selectAnnotation: (docId, annId) => {

@@ -24,6 +24,8 @@ class PdfService:
         self._thumb_cache: OrderedDict = OrderedDict()   # (doc_id, page_num) -> ThumbnailRender
         self._render_cache_max = 150
         self._thumb_cache_max = 300
+        self._snap_cache: OrderedDict = OrderedDict()  # (doc_id, page_num) -> List[dict]
+        self._snap_cache_max = 60
         # LRU eviction: with 60+ plans open the backend would otherwise keep every
         # fitz.Document (and its cached page objects) alive. We close the least-recently
         # used *non-dirty* documents and transparently reopen them from disk on access.
@@ -95,6 +97,9 @@ class PdfService:
         keys_to_remove = [k for k in self._thumb_cache.keys() if k[0] == doc_id]
         for k in keys_to_remove:
             del self._thumb_cache[k]
+        keys_to_remove = [k for k in self._snap_cache.keys() if k[0] == doc_id]
+        for k in keys_to_remove:
+            del self._snap_cache[k]
 
     def open_document(self, file_path: str, password: Optional[str] = None) -> PdfInfo:
         doc = fitz.open(file_path)
@@ -682,6 +687,65 @@ class PdfService:
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
         return True
+
+    def get_snap_points(self, doc_id: str, page_num: int) -> Optional[List[dict]]:
+        """Puntos de ajuste para mediciones: extremos y puntos medios de líneas,
+        esquinas de rectángulos y extremos de curvas del contenido vectorial.
+        Coordenadas en unidades PDF (las mismas que usan las anotaciones)."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return None
+            cache_key = (doc_id, page_num)
+            if cache_key in self._snap_cache:
+                self._snap_cache.move_to_end(cache_key)
+                return self._snap_cache[cache_key]
+
+            MAX_POINTS = 20000
+            points: List[dict] = []
+            seen = set()
+
+            def add(x: float, y: float):
+                key = (round(x, 1), round(y, 1))
+                if key not in seen:
+                    seen.add(key)
+                    points.append({"x": key[0], "y": key[1]})
+
+            page = doc.load_page(page_num)
+            try:
+                drawings = page.get_drawings()
+            except Exception:
+                drawings = []
+            for d in drawings:
+                if len(points) >= MAX_POINTS:
+                    break
+                for item in d.get("items", []):
+                    kind = item[0]
+                    if kind == "l":
+                        p1, p2 = item[1], item[2]
+                        add(p1.x, p1.y)
+                        add(p2.x, p2.y)
+                        add((p1.x + p2.x) / 2, (p1.y + p2.y) / 2)
+                    elif kind == "re":
+                        r = item[1]
+                        add(r.x0, r.y0)
+                        add(r.x1, r.y0)
+                        add(r.x0, r.y1)
+                        add(r.x1, r.y1)
+                    elif kind == "c":
+                        add(item[1].x, item[1].y)
+                        add(item[4].x, item[4].y)
+                    elif kind == "qu":
+                        q = item[1]
+                        for p in (q.ul, q.ur, q.ll, q.lr):
+                            add(p.x, p.y)
+                    if len(points) >= MAX_POINTS:
+                        break
+
+            self._snap_cache[cache_key] = points
+            while len(self._snap_cache) > self._snap_cache_max:
+                self._snap_cache.popitem(last=False)
+            return points
 
     # --- Annotations persistence ---
 

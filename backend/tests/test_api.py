@@ -163,6 +163,30 @@ class TestDocumentOps:
         assert "ContenidoVisible" in data["text"]
         assert isinstance(data["blocks"], list)
 
+    def test_snap_points_from_vector_content(self, client, tmp_path, open_doc):
+        import fitz
+        path = str(tmp_path / "plano.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.draw_line(fitz.Point(100, 100), fitz.Point(300, 100))
+        page.draw_rect(fitz.Rect(50, 200, 150, 300))
+        doc.save(path)
+        doc.close()
+        from app.services.pdf_service import pdf_service
+        resp_open = client.post("/pdf/open", json={"file_path": path})
+        doc_id = resp_open.json()["doc_id"]
+        try:
+            data = client.get(f"/pdf/snap-points/{doc_id}/0").json()
+            pts = {(p["x"], p["y"]) for p in data["points"]}
+            assert (100.0, 100.0) in pts and (300.0, 100.0) in pts
+            assert (200.0, 100.0) in pts  # punto medio de la línea
+            assert (50.0, 200.0) in pts and (150.0, 300.0) in pts  # esquinas del rect
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+
+    def test_snap_points_dead_doc_is_404(self, client):
+        assert client.get("/pdf/snap-points/no-such/0").status_code == 404
+
     def test_close_releases_doc(self, client, open_doc):
         info = open_doc()
         assert client.post(f"/pdf/close/{info['doc_id']}").status_code == 200

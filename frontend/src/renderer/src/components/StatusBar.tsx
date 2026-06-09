@@ -1,12 +1,15 @@
 import { usePdfStore } from '../store/usePdfStore'
-import { Monitor, CheckCircle2, Loader2 } from 'lucide-react'
+import { Monitor, CheckCircle2, Loader2, Ruler } from 'lucide-react'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
 export default function StatusBar() {
   const tc = useThemeClasses()
   const store = usePdfStore()
-  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen } = store
+  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen, activeTool } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+
+  const scale = activeDoc?.measurementScale
+  const measuring = !!activeTool && activeTool.startsWith('measure')
 
   const zoomPercent = activeDoc ? Math.round(activeDoc.zoom * 100) : 100
   const pageLabel = activeDoc
@@ -21,6 +24,19 @@ export default function StatusBar() {
       <span className="min-w-[140px]">{pageLabel}</span>
       {dims && <span className="min-w-[100px] text-slate-500">{dims}</span>}
       <span className="min-w-[60px]">Zoom {zoomPercent}%</span>
+
+      {activeDoc && scale && (
+        <span className="flex items-center gap-1 text-emerald-500" title="Escala de medición calibrada">
+          <Ruler size={12} />
+          1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
+        </span>
+      )}
+      {activeDoc && !scale && measuring && (
+        <span className="flex items-center gap-1 text-amber-500" title="Usa Calibrar escala antes de medir">
+          <Ruler size={12} />
+          Sin calibrar
+        </span>
+      )}
 
       <div className="flex-1" />
 
