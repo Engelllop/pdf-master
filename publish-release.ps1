@@ -17,12 +17,31 @@ $DistDir = 'frontend\dist'
 $SetupFile = 'PDF-Master-Setup-1.1.1.exe'
 $LatestYml = 'latest.yml'
 
-# --- PEDIR TOKEN ---
+# --- LEER TOKEN ---
 Write-Host "`n=== Publicar PDF Master a GitHub ===" -ForegroundColor Cyan
-Write-Host "1. Andá a https://github.com/settings/tokens/new" -ForegroundColor Yellow
-Write-Host "2. Marcá el scope 'repo' (todo el grupo)" -ForegroundColor Yellow
-Write-Host "3. Generá el token y copialo." -ForegroundColor Yellow
-$Token = Read-Host -Prompt "`nPegá tu GitHub Personal Access Token"
+# Buscar token en varias ubicaciones
+$Token = $null
+$EnvPaths = @(
+    (Join-Path $PSScriptRoot '.env'),
+    'C:\Users\Engelllop\Documents\Cipher\.git'
+)
+foreach ($EnvPath in $EnvPaths) {
+    if (Test-Path $EnvPath) {
+        $EnvLines = Get-Content $EnvPath -ErrorAction SilentlyContinue
+        $TokenLine = $EnvLines | Where-Object { $_ -match '^GITHUB_TOKEN=' } | Select-Object -First 1
+        if ($TokenLine) {
+            $Token = ($TokenLine -replace '^GITHUB_TOKEN=', '').Trim()
+            Write-Host "Token leído desde $EnvPath" -ForegroundColor DarkGray
+            break
+        }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($Token)) {
+    Write-Host "1. Andá a https://github.com/settings/tokens/new" -ForegroundColor Yellow
+    Write-Host "2. Marcá el scope 'repo' (todo el grupo)" -ForegroundColor Yellow
+    Write-Host "3. Generá el token y copialo." -ForegroundColor Yellow
+    $Token = Read-Host -Prompt "`nPegá tu GitHub Personal Access Token"
+}
 if ([string]::IsNullOrWhiteSpace($Token)) {
     Write-Error "Token vacío. Abortando."
     exit 1

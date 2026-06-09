@@ -1,7 +1,9 @@
 import { usePdfStore } from '../store/usePdfStore'
 import { Monitor, CheckCircle2, Loader2 } from 'lucide-react'
+import { useThemeClasses } from '../hooks/useThemeClasses'
 
 export default function StatusBar() {
+  const tc = useThemeClasses()
   const store = usePdfStore()
   const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -15,7 +17,7 @@ export default function StatusBar() {
     : ''
 
   return (
-    <div className="h-7 bg-slate-950 border-t border-slate-700 flex items-center px-3 text-xs text-slate-400 select-none gap-4">
+    <div className={`h-7 border-t flex items-center px-3 text-xs select-none gap-4 ${tc('bg-slate-950 border-slate-700 text-slate-400', 'bg-gray-100 border-gray-300 text-gray-600')}`}>
       <span className="min-w-[140px]">{pageLabel}</span>
       {dims && <span className="min-w-[100px] text-slate-500">{dims}</span>}
       <span className="min-w-[60px]">Zoom {zoomPercent}%</span>

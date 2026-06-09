@@ -1,12 +1,10 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
 import { usePdfStore, type PdfState } from '../store/usePdfStore'
 
-const BASE_RENDER_ZOOM = 1.5
-
 export function usePanZoom(
   containerRef: React.RefObject<HTMLDivElement | null>,
   activeDoc: PdfState['docs'][number] | undefined,
-  pageData: { width: number; height: number } | null,
+  pageData: { width: number; height: number; originalWidth: number } | null,
 ) {
   const { setZoom, nextPage, prevPage, activeTool } = usePdfStore() as PdfState
 
@@ -70,8 +68,9 @@ export function usePanZoom(
       const mouseX = e.clientX - rect.left
       const mouseY = e.clientY - rect.top
 
-      const oldScale = oldZoom / BASE_RENDER_ZOOM
-      const newScale = newZoom / BASE_RENDER_ZOOM
+      const renderScale = pageData.originalWidth > 0 ? pageData.width / pageData.originalWidth : 1
+      const oldScale = oldZoom / renderScale
+      const newScale = newZoom / renderScale
       const oldDisplayWidth = pageData.width * oldScale
       const oldDisplayHeight = pageData.height * oldScale
       const newDisplayWidth = pageData.width * newScale

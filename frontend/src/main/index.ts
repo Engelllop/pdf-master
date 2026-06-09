@@ -3,10 +3,30 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
+
+// GPU & performance flags
+app.commandLine.appendSwitch('enable-gpu-rasterization')
+app.commandLine.appendSwitch('enable-zero-copy')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+app.commandLine.appendSwitch('max-old-space-size', '4096')
 
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 const fileQueue: string[] = []
+
+// Safe logging to file (avoids EPIPE when no console is attached)
+const logDir = join(app.getPath('userData'), 'logs')
+const logFile = join(logDir, 'backend.log')
+function safeLog(level: string, msg: string): void {
+  try {
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+    const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`
+    appendFileSync(logFile, line)
+  } catch {
+    // silently ignore logging failures
+  }
+}
 
 function killExistingBackend(): void {
   try {
@@ -53,15 +73,20 @@ function startBackend(): Promise<void> {
     }
 
     backendProcess.stdout?.on('data', (data) => {
-      console.log(`[Backend] ${data}`)
-      if (String(data).includes('Uvicorn running on')) {
+      const str = String(data)
+      safeLog('INFO', str.trim())
+      if (str.includes('Uvicorn running on')) {
         maybeResolve()
       }
     })
 
     backendProcess.stderr?.on('data', (data) => {
-      console.error(`[Backend Error] ${data}`)
+      safeLog('ERROR', String(data).trim())
     })
+
+    // Prevent EPIPE crash when console is not attached
+    backendProcess.stdout?.on('error', () => {})
+    backendProcess.stderr?.on('error', () => {})
 
     backendProcess.on('error', (err) => {
       if (!resolved) {
@@ -71,7 +96,7 @@ function startBackend(): Promise<void> {
     })
 
     backendProcess.on('exit', (code) => {
-      console.log(`[Backend] exited with code ${code}`)
+      safeLog('INFO', `Backend exited with code ${code}`)
       backendProcess = null
       if (!resolved) {
         resolved = true
@@ -92,10 +117,8 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    show: false,
+    show: true,
     autoHideMenuBar: true,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    icon: join(__dirname, '../../build/icon.ico'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -103,24 +126,11 @@ function createWindow(): void {
     }
   })
 
-  // Ensure window is visible on screen (handles multi-monitor changes)
-  const ensureVisible = () => {
-    if (!mainWindow) return
-    const bounds = mainWindow.getBounds()
-    const displays = require('electron').screen.getAllDisplays()
-    const isVisible = displays.some((d: any) => {
-      const { x, y, width, height } = d.workArea
-      return bounds.x >= x - 100 && bounds.y >= y - 100 &&
-             bounds.x + bounds.width <= x + width + 100 &&
-             bounds.y + bounds.height <= y + height + 100
-    })
-    if (!isVisible) {
-      mainWindow.center()
-    }
-  }
+  mainWindow.maximize()
+  mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  mainWindow.setAlwaysOnTop(false)
 
   mainWindow.on('ready-to-show', () => {
-    ensureVisible()
     mainWindow?.show()
     mainWindow?.focus()
     if (fileQueue.length > 0 && mainWindow) {
@@ -129,18 +139,26 @@ function createWindow(): void {
     }
   })
 
-  // Fallback: if ready-to-show never fires (rare), show anyway after 5s
-  setTimeout(() => {
-    if (mainWindow && !mainWindow.isVisible()) {
-      ensureVisible()
-      mainWindow.show()
-      mainWindow.focus()
-    }
-  }, 5000)
-
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  // Forward renderer console + failed loads to the log file for diagnostics.
+  mainWindow.webContents.on('console-message', (_e, level, message) => {
+    if (level >= 2 || message.includes('PAGEIMG')) safeLog('RENDERER', message)
+  })
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    safeLog('LOAD-FAIL', `${code} ${desc} ${url}`)
+  })
+
+  // Prevent drag-and-drop navigation to local files; handle PDF drops via IPC
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('file://') && url.toLowerCase().endsWith('.pdf')) {
+      event.preventDefault()
+      const filePath = decodeURI(url.replace('file:///', '').replace(/\//g, '\\'))
+      handleFileOpen(filePath)
+    }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -152,16 +170,16 @@ function createWindow(): void {
 
 function initAutoUpdater(): void {
   if (is.dev) {
-    console.log('[Updater] Skipped in development')
+    safeLog('INFO', '[Updater] Skipped in development')
     return
   }
 
   autoUpdater.on('checking-for-update', () => {
-    console.log('[Updater] Checking for update...')
+    safeLog('INFO', '[Updater] Checking for update...')
   })
 
   autoUpdater.on('update-available', (info) => {
-    console.log('[Updater] Update available:', info.version)
+    safeLog('INFO', '[Updater] Update available: ' + info.version)
     dialog.showMessageBox(mainWindow!, {
       type: 'info',
       title: 'Actualización disponible',
@@ -173,19 +191,19 @@ function initAutoUpdater(): void {
   })
 
   autoUpdater.on('update-not-available', () => {
-    console.log('[Updater] No updates available')
+    safeLog('INFO', '[Updater] No updates available')
   })
 
   autoUpdater.on('error', (err) => {
-    console.error('[Updater] Error:', err.message)
+    safeLog('ERROR', '[Updater] Error: ' + err.message)
   })
 
   autoUpdater.on('download-progress', (progress) => {
-    console.log(`[Updater] Download progress: ${Math.round(progress.percent)}%`)
+    safeLog('INFO', `[Updater] Download progress: ${Math.round(progress.percent)}%`)
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('[Updater] Update downloaded:', info.version)
+    safeLog('INFO', '[Updater] Update downloaded: ' + info.version)
     dialog.showMessageBox(mainWindow!, {
       type: 'info',
       title: 'Actualización lista',
@@ -204,7 +222,7 @@ function initAutoUpdater(): void {
   // Check for updates after 10 seconds so startup isn't blocked
   setTimeout(() => {
     autoUpdater.checkForUpdates().catch((err) => {
-      console.error('[Updater] Check failed:', err.message)
+      safeLog('ERROR', '[Updater] Check failed: ' + err.message)
     })
   }, 10000)
 }
@@ -239,19 +257,19 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.handle('dialog:openFile', async () => {
+  ipcMain.handle('dialog:openFile', async (_event, filters?: Electron.FileFilter[]) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile'],
-      filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+      filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }]
     })
     if (canceled) return null
     return filePaths[0]
   })
 
-  ipcMain.handle('dialog:saveFile', async () => {
+  ipcMain.handle('dialog:saveFile', async (_event, options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
-      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
-      defaultPath: 'document.pdf'
+      filters: options?.filters || [{ name: 'PDF Files', extensions: ['pdf'] }],
+      defaultPath: options?.defaultPath || 'document.pdf'
     })
     if (canceled || !filePath) return null
     return filePath
@@ -264,51 +282,55 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('backend:restart', async () => {
-    console.log('[Main] Restarting backend...')
+    safeLog('INFO', '[Main] Restarting backend...')
     stopBackend()
-    // Give it a moment to release the port
     await new Promise((r) => setTimeout(r, 500))
     try {
       await startBackend()
-      console.log('[Main] Backend restarted successfully')
+      safeLog('INFO', '[Main] Backend restarted successfully')
       return { success: true }
     } catch (err) {
-      console.error('[Main] Backend restart failed:', err)
+      safeLog('ERROR', `[Main] Backend restart failed: ${err}`)
       return { success: false, error: String(err) }
     }
   })
 
-  // Splash screen
-  const splash = new BrowserWindow({
-    width: 400,
-    height: 240,
-    frame: false,
-    alwaysOnTop: true,
-    transparent: true,
-    resizable: false,
-    show: false,
-    icon: join(__dirname, '../../build/icon.ico'),
-    webPreferences: { sandbox: false }
+  ipcMain.handle('window:new', () => {
+    createWindow()
+    return { success: true }
   })
-  splash.loadFile(join(__dirname, 'splash.html'))
-  splash.once('ready-to-show', () => splash.show())
 
-  // Start backend
-  try {
-    await startBackend()
-    console.log('Backend started successfully')
-  } catch (err) {
-    console.error('Failed to start backend:', err)
-  }
+  ipcMain.handle('shell:showInFolder', (_event, filePath: string) => {
+    try { shell.showItemInFolder(filePath) } catch { /* ignore */ }
+  })
 
-  // Close splash and show main window
-  splash.close()
+  ipcMain.handle('log:error', (_event, message: string) => {
+    safeLog('RENDERER', String(message).slice(0, 2000))
+  })
+
+  ipcMain.handle('file:readBase64', async (_event, filePath: string) => {
+    try {
+      const buffer = readFileSync(filePath)
+      return buffer.toString('base64')
+    } catch (err) {
+      safeLog('ERROR', `[Main] Failed to read file: ${err}`)
+      return null
+    }
+  })
 
   // Check for file argument on launch
   const pdfArg = process.argv.find((arg) => arg.toLowerCase().endsWith('.pdf'))
   if (pdfArg) fileQueue.push(pdfArg)
 
+  // Create window immediately — don't block on backend startup
   createWindow()
+
+  // Start backend in background with a timeout so it never blocks UI
+  startBackend().then(() => {
+    safeLog('INFO', 'Backend started successfully')
+  }).catch((err) => {
+    safeLog('ERROR', 'Failed to start backend: ' + err)
+  })
 
   // Initialize auto-updater after a short delay so it doesn't block startup
   initAutoUpdater()

@@ -6,10 +6,12 @@ const API_BASE = 'http://localhost:8745'
 export function useAutoSave(
   activeDoc: PdfState['docs'][number] | undefined,
 ) {
+  const autoSaveEnabled = usePdfStore((s) => s.autoSaveEnabled)
   useEffect(() => {
-    if (!activeDoc || !activeDoc.dirty) return
+    if (!activeDoc || !activeDoc.dirty || !autoSaveEnabled) return
     let timeoutId: ReturnType<typeof setTimeout>
     const doAutoSave = () => {
+      if (!usePdfStore.getState().autoSaveEnabled) return
       const doc = usePdfStore.getState().docs.find((d) => d.doc_id === activeDoc.doc_id)
       if (!doc || !doc.dirty) return
       const anns = doc.annotations
@@ -41,5 +43,5 @@ export function useAutoSave(
     }
     timeoutId = setTimeout(doAutoSave, 30000)
     return () => clearTimeout(timeoutId)
-  }, [activeDoc?.doc_id, activeDoc?.dirty])
+  }, [activeDoc?.doc_id, activeDoc?.dirty, autoSaveEnabled])
 }

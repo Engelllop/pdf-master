@@ -21,7 +21,7 @@ export function useAnnotationDraw(
   pageData: { width: number; height: number; originalWidth: number; originalHeight: number } | null,
 ) {
   const store = usePdfStore() as PdfState
-  const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale } = store
+  const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
 
   const [drawing, setDrawing] = useState(false)
   const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null)
@@ -101,13 +101,13 @@ export function useAnnotationDraw(
 
     if (activeTool === 'draw' || activeTool === 'signature') {
       setDrawPoints((prev) => [...prev, { x: pdf.x, y: pdf.y }])
-    } else if (activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect') {
-      setDrawPreview({
-        ...drawPreview,
-        width: Math.abs(pdf.x - (drawPreview.x || 0)),
-        height: Math.abs(pdf.y - (drawPreview.y || 0)),
-      })
-    } else if (activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' || activeTool === 'measure_calibrate' || activeTool === 'measure_distance') {
+    } else if (
+      activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect' ||
+      activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' ||
+      activeTool === 'measure_calibrate' || activeTool === 'measure_distance'
+    ) {
+      // Keep the sign of the delta so dragging up/left works; the shape is
+      // normalized to a top-left origin on mouse up (and at render time).
       setDrawPreview({
         ...drawPreview,
         width: pdf.x - (drawPreview.x || 0),
@@ -129,7 +129,7 @@ export function useAnnotationDraw(
     }
 
     // Text area selection
-    if (activeTool === 'textselect' && drawPreview.width && drawPreview.width > 2) {
+    if (activeTool === 'textselect' && drawPreview.width && Math.abs(drawPreview.width) > 2) {
       const x = Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0))
       const y = Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))
       const w = Math.abs(drawPreview.width || 0)
@@ -162,19 +162,39 @@ export function useAnnotationDraw(
         { x: drawPreview.x || 0, y: drawPreview.y || 0 },
         { x: (drawPreview.x || 0) + (drawPreview.width || 0), y: (drawPreview.y || 0) + (drawPreview.height || 0) }
       )
-      const input = prompt(`Distancia real de la línea calibrada (${pixelDist.toFixed(1)} px):`, '1')
-      if (input) {
-        const realDist = parseFloat(input)
-        if (!isNaN(realDist) && realDist > 0) {
-          const unit = prompt('Unidad (m, cm, mm, ft, in):', 'm') || 'm'
-          const validUnit = (['m', 'cm', 'mm', 'ft', 'in'].includes(unit) ? unit : 'm') as 'm' | 'cm' | 'mm' | 'ft' | 'in'
-          setMeasurementScale(activeDoc.doc_id, {
-            pixelsPerUnit: pixelDist / realDist,
-            unit: validUnit,
-          })
-          showToast(`Escala calibrada: ${pixelDist.toFixed(1)} px = ${realDist} ${validUnit}`, 'success')
-        }
+      const realInput = prompt(`Distancia medida: ${pixelDist.toFixed(1)} px\nIngresa la distancia real conocida (ej: 100):`)
+      if (!realInput) {
+        showToast('Calibración cancelada', 'info')
+        setDrawing(false)
+        setDrawPreview(null)
+        setDrawPoints([])
+        setActiveTool(null)
+        return
       }
+      const realValue = parseFloat(realInput)
+      if (!isFinite(realValue) || realValue <= 0) {
+        showToast('Valor inválido', 'error')
+        setDrawing(false)
+        setDrawPreview(null)
+        setDrawPoints([])
+        setActiveTool(null)
+        return
+      }
+      const unitInput = prompt('Unidad (m, cm, mm, ft, in):', 'mm') || 'mm'
+      const validUnits = ['m', 'cm', 'mm', 'ft', 'in']
+      const unit = validUnits.includes(unitInput) ? unitInput as 'm' | 'cm' | 'mm' | 'ft' | 'in' : 'mm'
+      setMeasurementScale(activeDoc.doc_id, {
+        pixelsPerUnit: pixelDist / realValue,
+        unit,
+      })
+      showToast(`Calibración: ${pixelDist.toFixed(1)} px = ${realValue} ${unit}`, 'success')
+      addAnnotation(activeDoc.doc_id, {
+        ...drawPreview as Annotation,
+        type: 'measure_distance',
+        width: drawPreview.width,
+        height: drawPreview.height,
+        measurement: { value: pixelDist, unit: 'px', label: `${pixelDist.toFixed(1)} px` },
+      })
       setDrawing(false)
       setDrawPreview(null)
       setDrawPoints([])
@@ -227,8 +247,15 @@ export function useAnnotationDraw(
           showToast('Firma guardada', 'success')
         }
       }
-    } else if ((activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle') && drawPreview.width && drawPreview.width > 2) {
+    } else if ((activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle') && drawPreview.width && Math.abs(drawPreview.width) > 2) {
       let finalPreview = { ...drawPreview }
+      // Normalize x,y to top-left corner for rect/circle (user may have dragged backwards)
+      const nx = Math.min(finalPreview.x || 0, (finalPreview.x || 0) + (finalPreview.width || 0))
+      const ny = Math.min(finalPreview.y || 0, (finalPreview.y || 0) + (finalPreview.height || 0))
+      finalPreview.x = nx
+      finalPreview.y = ny
+      finalPreview.width = Math.abs(finalPreview.width || 0)
+      finalPreview.height = Math.abs(finalPreview.height || 0)
       if (activeTool === 'circle') {
         const size = Math.min(finalPreview.width || 0, finalPreview.height || 0)
         finalPreview.width = size
@@ -245,7 +272,14 @@ export function useAnnotationDraw(
   }
 
   const closeArea = () => {
-    if (!activeDoc || !drawingArea || areaPoints.length < 3) {
+    if (!activeDoc || !drawingArea) {
+      setDrawingArea(false)
+      setAreaPoints([])
+      setDrawPreview(null)
+      return
+    }
+    if (areaPoints.length < 3) {
+      showToast('Dibuja al menos 3 puntos para medir un area', 'error')
       setDrawingArea(false)
       setAreaPoints([])
       setDrawPreview(null)
@@ -312,6 +346,8 @@ export function useAnnotationDraw(
       y: textPos.y,
       color: annotationColor,
       text: textInput || 'Texto',
+      fontFamily: textFontFamily,
+      fontSize: textFontSize,
     })
     setTextPos(null)
     setTextInput('')

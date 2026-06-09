@@ -1,10 +1,15 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
-  openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  saveFile: () => ipcRenderer.invoke('dialog:saveFile'),
+  openFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFile', filters),
+  saveFile: (options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => ipcRenderer.invoke('dialog:saveFile', options),
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
   restartBackend: () => ipcRenderer.invoke('backend:restart'),
+  newWindow: () => ipcRenderer.invoke('window:new'),
+  logError: (message: string) => ipcRenderer.invoke('log:error', message),
+  showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path),
+  getFilePath: (file: File) => webUtils.getPathForFile(file),
+  readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
   onOpenFile: (callback: (path: string) => void) => {
     ipcRenderer.on('app:open-file', (_event, path) => callback(path))
   },

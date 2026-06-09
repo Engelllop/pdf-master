@@ -9,10 +9,83 @@ import { useAutoSave } from '../hooks/useAutoSave'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
 import { useFormFields } from '../hooks/useFormFields'
+import { useThemeClasses } from '../hooks/useThemeClasses'
+import DetailTile from './DetailTile'
+import { openDocument } from '../lib/openDocument'
 import { Loader2, MessageSquare } from 'lucide-react'
 
 const API_BASE = 'http://localhost:8745'
-const BASE_RENDER_ZOOM = 1.5
+
+// If the page bitmap <img> fails to load directly from the backend URL, fetch it
+// (the same mechanism the thumbnails use, which works) and swap in a blob: URL.
+// This self-heals the "blank page / broken image" issue and logs the real cause so
+// it shows up in backend.log via the main process console forwarder.
+async function recoverImage(img: HTMLImageElement, url: string): Promise<void> {
+  if (img.dataset.recoveringUrl === url) return // one retry per distinct page URL
+  img.dataset.recoveringUrl = url
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      console.error(`PAGEIMG HTTP ${res.status} ${url}`)
+      return
+    }
+    const blob = await res.blob()
+    const prev = img.dataset.blobUrl
+    const objectUrl = URL.createObjectURL(blob)
+    img.dataset.blobUrl = objectUrl
+    img.src = objectUrl
+    if (prev) URL.revokeObjectURL(prev)
+  } catch (err) {
+    console.error(`PAGEIMG FETCH-FAIL ${url} ${(err as Error)?.message || err}`)
+  }
+}
+
+interface SpanItem { text: string; x0: number; y0: number; x1: number; y1: number; size: number }
+
+// Invisible, selectable text layer overlaid on the page bitmap (PDF.js-style).
+// The container is pointer-events:none so empty areas fall through to the annotation
+// SVG below; individual spans capture pointer events only when no tool is active.
+function TextLayer({ docId, page, pageData, active }: {
+  docId: string
+  page: number
+  pageData: { width: number; height: number; originalWidth: number; originalHeight: number }
+  active: boolean
+}) {
+  const [spans, setSpans] = useState<SpanItem[]>([])
+  useEffect(() => {
+    const c = new AbortController()
+    fetch(`${API_BASE}/pdf/spans/${docId}/${page}`, { signal: c.signal })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.spans) setSpans(d.spans) })
+      .catch(() => {})
+    return () => { c.abort(); setSpans([]) }
+  }, [docId, page])
+  const sx = pageData.width / pageData.originalWidth
+  const sy = pageData.height / pageData.originalHeight
+  return (
+    <div className="absolute top-0 left-0" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text' }}>
+      {spans.map((s, i) => {
+        const h = (s.y1 - s.y0) * sy
+        return (
+          <span key={i} style={{
+            position: 'absolute',
+            left: s.x0 * sx,
+            top: s.y0 * sy,
+            width: (s.x1 - s.x0) * sx,
+            height: h,
+            fontSize: h * 0.82,
+            lineHeight: `${h}px`,
+            color: 'transparent',
+            whiteSpace: 'pre',
+            overflow: 'hidden',
+            cursor: 'text',
+            pointerEvents: active ? 'auto' : 'none',
+          }}>{s.text}</span>
+        )
+      })}
+    </div>
+  )
+}
 
 function getAnnotationBounds(
   ann: Annotation,
@@ -31,7 +104,23 @@ function getAnnotationBounds(
     case 'underline':
     case 'strikethrough': {
       const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y, w: (ann.width || 0) * sx, h: 16 }
+      const h = (ann.height || 16) * sy
+      return { x: s.x, y: s.y, w: (ann.width || 0) * sx, h }
+    }
+    case 'text': {
+      const s = toScreen(ann.x, ann.y)
+      const fs = (ann.fontSize || 14)
+      const tw = ann.width ? ann.width * sx : Math.max(80, (ann.text?.length || 4) * fs * 0.55) * sx
+      const th = ann.height ? ann.height * sy : Math.max(24, fs * 1.4) * sy
+      return { x: s.x, y: s.y, w: tw, h: th }
+    }
+    case 'note': {
+      const s = toScreen(ann.x, ann.y)
+      return { x: s.x, y: s.y, w: (ann.width || 28) * sx, h: (ann.height || 28) * sy }
+    }
+    case 'image': {
+      const s = toScreen(ann.x, ann.y)
+      return { x: s.x, y: s.y, w: (ann.width || 200) * sx, h: (ann.height || 150) * sy }
     }
     case 'arrow': {
       const s1 = toScreen(ann.x, ann.y)
@@ -45,20 +134,13 @@ function getAnnotationBounds(
       const ys = pts.map((p) => p.y)
       return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
     }
-    case 'note': {
-      const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y, w: 24, h: 24 }
-    }
-    case 'text': {
-      const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y - 14, w: Math.max(20, (ann.text?.length || 4) * 7), h: 18 }
-    }
     default:
       return null
   }
 }
 
 export default function Viewer() {
+  const tc = useThemeClasses()
   const store = usePdfStore()
   const {
     docs, activeDocId,
@@ -70,13 +152,29 @@ export default function Viewer() {
   const svgRef = useRef<SVGSVGElement>(null)
   const svgRightRef = useRef<SVGSVGElement>(null)
 
+  // Rotation drag state
+  const [rotatingAnn, setRotatingAnn] = useState<{ id: string; startAngle: number; startRotation: number; centerX: number; centerY: number } | null>(null)
+
   // Page loading
   const {
-    loading, pageData, loadingRight, pageDataRight, searchHighlight,
+    loading, pageData, loadingRight, pageDataRight, pageText, pageTextRight,
   } = usePageLoader()
 
   // Pan & zoom
   const { isPanning, startPan, handleWheel } = usePanZoom(containerRef, activeDoc, pageData)
+
+  const handleScroll = () => {
+    const c = containerRef.current
+    if (!c) return
+    store.setViewerScroll({
+      left: c.scrollLeft,
+      top: c.scrollTop,
+      clientWidth: c.clientWidth,
+      clientHeight: c.clientHeight,
+      scrollWidth: c.scrollWidth,
+      scrollHeight: c.scrollHeight,
+    })
+  }
 
   // Annotation drawing
   const {
@@ -202,6 +300,30 @@ export default function Viewer() {
     }
   }, [resizingAnnRight])
 
+  // Window-level rotation listener
+  useEffect(() => {
+    if (!rotatingAnn) return
+    const handleMove = (e: MouseEvent) => {
+      if (!svgRef.current) return
+      const rect = svgRef.current.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left
+      const mouseY = e.clientY - rect.top
+      const angle = Math.atan2(mouseY - rotatingAnn.centerY, mouseX - rotatingAnn.centerX)
+      const deltaDeg = (angle - rotatingAnn.startAngle) * 180 / Math.PI
+      const newRotation = rotatingAnn.startRotation + deltaDeg
+      const doc = store.docs.find((d) => d.doc_id === activeDocId)
+      if (!doc) return
+      store.updateAnnotation(doc.doc_id, rotatingAnn.id, { rotation: newRotation })
+    }
+    const handleUp = () => setRotatingAnn(null)
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+    return () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+  }, [rotatingAnn])
+
   // Keyboard shortcuts
   useKeyboardShortcuts(activeDoc, store.selectedAnnotationId, deleteAnnotation, cancelDraw)
 
@@ -236,6 +358,65 @@ export default function Viewer() {
     if (!activeDoc || !pageData) return
     const pt = getSvgPoint(e)
 
+    // Image annotation tool
+    if (store.activeTool === 'image') {
+      e.preventDefault()
+      if (!store.selectedImageData) {
+        store.showToast('Selecciona una imagen primero', 'error')
+        store.setActiveTool(null)
+        return
+      }
+      const pdfX = pt.x * (pageData.originalWidth / pageData.width)
+      const pdfY = pt.y * (pageData.originalHeight / pageData.height)
+      store.addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'image',
+        page: activeDoc.currentPage,
+        x: pdfX,
+        y: pdfY,
+        width: 200,
+        height: 150,
+        imageData: store.selectedImageData,
+      })
+      store.setDocDirty(activeDoc.doc_id, true)
+      store.showToast('Imagen colocada. Arrastra para mover, esquinas para redimensionar.', 'success')
+      store.setActiveTool(null)
+      store.setSelectedImagePath(null)
+      store.setSelectedImageData(null)
+      return
+    }
+
+    // Stamp tool
+    if (store.activeTool === 'stamp') {
+      e.preventDefault()
+      const pdfX = pt.x * (pageData.originalWidth / pageData.width)
+      const pdfY = pt.y * (pageData.originalHeight / pageData.height)
+      fetch(`${API_BASE}/pdf/insert-text/${activeDoc.doc_id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          page_num: activeDoc.currentPage,
+          x: pdfX,
+          y: pdfY,
+          text: store.selectedStamp,
+          color: store.stampColor,
+          fontsize: 24,
+        }),
+      }).then((res) => {
+        if (res.ok) {
+          store.setDocDirty(activeDoc.doc_id, true)
+          store.invalidatePageCache(activeDoc.doc_id)
+          store.invalidateThumbnails(activeDoc.doc_id)
+          store.incrementDocVersion(activeDoc.doc_id)
+          store.showToast('Sello insertado', 'success')
+        } else {
+          store.showToast('Error al insertar sello', 'error')
+        }
+        store.setActiveTool(null)
+      })
+      return
+    }
+
     // Drawing takes precedence
     if (store.activeTool) {
       e.preventDefault()
@@ -264,6 +445,47 @@ export default function Viewer() {
   // Inline text edit
   const [editingTextAnn, setEditingTextAnn] = useState<string | null>(null)
   const [editTextValue, setEditTextValue] = useState('')
+
+  // Auto-scroll to search result
+  useEffect(() => {
+    if (!activeDoc || activeDoc.searchIndex < 0 || !containerRef.current || !pageData) return
+    const result = activeDoc.searchResults[activeDoc.searchIndex]
+    if (!result || result.page !== activeDoc.currentPage) return
+    const scale = activeDoc.zoom / (pageData.width / pageData.originalWidth)
+    const sx = result.x * (pageData.width / pageData.originalWidth) * scale
+    const sy = result.y * (pageData.height / pageData.originalHeight) * scale
+    const sw = result.width * (pageData.width / pageData.originalWidth) * scale
+    const sh = result.height * (pageData.height / pageData.originalHeight) * scale
+    const wrapper = containerRef.current.querySelector('[data-page-wrapper="left"]') as HTMLElement
+    if (!wrapper) return
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const containerRect = containerRef.current.getBoundingClientRect()
+    const wrapperLeft = wrapperRect.left - containerRect.left + containerRef.current.scrollLeft
+    const wrapperTop = wrapperRect.top - containerRect.top + containerRef.current.scrollTop
+    containerRef.current.scrollTo({
+      left: wrapperLeft + sx - containerRef.current.clientWidth / 2 + sw / 2,
+      top: wrapperTop + sy - containerRef.current.clientHeight / 2 + sh / 2,
+      behavior: 'smooth',
+    })
+  }, [activeDoc?.searchIndex, activeDoc?.currentPage, pageData?.width, pageData?.height])
+
+  // Press Enter to close area measurement polygon
+  useEffect(() => {
+    if (!drawingArea) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        closeArea()
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        store.setActiveTool(null)
+        closeArea()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [drawingArea, closeArea])
 
   // Sticky note popup
   const [notePopup, setNotePopup] = useState<{ annId: string; x: number; y: number } | null>(null)
@@ -294,35 +516,43 @@ export default function Viewer() {
       : {}
 
     switch (ann.type) {
-      case 'highlight':
+      case 'highlight': {
+        const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
+        const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
         return (
-          <rect key={key} x={s.x} y={s.y}
-            width={(ann.width || 0) * (pageData!.width / pageData!.originalWidth)}
-            height={(ann.height || 0) * (pageData!.height / pageData!.originalHeight)}
+          <rect key={key} x={w < 0 ? s.x + w : s.x} y={h < 0 ? s.y + h : s.y}
+            width={Math.abs(w)} height={Math.abs(h)}
             fill={ann.color || '#fbbf24'} fillOpacity={opacity} rx={2} {...clickProps} />
         )
-      case 'underline':
+      }
+      case 'underline': {
+        const ulH = (ann.height || 16) * (pageData!.height / pageData!.originalHeight)
         return (
-          <line key={key} x1={s.x} y1={s.y + 14} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + 14}
+          <line key={key} x1={s.x} y1={s.y + ulH - 2} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + ulH - 2}
             stroke={ann.color || '#3b82f6'} strokeWidth={2} {...clickProps} />
         )
-      case 'strikethrough':
+      }
+      case 'strikethrough': {
+        const stH = (ann.height || 16) * (pageData!.height / pageData!.originalHeight)
         return (
-          <line key={key} x1={s.x} y1={s.y + 7} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + 7}
+          <line key={key} x1={s.x} y1={s.y + stH / 2} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + stH / 2}
             stroke={ann.color || '#ef4444'} strokeWidth={2} {...clickProps} />
         )
-      case 'rect':
+      }
+      case 'rect': {
+        const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
+        const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
         return (
-          <rect key={key} x={s.x} y={s.y}
-            width={(ann.width || 0) * (pageData!.width / pageData!.originalWidth)}
-            height={(ann.height || 0) * (pageData!.height / pageData!.originalHeight)}
+          <rect key={key} x={w < 0 ? s.x + w : s.x} y={h < 0 ? s.y + h : s.y}
+            width={Math.abs(w)} height={Math.abs(h)}
             fill="none" stroke={ann.color || '#fff'} strokeWidth={2} rx={2} {...clickProps} />
         )
+      }
       case 'circle': {
         const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
         const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
         return (
-          <ellipse key={key} cx={s.x + w / 2} cy={s.y + h / 2} rx={w / 2} ry={h / 2}
+          <ellipse key={key} cx={s.x + w / 2} cy={s.y + h / 2} rx={Math.abs(w) / 2} ry={Math.abs(h) / 2}
             fill="none" stroke={ann.color || '#fff'} strokeWidth={2} {...clickProps} />
         )
       }
@@ -350,7 +580,10 @@ export default function Viewer() {
           return `${i === 0 ? 'M' : 'L'} ${sp.x} ${sp.y}`
         }).join(' ')
         return <path key={key} d={d} fill="none" stroke={ann.color || '#fff'} strokeWidth={ann.type === 'signature' ? 3 : 2} strokeLinecap="round" strokeLinejoin="round" {...clickProps} />
-      case 'note':
+      case 'note': {
+        const nw = (ann.width || 24) * (pageData!.width / pageData!.originalWidth)
+        const nh = (ann.height || 24) * (pageData!.height / pageData!.originalHeight)
+        const iconSize = Math.max(12, Math.min(nw, nh) * 0.6)
         return (
           <g key={key} {...clickProps}
             onClick={(e) => {
@@ -360,24 +593,51 @@ export default function Viewer() {
               setNotePopup({ annId: ann.id, x: screen.x, y: screen.y })
               setNotePopupText(ann.text || '')
             }}>
-            <rect x={s.x} y={s.y} width={24} height={24} fill={ann.color || '#fbbf24'} rx={3} />
-            <foreignObject x={s.x} y={s.y} width={24} height={24}>
+            <rect x={s.x} y={s.y} width={nw} height={nh} fill={ann.color || '#fbbf24'} rx={3} />
+            <foreignObject x={s.x} y={s.y} width={nw} height={nh}>
               <div className="flex items-center justify-center w-full h-full pointer-events-none">
-                <MessageSquare size={16} color="#000" />
+                <MessageSquare size={iconSize} color="#000" />
               </div>
             </foreignObject>
           </g>
         )
-      case 'text':
+      }
+      case 'text': {
+        const fontSize = ann.fontSize || store.textFontSize || 14
+        const fontFamily = ann.fontFamily || store.textFontFamily || 'Arial'
+        const sx2 = pageData!.width / pageData!.originalWidth
+        const sy2 = pageData!.height / pageData!.originalHeight
+        // fontSize is stored in PDF points; the SVG lives in bitmap-px space, so the
+        // on-screen size scales with zoom exactly like the page (and matches the editor).
+        const displayFontSize = fontSize * sx2
+        const textWidth = ann.width ? ann.width * sx2 : Math.max(120 * sx2, (ann.text?.length || 4) * displayFontSize * 0.6)
+        const textHeight = ann.height ? ann.height * sy2 : Math.max(30 * sy2, displayFontSize * 1.4)
         return (
-          <foreignObject key={key} x={s.x} y={s.y} width={Math.max(100, (ann.text?.length || 4) * 8)} height={60}
+          <foreignObject key={key} x={s.x} y={s.y} width={textWidth} height={textHeight}
             {...clickProps}
             onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(); startEditText(ann); }}>
-            <div className="text-sm leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily: 'sans-serif' }}>
+            <div className="leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily, fontSize: displayFontSize }}>
               {ann.text}
             </div>
           </foreignObject>
         )
+      }
+      case 'image': {
+        const iw = (ann.width || 200) * (pageData!.width / pageData!.originalWidth)
+        const ih = (ann.height || 150) * (pageData!.height / pageData!.originalHeight)
+        const rot = ann.rotation || 0
+        const cx = s.x + iw / 2
+        const cy = s.y + ih / 2
+        return (
+          <g key={key} {...clickProps} transform={`rotate(${rot}, ${cx}, ${cy})`}>
+            {ann.imageData ? (
+              <image href={ann.imageData} x={s.x} y={s.y} width={iw} height={ih} preserveAspectRatio="xMidYMid meet" />
+            ) : (
+              <rect x={s.x} y={s.y} width={iw} height={ih} fill="none" stroke={ann.color || '#fff'} strokeWidth={2} strokeDasharray="4 2" />
+            )}
+          </g>
+        )
+      }
       case 'measure_distance': {
         const x2 = s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))
         const y2 = s.y + ((ann.height || 0) * (pageData!.height / pageData!.originalHeight))
@@ -391,8 +651,8 @@ export default function Viewer() {
             <circle cx={s.x} cy={s.y} r={3} fill={ann.color || '#22d3ee'} />
             <circle cx={x2} cy={y2} r={3} fill={ann.color || '#22d3ee'} />
             <g transform={`translate(${midX}, ${midY}) rotate(${(angle * 180) / Math.PI})`}>
-              <rect x={-label.length * 3.5 - 4} y={-10} width={label.length * 7 + 8} height={18} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-              <text x={0} y={4} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="sans-serif">{label}</text>
+              <rect x={-label.length * 4.5 - 6} y={-12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+              <text x={0} y={5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
             </g>
           </g>
         )
@@ -413,8 +673,8 @@ export default function Viewer() {
             {pts.map((p, i) => (
               <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />
             ))}
-            <rect x={cx - label.length * 3.5 - 4} y={cy - 10} width={label.length * 7 + 8} height={18} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-            <text x={cx} y={cy + 4} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="sans-serif">{label}</text>
+            <rect x={cx - label.length * 4.5 - 6} y={cy - 12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+            <text x={cx} y={cy + 5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
           </g>
         )
       }
@@ -426,8 +686,10 @@ export default function Viewer() {
   // Selection box + 8 resize handles (left page)
   let selectionBox: React.ReactNode = null
   let resizeHandles: React.ReactNode = null
+  let rotateHandleLeft: React.ReactNode = null
   let selectionBoxRight: React.ReactNode = null
   let resizeHandlesRight: React.ReactNode = null
+  let rotateHandleRight: React.ReactNode = null
   if (store.selectedAnnotationId && pageData && activeDoc) {
     const ann = annotations.find((a) => a.id === store.selectedAnnotationId)
     if (ann) {
@@ -480,6 +742,34 @@ export default function Viewer() {
             ))}
           </>
         )
+        rotateHandleLeft = null
+        if (ann.type === 'image') {
+          const cx = bounds.x + bounds.w / 2
+          const hy = bounds.y - 20
+          rotateHandleLeft = (
+            <>
+              <line x1={cx} y1={bounds.y} x2={cx} y2={hy} stroke="#3b82f6" strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
+              <circle
+                cx={cx} cy={hy} r={6}
+                fill="#10b981" stroke="white" strokeWidth={1}
+                style={{ cursor: 'grab' }}
+                onMouseDown={(e) => {
+                  e.stopPropagation()
+                  const centerX = bounds.x + bounds.w / 2
+                  const centerY = bounds.y + bounds.h / 2
+                  const startAngle = Math.atan2(e.nativeEvent.offsetY - centerY, e.nativeEvent.offsetX - centerX)
+                  setRotatingAnn({
+                    id: ann.id,
+                    startAngle,
+                    startRotation: ann.rotation || 0,
+                    centerX,
+                    centerY,
+                  })
+                }}
+              />
+            </>
+          )
+        }
       }
     }
   }
@@ -537,6 +827,34 @@ export default function Viewer() {
             ))}
           </>
         )
+        rotateHandleRight = null
+        if (ann.type === 'image') {
+          const cx = bounds.x + bounds.w / 2
+          const hy = bounds.y - 20
+          rotateHandleRight = (
+            <>
+              <line x1={cx} y1={bounds.y} x2={cx} y2={hy} stroke="#3b82f6" strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
+              <circle
+                cx={cx} cy={hy} r={6}
+                fill="#10b981" stroke="white" strokeWidth={1}
+                style={{ cursor: 'grab' }}
+                onMouseDown={(e) => {
+                  e.stopPropagation()
+                  const centerX = bounds.x + bounds.w / 2
+                  const centerY = bounds.y + bounds.h / 2
+                  const startAngle = Math.atan2(e.nativeEvent.offsetY - centerY, e.nativeEvent.offsetX - centerX)
+                  setRotatingAnn({
+                    id: ann.id,
+                    startAngle,
+                    startRotation: ann.rotation || 0,
+                    centerX,
+                    centerY,
+                  })
+                }}
+              />
+            </>
+          )
+        }
       }
     }
   }
@@ -548,37 +866,28 @@ export default function Viewer() {
 
   if (!activeDoc) {
     return (
-      <div ref={containerRef} className="flex-1 flex flex-col items-center justify-center bg-slate-900 overflow-auto"
+      <div ref={containerRef} className={`flex-1 flex flex-col items-center justify-center overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}
         onDragOver={handleDragOver} onDrop={handleDrop}>
         <div className="text-center space-y-4">
-          <div className="w-20 h-20 mx-auto bg-slate-800 rounded-2xl flex items-center justify-center border border-slate-700 border-dashed">
-            <svg className="w-10 h-10 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className={`w-20 h-20 mx-auto rounded-2xl flex items-center justify-center border border-dashed ${tc('bg-slate-800 border-slate-700', 'bg-gray-200 border-gray-400')}`}>
+            <svg className={`w-10 h-10 ${tc('text-slate-500', 'text-gray-500')}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
           </div>
           <div>
-            <h2 className="text-xl font-semibold text-slate-200">PDF Master</h2>
-            <p className="text-slate-400 mt-1">Arrastra un PDF aquí o usa el botón Abrir</p>
+            <h2 className={`text-xl font-semibold ${tc('text-slate-200', 'text-gray-800')}`}>PDF Master</h2>
+            <p className={`mt-1 ${tc('text-slate-400', 'text-gray-500')}`}>Arrastra un PDF aquí o usa el botón Abrir</p>
           </div>
           <p className="text-xs text-slate-600">Ctrl+rueda: zoom | Rueda: cambiar página</p>
           {recentFiles.length > 0 && (
             <div className="text-left max-w-xs mx-auto">
-              <p className="text-xs text-slate-500 uppercase tracking-wider mb-2">Recientes</p>
+              <p className={`text-xs uppercase tracking-wider mb-2 ${tc('text-slate-500', 'text-gray-500')}`}>Recientes</p>
               <div className="space-y-1">
                 {recentFiles.map((path, i) => (
                   <button
                     key={i}
-                    onClick={() => {
-                      fetch(`${API_BASE}/pdf/open`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ file_path: path }),
-                      })
-                        .then((res) => res.json())
-                        .then((data) => store.addDoc(data))
-                        .catch((err) => alert('Error: ' + err.message))
-                    }}
-                    className="w-full text-left text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded px-2 py-1 transition-colors truncate"
+                    onClick={() => { openDocument(path) }}
+                    className={`w-full text-left text-xs rounded px-2 py-1 transition-colors truncate ${tc('text-slate-300 hover:text-white hover:bg-slate-800', 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
                     title={path}
                   >
                     {path.split(/[\\/]/).pop()}
@@ -592,8 +901,8 @@ export default function Viewer() {
     )
   }
 
-  const scale = pageData ? activeDoc.zoom / BASE_RENDER_ZOOM : 1
-  const scaleRight = pageDataRight ? activeDoc.zoom / BASE_RENDER_ZOOM : 1
+  const scale = pageData ? activeDoc.zoom / (pageData.width / pageData.originalWidth) : 1
+  const scaleRight = pageDataRight ? activeDoc.zoom / (pageDataRight.width / pageDataRight.originalWidth) : 1
   const displayWidth = pageData ? pageData.width * scale : 0
   const displayHeight = pageData ? pageData.height * scale : 0
   const displayWidthRight = pageDataRight ? pageDataRight.width * scaleRight : 0
@@ -601,14 +910,20 @@ export default function Viewer() {
   const isDouble = store.viewMode === 'double'
 
   return (
-    <div ref={containerRef} className="flex-1 bg-slate-900 overflow-auto relative"
-      onWheel={handleWheel} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
+    <div ref={containerRef} className={`flex-1 overflow-auto relative ${tc('bg-slate-900', 'bg-gray-100')}`}
+      onWheel={handleWheel} onScroll={handleScroll} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
       onContextMenu={(e) => {
         e.preventDefault()
         if (!activeDoc) return
         openMenu(e.clientX, e.clientY)
       }}
       onClick={closeMenu}>
+
+      {!pageData && loading && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Loader2 className="animate-spin text-blue-500" size={36} />
+        </div>
+      )}
 
       <div className={`relative my-4 flex ${isDouble ? 'gap-4' : ''}`}
         style={{
@@ -618,16 +933,24 @@ export default function Viewer() {
           marginRight: 'auto',
         }}>
         {pageData && (
-          <div className="relative" style={{ width: displayWidth, height: displayHeight, overflow: 'hidden', flexShrink: 0 }}>
+          <div className="relative" data-page-wrapper="left" style={{ width: displayWidth, height: displayHeight, overflow: 'hidden', flexShrink: 0 }}>
             {loading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80 z-20 rounded">
+              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded ${tc('bg-slate-900/80', 'bg-gray-200/80')}`}>
                 <Loader2 className="animate-spin text-blue-500" size={32} />
               </div>
             )}
             <div className="relative"
               style={{ width: pageData.width, height: pageData.height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               <img src={pageData.image} alt={`Página ${activeDoc.currentPage + 1}`}
-                className="rounded shadow-lg bg-white block" style={{ width: pageData.width, height: pageData.height }} draggable={false} />
+                className="rounded shadow-lg bg-white block" style={{ width: pageData.width, height: pageData.height }} draggable={false}
+                onError={(e) => recoverImage(e.currentTarget, pageData.image)} />
+
+              {/* Crisp deep-zoom overlay for dense plans (single view only) */}
+              {!isDouble && (
+                <DetailTile docId={activeDoc.doc_id} page={activeDoc.currentPage} pageData={pageData}
+                  zoom={activeDoc.zoom} version={activeDoc.docVersion} containerRef={containerRef}
+                  scrollKey={`${store.viewerScroll.left}x${store.viewerScroll.top}`} />
+              )}
 
               {/* Form fields overlay */}
               {formFields.length > 0 && (
@@ -683,10 +1006,14 @@ export default function Viewer() {
                 </div>
               )}
 
+              {/* Selectable text layer */}
+              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} pageData={pageData} active={!store.activeTool} />
+
               {/* Annotation SVG Layer */}
+
               <svg ref={svgRef} width={pageData.width} height={pageData.height}
                 className="absolute top-0 left-0"
-                style={{ pointerEvents: 'auto', cursor: isPanning ? 'grabbing' : store.activeTool ? 'crosshair' : 'grab' }}
+                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: isPanning ? 'grabbing' : store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
                 onDoubleClick={() => { if (drawingArea) closeArea() }}>
                 {/* Existing annotations */}
@@ -726,42 +1053,83 @@ export default function Viewer() {
                   </>
                 )}
 
-                {/* Search highlight */}
-                {searchHighlight && (
-                  <rect x={searchHighlight.x} y={searchHighlight.y} width={searchHighlight.w} height={searchHighlight.h}
-                    fill="#fbbf24" fillOpacity={0.4} stroke="#fbbf24" strokeWidth={1} rx={2}>
-                    <animate attributeName="fill-opacity" values="0.4;0.7;0.4" dur="1.5s" repeatCount="indefinite" />
-                  </rect>
-                )}
+                {/* Search highlights — all results on current page */}
+                {activeDoc && pageData && activeDoc.searchResults.map((r, idx) => {
+                  if (r.page !== activeDoc.currentPage) return null
+                  const isCurrent = idx === activeDoc.searchIndex
+                  const sx = r.x * (pageData.width / pageData.originalWidth)
+                  const sy = r.y * (pageData.height / pageData.originalHeight)
+                  const sw = r.width * (pageData.width / pageData.originalWidth)
+                  const sh = r.height * (pageData.height / pageData.originalHeight)
+                  return (
+                    <rect key={`search-${idx}`} x={sx} y={sy} width={sw} height={sh}
+                      fill={isCurrent ? '#f97316' : '#fbbf24'}
+                      fillOpacity={isCurrent ? 0.5 : 0.25}
+                      stroke={isCurrent ? '#f97316' : '#fbbf24'}
+                      strokeWidth={isCurrent ? 2 : 1}
+                      rx={2}
+                      pointerEvents="none"
+                    >
+                      {isCurrent && <animate attributeName="fill-opacity" values="0.5;0.8;0.5" dur="1.2s" repeatCount="indefinite" />}
+                    </rect>
+                  )
+                })}
 
                 {/* Selection box */}
                 {selectionBox}
                 {resizeHandles}
+                {rotateHandleLeft}
               </svg>
 
               {/* Note input popup */}
               {notePos && (
-                <div className="absolute z-30 bg-slate-800 border border-slate-600 rounded shadow-xl p-2"
+                <div className={`absolute z-30 border rounded shadow-xl p-2 ${tc('bg-slate-800 border-slate-600', 'bg-white border-gray-300')}`}
                   style={{ left: toScreenCoords(notePos.x, notePos.y).x, top: toScreenCoords(notePos.x, notePos.y).y }}>
-                  <input autoFocus className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white w-40"
+                  <input autoFocus className={`border rounded px-2 py-1 text-sm w-40 ${tc('bg-slate-900 border-slate-600 text-white', 'bg-gray-50 border-gray-300 text-gray-900')}`}
                     placeholder="Escribe nota..." value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveNote()} />
                   <div className="flex gap-1 mt-1">
                     <button onClick={saveNote} className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">Guardar</button>
-                    <button onClick={() => { setNotePos(null); setNoteText('') }} className="px-2 py-0.5 bg-slate-600 text-white text-xs rounded">Cancelar</button>
+                    <button onClick={() => { setNotePos(null); setNoteText('') }} className={`px-2 py-0.5 text-xs rounded ${tc('bg-slate-600 text-white', 'bg-gray-200 text-gray-800')}`}>Cancelar</button>
                   </div>
                 </div>
               )}
 
-              {/* Text input popup */}
-              {textPos && (
-                <div className="absolute z-30 bg-slate-800 border border-slate-600 rounded shadow-xl p-2"
-                  style={{ left: toScreenCoords(textPos.x, textPos.y).x, top: toScreenCoords(textPos.y, textPos.y).y }}>
-                  <input autoFocus className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white w-40"
-                    placeholder="Escribe texto..." value={textInput} onChange={(e) => setTextInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveText()} />
-                  <div className="flex gap-1 mt-1">
-                    <button onClick={saveText} className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">Guardar</button>
-                    <button onClick={() => { setTextPos(null); setTextInput('') }} className="px-2 py-0.5 bg-slate-600 text-white text-xs rounded">Cancelar</button>
-                  </div>
+              {/* In-place transparent text editor (new text). Matches the rendered
+                  size/font exactly: lives in the same scaled layer and uses fontSize
+                  in PDF points * bitmapScale. Enter/blur saves, Esc cancels. */}
+              {textPos && (() => {
+                const s = toScreenCoords(textPos.x, textPos.y)
+                const sx2 = pageData.width / pageData.originalWidth
+                const fpx = (store.textFontSize || 14) * sx2
+                return (
+                  <textarea autoFocus
+                    className="absolute z-30 bg-transparent outline-none resize-none overflow-hidden leading-tight"
+                    style={{
+                      left: s.x, top: s.y, fontSize: fpx, fontFamily: store.textFontFamily,
+                      color: store.annotationColor,
+                      width: Math.max(fpx * 6, (textInput.length + 2) * fpx * 0.58),
+                      height: (textInput.split('\n').length) * fpx * 1.3 + fpx * 0.3,
+                      border: '1px dashed rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
+                    }}
+                    placeholder="Escribe…" value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveText() }
+                      else if (e.key === 'Escape') { e.preventDefault(); setTextPos(null); setTextInput('') }
+                    }}
+                    onBlur={() => { if (textInput.trim()) saveText(); else { setTextPos(null); setTextInput('') } }} />
+                )
+              })()}
+
+              {/* Area measurement floating controls */}
+              {drawingArea && (
+                <div className="absolute z-30 bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                  <button onClick={closeArea} className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded shadow-lg hover:bg-blue-500">
+                    Cerrar polígono (Enter)
+                  </button>
+                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-xs rounded shadow-lg ${tc('bg-slate-600 text-white hover:bg-slate-500', 'bg-gray-300 text-gray-800 hover:bg-gray-200')}`}>
+                    Cancelar
+                  </button>
                 </div>
               )}
 
@@ -785,44 +1153,78 @@ export default function Viewer() {
                 )
               })()}
 
-              {/* Inline text edit */}
+              {/* In-place transparent text editor (edit existing) */}
               {editingTextAnn && pageData && activeDoc && (() => {
                 const ann = annotations.find((a) => a.id === editingTextAnn)
                 if (!ann) return null
                 const s = toScreenCoords(ann.x, ann.y)
+                const sx2 = pageData.width / pageData.originalWidth
+                const efs = (ann.fontSize || store.textFontSize || 14) * sx2
                 return (
-                  <div className="absolute z-30 bg-slate-800 border border-blue-500 rounded shadow-xl p-2"
-                    style={{ left: s.x, top: s.y }}>
-                    <textarea autoFocus className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-sm text-white w-48 h-20 resize-none"
-                      value={editTextValue} onChange={(e) => setEditTextValue(e.target.value)} />
-                    <div className="flex gap-1 mt-1">
-                      <button onClick={commitEditText} className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">Guardar</button>
-                      <button onClick={() => { setEditingTextAnn(null); setEditTextValue('') }} className="px-2 py-0.5 bg-slate-600 text-white text-xs rounded">Cancelar</button>
-                    </div>
-                  </div>
+                  <textarea autoFocus
+                    className="absolute z-30 bg-transparent outline-none resize-none overflow-hidden leading-tight"
+                    style={{
+                      left: s.x, top: s.y, fontSize: efs,
+                      fontFamily: ann.fontFamily || store.textFontFamily || 'Arial',
+                      color: ann.color || '#fff',
+                      width: Math.max(efs * 6, (editTextValue.length + 2) * efs * 0.58),
+                      height: (editTextValue.split('\n').length) * efs * 1.3 + efs * 0.3,
+                      border: '1px dashed rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
+                    }}
+                    value={editTextValue} onChange={(e) => setEditTextValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEditText() }
+                      else if (e.key === 'Escape') { e.preventDefault(); setEditingTextAnn(null); setEditTextValue('') }
+                    }}
+                    onBlur={() => commitEditText()} />
                 )
               })()}
             </div>
+            {/* Text selection overlay */}
+            {pageText.length > 0 && (
+              <div className="absolute top-0 left-0" style={{ width: displayWidth, height: displayHeight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>
+                {pageText.map((block, idx) => {
+                  const sx = pageData.width / pageData.originalWidth
+                  const sy = pageData.height / pageData.originalHeight
+                  return (
+                    <span key={idx} className="absolute text-transparent hover:text-black/20" style={{
+                      left: block.x * sx * scale,
+                      top: block.y * sy * scale,
+                      width: block.width * sx * scale,
+                      height: block.height * sy * scale,
+                      fontSize: Math.max(8, block.height * sy * scale * 0.85),
+                      lineHeight: `${block.height * sy * scale}px`,
+                      overflow: 'hidden',
+                    }}>
+                      {block.text}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
         {/* Right page in double view */}
         {isDouble && pageDataRight && (
-          <div className="relative" style={{ width: displayWidthRight, height: displayHeightRight, overflow: 'hidden', flexShrink: 0 }}>
+          <div className="relative" data-page-wrapper="right" style={{ width: displayWidthRight, height: displayHeightRight, overflow: 'hidden', flexShrink: 0 }}>
             {loadingRight && (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 z-20 rounded">
+              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded ${tc('bg-slate-900/60', 'bg-gray-200/60')}`}>
                 <Loader2 className="animate-spin text-blue-500" size={24} />
               </div>
             )}
             <div className="relative"
               style={{ width: pageDataRight.width, height: pageDataRight.height, transform: `scale(${scaleRight})`, transformOrigin: 'top left' }}>
               <img src={pageDataRight.image} alt={`Página ${activeDoc.currentPage + 2}`}
-                className="rounded shadow-lg bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false} />
+                className="rounded shadow-lg bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
+                onError={(e) => recoverImage(e.currentTarget, pageDataRight.image)} />
+
+
 
               {/* Annotation SVG Layer for right page */}
               <svg ref={svgRightRef} width={pageDataRight.width} height={pageDataRight.height}
                 className="absolute top-0 left-0"
-                style={{ pointerEvents: 'auto', cursor: store.activeTool ? 'crosshair' : 'grab' }}
+                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
                 onMouseDown={(e) => {
                   if (!activeDoc || !pageDataRight || store.activeTool) return
                   const pt = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY }
@@ -901,14 +1303,22 @@ export default function Viewer() {
                           <rect x={s.x} y={s.y} width={24} height={24} fill={ann.color || '#fbbf24'} rx={3} />
                         </g>
                       )
-                    case 'text':
+                    case 'text': {
+                      const fontSizeR = ann.fontSize || store.textFontSize || 14
+                      const fontFamilyR = ann.fontFamily || store.textFontFamily || 'Arial'
+                      const sx2r = pageDataRight!.width / pageDataRight!.originalWidth
+                      const sy2r = pageDataRight!.height / pageDataRight!.originalHeight
+                      const displayFontSizeR = fontSizeR * sx2r
+                      const textWidthR = ann.width ? ann.width * sx2r : Math.max(120 * sx2r, (ann.text?.length || 4) * displayFontSizeR * 0.6)
+                      const textHeightR = ann.height ? ann.height * sy2r : Math.max(30 * sy2r, displayFontSizeR * 1.4)
                       return (
-                        <foreignObject key={key} x={s.x} y={s.y} width={Math.max(100, (ann.text?.length || 4) * 8)} height={60} {...clickProps}>
-                          <div className="text-sm leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily: 'sans-serif' }}>
+                        <foreignObject key={key} x={s.x} y={s.y} width={textWidthR} height={textHeightR} {...clickProps}>
+                          <div className="leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily: fontFamilyR, fontSize: displayFontSizeR }}>
                             {ann.text}
                           </div>
                         </foreignObject>
                       )
+                    }
                     case 'measure_distance': {
                       const x2r = s.x + ((ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth))
                       const y2r = s.y + ((ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight))
@@ -922,8 +1332,8 @@ export default function Viewer() {
                           <circle cx={s.x} cy={s.y} r={3} fill={ann.color || '#22d3ee'} />
                           <circle cx={x2r} cy={y2r} r={3} fill={ann.color || '#22d3ee'} />
                           <g transform={`translate(${midXr}, ${midYr}) rotate(${(angler * 180) / Math.PI})`}>
-                            <rect x={-labelr.length * 3.5 - 4} y={-10} width={labelr.length * 7 + 8} height={18} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-                            <text x={0} y={4} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="sans-serif">{labelr}</text>
+                            <rect x={-labelr.length * 4.5 - 6} y={-12} width={labelr.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+                            <text x={0} y={5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{labelr}</text>
                           </g>
                         </g>
                       )
@@ -946,8 +1356,8 @@ export default function Viewer() {
                           {ptsr.map((p, i) => (
                             <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />
                           ))}
-                          <rect x={cxr - labelr.length * 3.5 - 4} y={cyr - 10} width={labelr.length * 7 + 8} height={18} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-                          <text x={cxr} y={cyr + 4} textAnchor="middle" fill="#fff" fontSize="10" fontFamily="sans-serif">{labelr}</text>
+                          <rect x={cxr - labelr.length * 4.5 - 6} y={cyr - 12} width={labelr.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+                          <text x={cxr} y={cyr + 5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{labelr}</text>
                         </g>
                       )
                     }
@@ -957,30 +1367,53 @@ export default function Viewer() {
                 })}
                 {selectionBoxRight}
                 {resizeHandlesRight}
+                {rotateHandleRight}
               </svg>
             </div>
+            {/* Text selection overlay for right page */}
+            {pageTextRight.length > 0 && (
+              <div className="absolute top-0 left-0" style={{ width: displayWidthRight, height: displayHeightRight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>
+                {pageTextRight.map((block, idx) => {
+                  const sx = pageDataRight.width / pageDataRight.originalWidth
+                  const sy = pageDataRight.height / pageDataRight.originalHeight
+                  return (
+                    <span key={idx} className="absolute text-transparent hover:text-black/20" style={{
+                      left: block.x * sx * scaleRight,
+                      top: block.y * sy * scaleRight,
+                      width: block.width * sx * scaleRight,
+                      height: block.height * sy * scaleRight,
+                      fontSize: Math.max(8, block.height * sy * scaleRight * 0.85),
+                      lineHeight: `${block.height * sy * scaleRight}px`,
+                      overflow: 'hidden',
+                    }}>
+                      {block.text}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* Drag & Drop overlay */}
       {isDraggingFile && (
-        <div className="absolute inset-0 z-40 bg-slate-900/80 flex items-center justify-center pointer-events-none">
+        <div className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none ${tc('bg-slate-900/80', 'bg-gray-200/80')}`}>
           <div className="border-2 border-dashed border-blue-400 rounded-2xl p-12 flex flex-col items-center gap-4">
             <svg className="w-16 h-16 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            <span className="text-blue-300 text-lg font-medium">Suelta el PDF aquí</span>
+            <span className="text-blue-500 text-lg font-medium">Suelta el PDF aquí</span>
           </div>
         </div>
       )}
 
       {/* Context Menu */}
       {contextMenu?.visible && activeDoc && (
-        <div className="fixed z-50 bg-slate-800 border border-slate-600 rounded shadow-xl py-1 min-w-[160px]"
+        <div className={`fixed z-50 border rounded shadow-xl py-1 min-w-[160px] ${tc('bg-slate-800 border-slate-600', 'bg-white border-gray-300')}`}
           style={{ left: contextMenu.x, top: contextMenu.y }}>
           {store.selectedAnnotationId && (
-            <button className="w-full text-left px-3 py-1.5 text-sm text-red-400 hover:bg-slate-700"
+            <button className={`w-full text-left px-3 py-1.5 text-sm text-red-400 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}
               onClick={() => {
                 deleteAnnotation(activeDoc.doc_id, store.selectedAnnotationId!)
                 closeMenu()
@@ -988,7 +1421,7 @@ export default function Viewer() {
               Eliminar anotación
             </button>
           )}
-          <button className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+          <button className={`w-full text-left px-3 py-1.5 text-sm ${tc('text-slate-200 hover:bg-slate-700', 'text-gray-800 hover:bg-gray-100')}`}
             onClick={() => {
               addBookmark({
                 id: crypto.randomUUID(),
@@ -1002,7 +1435,7 @@ export default function Viewer() {
             Agregar marcador
           </button>
           {pageData && (
-            <button className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+            <button className={`w-full text-left px-3 py-1.5 text-sm ${tc('text-slate-200 hover:bg-slate-700', 'text-gray-800 hover:bg-gray-100')}`}
               onClick={() => {
                 const link = document.createElement('a')
                 link.download = `${activeDoc.file_name.replace('.pdf', '')}_p${activeDoc.currentPage + 1}.png`
@@ -1013,7 +1446,7 @@ export default function Viewer() {
               Exportar página como imagen
             </button>
           )}
-          <button className="w-full text-left px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
+          <button className={`w-full text-left px-3 py-1.5 text-sm ${tc('text-slate-200 hover:bg-slate-700', 'text-gray-800 hover:bg-gray-100')}`}
             onClick={async () => {
               try {
                 const res = await fetch(`${API_BASE}/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)

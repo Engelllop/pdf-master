@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { usePdfStore } from '../store/usePdfStore'
-import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
+import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, GitCompare } from 'lucide-react'
 import Tooltip from './Tooltip'
+import { useThemeClasses } from '../hooks/useThemeClasses'
 
 const API_BASE = 'http://localhost:8745'
 
@@ -26,42 +27,33 @@ function ComparePagePanel({
 }) {
   const [data, setData] = useState<PageData | null>(null)
   const [loading, setLoading] = useState(false)
-  const store = usePdfStore()
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    // Try cache first
-    const cached = store.getCachedPage(docId, page)
-    if (cached) {
-      setData(cached)
-      setLoading(false)
-      return
-    }
-    fetch(`${API_BASE}/pdf/render/${docId}/${page}?zoom=1.5`)
+    fetch(`${API_BASE}/pdf/page-info/${docId}/${page}?zoom=1.5`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return
-        const pageData = {
-          image: `data:image/png;base64,${d.image_base64}`,
+        setData({
+          image: `${API_BASE}/pdf/page-image/${docId}/${page}?zoom=1.5`,
           width: d.width,
           height: d.height,
           originalWidth: d.original_width,
           originalHeight: d.original_height,
-        }
-        store.cachePage(docId, page, pageData)
-        setData(pageData)
+        })
       })
       .catch(() => setData(null))
-      .finally(() => setLoading(false))
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [docId, page])
 
-  const scale = data ? zoom / 1.5 : 1
+  const scale = data ? zoom / (data.width / data.originalWidth) : 1
 
+  const tc = useThemeClasses()
   return (
-    <div className="flex-1 flex flex-col bg-slate-900 overflow-auto relative">
-      <div className="px-3 py-1 bg-slate-800 border-b border-slate-700 text-xs text-slate-400 flex items-center justify-between">
+    <div className={`flex-1 flex flex-col overflow-auto relative ${tc('bg-slate-900', 'bg-gray-100')}`}>
+      <div className={`px-3 py-1 border-b text-xs flex items-center justify-between ${tc('bg-slate-800 border-slate-700 text-slate-400', 'bg-white border-gray-300 text-gray-500')}`}>
         <span>{label} — Página {page + 1}</span>
         {loading && <span className="text-blue-400 animate-pulse">Cargando...</span>}
       </div>
@@ -70,7 +62,7 @@ function ComparePagePanel({
           <img
             src={data.image}
             alt={`Página ${page + 1}`}
-            className="rounded shadow-lg bg-white"
+            className={`rounded shadow-lg ${tc('bg-white', 'bg-gray-50')}`}
             style={{
               width: data.width * scale,
               height: data.height * scale,
@@ -78,7 +70,7 @@ function ComparePagePanel({
             draggable={false}
           />
         ) : (
-          <div className="text-slate-500 text-sm">Error al cargar página</div>
+          <div className={`text-sm ${tc('text-slate-500', 'text-gray-500')}`}>Error al cargar página</div>
         )}
       </div>
     </div>
@@ -86,15 +78,29 @@ function ComparePagePanel({
 }
 
 export default function ComparisonView() {
+  const tc = useThemeClasses()
   const store = usePdfStore()
   const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = store
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const compareDoc = docs.find((d) => d.doc_id === compareDocId)
 
-  const [zoom, setZoom] = useState(1.5)
+  const [zoom, setZoom] = useState(1.0)
   const [leftPage, setLeftPage] = useState(activeDoc?.currentPage || 0)
   const [rightPage, setRightPage] = useState(activeDoc?.currentPage || 0)
+  const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
+  const [diffLoading, setDiffLoading] = useState(false)
+
+  const runDiff = async () => {
+    if (!activeDoc || !compareDoc) return
+    if (diff) { setDiff(null); return }
+    setDiffLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/pdf/compare-text/${activeDoc.doc_id}/${compareDoc.doc_id}`)
+      const data = await res.json()
+      setDiff(data.diffs || [])
+    } catch { setDiff([]) } finally { setDiffLoading(false) }
+  }
 
   // Sync pages when sync is enabled
   useEffect(() => {
@@ -124,7 +130,7 @@ export default function ComparisonView() {
 
   if (!activeDoc || !compareDoc) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-900 text-slate-400">
+      <div className={`flex-1 flex flex-col items-center justify-center ${tc('bg-slate-900 text-slate-400', 'bg-gray-100 text-gray-500')}`}>
         <p>Documento de comparación no disponible</p>
         <button onClick={clearCompare} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">Salir</button>
       </div>
@@ -132,63 +138,92 @@ export default function ComparisonView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-900">
+    <div className={`flex-1 flex flex-col ${tc('bg-slate-900', 'bg-gray-100')}`}>
       {/* Toolbar de comparación */}
-      <div className="h-11 bg-slate-800 border-b border-slate-700 flex items-center px-3 gap-2 shrink-0">
-        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Comparar</span>
+      <div className={`h-11 border-b flex items-center px-3 gap-2 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+        <span className={`text-xs font-semibold uppercase tracking-wider mr-2 ${tc('text-slate-400', 'text-gray-500')}`}>Comparar</span>
 
         <Tooltip content="Página anterior">
-          <button onClick={goPrev} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+          <button onClick={goPrev} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
             <ChevronLeft size={16} />
           </button>
         </Tooltip>
-        <span className="text-xs text-slate-300 w-24 text-center font-mono">
+        <span className={`text-xs w-24 text-center font-mono ${tc('text-slate-300', 'text-gray-700')}`}>
           {leftPage + 1} / {activeDoc.page_count}
         </span>
         <Tooltip content="Página siguiente">
-          <button onClick={goNext} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+          <button onClick={goNext} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
             <ChevronRight size={16} />
           </button>
         </Tooltip>
 
-        <div className="w-px h-5 bg-slate-700 mx-1" />
+        <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
         <Tooltip content="Alejar">
-          <button onClick={handleZoomOut} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+          <button onClick={handleZoomOut} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
             <ZoomOut size={16} />
           </button>
         </Tooltip>
-        <span className="text-xs text-slate-300 w-12 text-center font-mono">{Math.round(zoom * 100)}%</span>
+        <span className={`text-xs w-12 text-center font-mono ${tc('text-slate-300', 'text-gray-700')}`}>{Math.round(zoom * 100)}%</span>
         <Tooltip content="Acercar">
-          <button onClick={handleZoomIn} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+          <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
             <ZoomIn size={16} />
           </button>
         </Tooltip>
         <Tooltip content="Ajustar">
-          <button onClick={handleFit} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+          <button onClick={handleFit} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
             <Maximize2 size={16} />
           </button>
         </Tooltip>
 
-        <div className="w-px h-5 bg-slate-700 mx-1" />
+        <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
         <Tooltip content={compareSync ? 'Navegación sincronizada' : 'Navegación independiente'}>
           <button
             onClick={() => setCompareSync(!compareSync)}
-            className={`p-1.5 rounded transition-colors ${compareSync ? 'bg-blue-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}
+            className={`p-1.5 rounded transition-colors ${compareSync ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}
           >
             {compareSync ? <Lock size={16} /> : <Unlock size={16} />}
+          </button>
+        </Tooltip>
+
+        <Tooltip content={diff ? 'Ocultar diferencias de texto' : 'Comparar texto'}>
+          <button onClick={runDiff} className={`p-1.5 rounded transition-colors ${diff ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+            <GitCompare size={16} />
           </button>
         </Tooltip>
 
         <div className="flex-1" />
 
         <Tooltip content="Salir de comparación">
-          <button onClick={clearCompare} className="p-1.5 rounded hover:bg-red-900/50 text-red-400 transition-colors flex items-center gap-1 text-xs">
+          <button onClick={clearCompare} className={`p-1.5 rounded transition-colors flex items-center gap-1 text-xs text-red-400 ${tc('hover:bg-red-900/50', 'hover:bg-red-50')}`}>
             <X size={16} /> Salir
           </button>
         </Tooltip>
       </div>
+
+      {/* Panel de diferencias de texto */}
+      {(diff !== null || diffLoading) && (
+        <div className={`max-h-48 overflow-y-auto border-b text-xs ${tc('bg-slate-800 border-slate-700', 'bg-gray-50 border-gray-300')}`}>
+          {diffLoading ? (
+            <div className={`p-2 ${tc('text-slate-400', 'text-gray-500')}`}>Comparando texto…</div>
+          ) : diff && diff.length > 0 ? (
+            <>
+              <div className={`px-3 py-1 font-semibold ${tc('text-slate-300', 'text-gray-700')}`}>{diff.length} página(s) con cambios</div>
+              {diff.map((d) => (
+                <button key={d.page} onClick={() => { setLeftPage(d.page); setRightPage(d.page) }}
+                  className={`block w-full text-left px-3 py-1.5 border-t ${tc('border-slate-700/50 hover:bg-slate-700/40', 'border-gray-200 hover:bg-gray-100')}`}>
+                  <span className={`font-mono mr-2 ${tc('text-slate-400', 'text-gray-500')}`}>Pág {d.page + 1}</span>
+                  {d.removed && <span className="text-red-400 line-through mr-2">{d.removed}</span>}
+                  {d.added && <span className="text-emerald-400">{d.added}</span>}
+                </button>
+              ))}
+            </>
+          ) : (
+            <div className={`p-2 ${tc('text-slate-400', 'text-gray-500')}`}>Sin diferencias de texto</div>
+          )}
+        </div>
+      )}
 
       {/* Paneles lado a lado */}
       <div className="flex-1 flex overflow-hidden">

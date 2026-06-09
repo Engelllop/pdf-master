@@ -58,6 +58,8 @@ class Annotation(BaseModel):
     text: Optional[str] = None
     points: Optional[List[dict]] = None
     lineWidth: Optional[float] = None
+    fontSize: Optional[float] = None
+    fontFamily: Optional[str] = None
     measurement: Optional[MeasurementData] = None
 
 class AnnotationList(BaseModel):
@@ -83,6 +85,80 @@ class InsertTextRequest(BaseModel):
     text: str
     color: str = "#000000"
     fontsize: float = 12.0
+
+class InsertImageRequest(BaseModel):
+    page_num: int
+    x: float
+    y: float
+    width: float
+    height: float
+    image_path: str
+
+class ReorderPagesRequest(BaseModel):
+    new_order: List[int]
+
+class WatermarkRequest(BaseModel):
+    text: str
+    color: str = "#888888"
+    fontsize: float = 48.0
+    angle: int = 45
+    opacity: float = 0.3
+
+class CreateBlankRequest(BaseModel):
+    output_path: str
+    page_width: float = 595.0
+    page_height: float = 842.0
+    page_count: int = 1
+
+class RedactRequest(BaseModel):
+    page_num: int
+    x: float
+    y: float
+    width: float
+    height: float
+
+class CropRequest(BaseModel):
+    page_num: int
+    top: float
+    right: float
+    bottom: float
+    left: float
+
+class RotatePagesRequest(BaseModel):
+    pages: List[int]
+    degrees: int
+
+class HeaderFooterRequest(BaseModel):
+    header: Optional[str] = None
+    footer: Optional[str] = None
+    fontsize: float = 10.0
+    color: str = "#000000"
+
+class OcrResult(BaseModel):
+    text: str
+
+class TextBlock(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+    text: str
+
+class PageText(BaseModel):
+    blocks: List[TextBlock]
+
+class ReplaceTextRequest(BaseModel):
+    query: str
+    replace: str
+    page_num: Optional[int] = None
+    case_sensitive: bool = False
+    replace_all: bool = True
+
+class MetadataRequest(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    subject: Optional[str] = None
+    keywords: Optional[str] = None
 
 class SaveResult(BaseModel):
     success: bool

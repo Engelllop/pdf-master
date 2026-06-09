@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { usePdfStore, type PdfState } from '../store/usePdfStore'
-
-const API_BASE = 'http://localhost:8745'
+import { openDocument } from '../lib/openDocument'
 
 export function useFileDrop() {
-  const store = usePdfStore() as PdfState
   const [isDraggingFile, setIsDraggingFile] = useState(false)
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -24,33 +21,16 @@ export function useFileDrop() {
     const files = Array.from(e.dataTransfer.files)
     const pdf = files.find((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
     if (!pdf) return
-    // @ts-ignore
-    const filePath = pdf.path as string
+    const filePath = window.api.getFilePath(pdf)
     if (!filePath) return
-    try {
-      const res = await fetch(`${API_BASE}/pdf/open`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_path: filePath }),
-      })
-      if (!res.ok) throw new Error('Error abriendo PDF')
-      const data = await res.json()
-      store.addDoc(data)
-    } catch (err: any) { alert('Error: ' + err.message) }
+    await openDocument(filePath)
   }, [])
 
-  // Listen for files opened from main process
+  // Listen for files opened from main process (file association / second instance).
+  // Opened as background tabs so a tool printing 60+ plans at once doesn't render
+  // every document — only the first/active one renders; others render when clicked.
   useEffect(() => {
-    const handler = (path: string) => {
-      fetch(`${API_BASE}/pdf/open`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_path: path }),
-      })
-        .then((res) => res.json())
-        .then((data) => store.addDoc(data))
-        .catch((err) => alert('Error: ' + err.message))
-    }
+    const handler = (path: string) => { openDocument(path, { activate: false }) }
     window.api.onOpenFile(handler)
     return () => { window.api.removeOpenFileListener() }
   }, [])
