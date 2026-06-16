@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { usePdfStore } from './store/usePdfStore'
+import { useStoreSlice } from './hooks/useStoreSlice'
 import Toolbar from './components/Toolbar'
 import ThumbnailPanel from './components/ThumbnailPanel'
 import Viewer from './components/Viewer'
@@ -9,14 +11,40 @@ import Toasts from './components/Toasts'
 import ComparisonView from './components/ComparisonView'
 import PresentationView from './components/PresentationView'
 import ContinuousView from './components/ContinuousView'
+import ShortcutsModal from './components/ShortcutsModal'
 import { openDocument } from './lib/openDocument'
+import { requestCloseDoc } from './lib/closeDocument'
 
 const API_BASE = 'http://localhost:8745'
 
 function App() {
-  const store = usePdfStore()
+  const store = useStoreSlice(
+    'theme', 'readingMode', 'compareMode', 'presentationMode', 'continuousMode',
+    'docs', 'activeDocId', 'toggleReadingMode', 'setActiveDoc', 'nextPage', 'prevPage',
+    'setPage', 'toggleSidebar', 'setZoom', 'setFitMode',
+  )
   const { theme, readingMode, compareMode, presentationMode, continuousMode } = store
   const [backendOk, setBackendOk] = useState(true)
+  const [showShortcuts, setShowShortcuts] = useState(false)
+
+  // Panel de atajos: F1 lo abre/cierra; Esc lo cierra; la toolbar lo abre por evento.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'F1') {
+        e.preventDefault()
+        setShowShortcuts((s) => !s)
+      } else if (e.key === 'Escape') {
+        setShowShortcuts(false)
+      }
+    }
+    const onOpen = () => setShowShortcuts(true)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('app:show-shortcuts', onOpen as EventListener)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('app:show-shortcuts', onOpen as EventListener)
+    }
+  }, [])
 
   useEffect(() => {
     if (theme === 'dark') {
@@ -25,6 +53,12 @@ function App() {
       document.documentElement.classList.remove('dark')
     }
   }, [theme])
+
+  // Informa al main process si hay cambios sin guardar, para que al cerrar la
+  // ventana pregunte antes de descartarlos.
+  useEffect(() => {
+    window.api.setDirtyState(store.docs.some((d) => d.dirty))
+  }, [store.docs])
 
   // Persist the open-document session (paths + page + zoom) so it survives restarts.
   useEffect(() => {
@@ -203,7 +237,7 @@ function App() {
           e.preventDefault()
           {
             const activeDocId = store.activeDocId
-            if (activeDocId) store.closeDoc(activeDocId)
+            if (activeDocId) requestCloseDoc(activeDocId)
           }
           break
         case 'l':
@@ -251,8 +285,9 @@ function App() {
   return (
     <div className={`h-screen w-screen flex flex-col overflow-hidden transition-colors ${theme === 'dark' ? 'bg-slate-900' : 'bg-gray-100'}`}>
       {!backendOk && (
-        <div className="bg-red-600 text-white text-xs text-center py-1 px-3 font-medium">
-          ⚠ Motor PDF desconectado — Guarda tu trabajo y reinicia la aplicación
+        <div className="bg-red-600 text-white text-xs text-center py-1 px-3 font-medium flex items-center justify-center gap-1.5">
+          <AlertTriangle size={13} className="shrink-0" />
+          Motor PDF desconectado — Guarda tu trabajo y reinicia la aplicación
         </div>
       )}
       {!readingMode && <Toolbar />}
@@ -270,6 +305,7 @@ function App() {
       {!readingMode && <StatusBar />}
       <Toasts />
       {presentationMode && <PresentationView />}
+      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </div>
   )
 }

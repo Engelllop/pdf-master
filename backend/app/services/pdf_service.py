@@ -1,5 +1,7 @@
 import fitz  # PyMuPDF
 import base64
+import logging
+import math
 import uuid
 import json
 import os
@@ -9,9 +11,15 @@ from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 
+logger = logging.getLogger("pdfmaster")
+
 
 class PasswordRequiredError(Exception):
     """fitz no define PasswordError; esta señala al router que devuelva 401."""
+
+
+class DocumentNotFoundError(Exception):
+    """doc_id desconocido o archivo ya no disponible; el handler global devuelve 404."""
 
 
 class PdfService:
@@ -36,20 +44,21 @@ class PdfService:
         # so serialize all access to documents and caches.
         self._lock = threading.RLock()
 
-    def _acquire(self, doc_id: str) -> Optional[fitz.Document]:
+    def _acquire(self, doc_id: str) -> fitz.Document:
         """Return the live fitz.Document for doc_id, reopening it from disk if it was
         evicted. Updates LRU recency and evicts other inactive non-dirty docs.
-        Returns None for unknown docs or if the file can't be reopened."""
+        Raises DocumentNotFoundError for unknown docs or if the file can't be reopened."""
         with self._lock:
             if doc_id not in self._infos:
-                return None
+                raise DocumentNotFoundError(f"Unknown document {doc_id}")
             doc = self._docs.get(doc_id)
             if doc is None:
                 info = self._infos[doc_id]
                 try:
                     doc = fitz.open(info.file_path)
                 except Exception:
-                    return None
+                    logger.exception("No se pudo reabrir %s desde %s", doc_id, info.file_path)
+                    raise DocumentNotFoundError(f"File no longer available: {info.file_path}")
                 pw = self._passwords.get(doc_id)
                 if doc.needs_pass and pw:
                     doc.authenticate(pw)
@@ -378,11 +387,13 @@ class PdfService:
         for i in range(len(doc)):
             page = doc.load_page(i)
             rect = page.rect
-            # Approximate centering for rotated text
+            # insert_text(rotate=...) solo acepta múltiplos de 90; el diagonal de 45°
+            # se hace con morph (rotación alrededor del centro de la página).
             text_width = fitz.get_text_length(text, fontsize=fontsize)
-            insert_x = rect.width / 2 - text_width / 4
-            insert_y = rect.height / 2 + fontsize / 4
-            page.insert_text((insert_x, insert_y), text, fontsize=fontsize, color=rgb, rotate=angle, overlay=True)
+            pivot = fitz.Point(rect.width / 2, rect.height / 2)
+            insert = fitz.Point(pivot.x - text_width / 2, pivot.y + fontsize / 4)
+            page.insert_text(insert, text, fontsize=fontsize, color=rgb,
+                             fill_opacity=opacity, morph=(pivot, fitz.Matrix(angle)), overlay=True)
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
         return True
@@ -461,7 +472,10 @@ class PdfService:
                             ws.append([line])
                 wb.save(output_path)
                 return True
+            except DocumentNotFoundError:
+                raise
             except Exception:
+                logger.exception("export_excel falló (doc %s)", doc_id)
                 return False
 
     def ocr_available(self) -> bool:
@@ -538,7 +552,10 @@ class PdfService:
                 slide.shapes.add_picture(img_stream, Inches(0), Inches(0), width=prs.slide_width, height=prs.slide_height)
             prs.save(output_path)
             return True
+        except DocumentNotFoundError:
+            raise
         except Exception:
+            logger.exception("export_pptx falló (doc %s)", doc_id)
             return False
 
     def ocr_page(self, doc_id: str, page_num: int) -> Optional[str]:
@@ -554,6 +571,7 @@ class PdfService:
             img = Image.open(BytesIO(pix.tobytes("png")))
             return pytesseract.image_to_string(img, lang='spa+eng')
         except Exception:
+            logger.exception("ocr_page falló (doc %s, página %s)", doc_id, page_num)
             return None
 
     def get_page_text_data(self, doc_id: str, page_num: int) -> Optional[dict]:
@@ -605,6 +623,7 @@ class PdfService:
             self._invalidate_render_cache(doc_id)
             return True
         except Exception:
+            logger.exception("merge_pdf falló (doc %s, fuente %s)", doc_id, source_path)
             return False
 
     def split_pages(self, doc_id: str, pages: List[int], output_path: Optional[str] = None) -> Optional[str]:
@@ -628,6 +647,7 @@ class PdfService:
             doc.save(output_path, garbage=4, deflate=True, clean=True)
             return True
         except Exception:
+            logger.exception("compress falló (doc %s → %s)", doc_id, output_path)
             return False
 
     def save(self, doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
@@ -658,6 +678,7 @@ class PdfService:
                     self._dirty[doc_id] = False
                 return save_path
             except Exception:
+                logger.exception("save falló (doc %s → %s)", doc_id, save_path)
                 try:
                     if temp_path and os.path.exists(temp_path):
                         os.remove(temp_path)
@@ -764,6 +785,7 @@ class PdfService:
                 data = json.load(f)
             return [Annotation(**ann) for ann in data.get('annotations', [])]
         except Exception:
+            logger.exception("Sidecar de anotaciones corrupto: %s", path)
             return []
 
     def save_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
@@ -776,6 +798,7 @@ class PdfService:
                 json.dump({"version": 1, "annotations": [ann.model_dump() for ann in annotations]}, f, indent=2)
             return True
         except Exception:
+            logger.exception("No se pudo escribir el sidecar %s", path)
             return False
 
     def embed_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
@@ -791,7 +814,18 @@ class PdfService:
                 return tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4))
             except Exception:
                 return (0, 0, 0)
-        
+
+        def dashes_for(ann: Annotation) -> Optional[str]:
+            lw = ann.lineWidth or 2
+            if ann.lineStyle == 'dashed':
+                return f"[{lw * 3:.1f} {lw * 2:.1f}] 0"
+            if ann.lineStyle == 'dotted':
+                return f"[0.1 {lw * 2:.1f}] 0"
+            return None
+
+        def stroke_op(ann: Annotation) -> float:
+            return ann.opacity if ann.opacity is not None else 1.0
+
         for ann in annotations:
             if ann.page < 0 or ann.page >= len(doc):
                 continue
@@ -803,43 +837,62 @@ class PdfService:
                 annot = page.add_highlight_annot(rect)
                 if annot:
                     annot.set_colors(stroke=color)
+                    if ann.opacity is not None:
+                        annot.set_opacity(float(ann.opacity))
                     annot.update()
             elif ann.type == 'underline':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_underline_annot(rect)
                 if annot:
                     annot.set_colors(stroke=color)
+                    if ann.opacity is not None:
+                        annot.set_opacity(float(ann.opacity))
                     annot.update()
             elif ann.type == 'strikethrough':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_strikeout_annot(rect)
                 if annot:
                     annot.set_colors(stroke=color)
+                    if ann.opacity is not None:
+                        annot.set_opacity(float(ann.opacity))
                     annot.update()
             elif ann.type == 'rect':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                page.draw_rect(rect, color=color, width=ann.lineWidth or 2)
+                page.draw_rect(rect, color=color, width=ann.lineWidth or 2,
+                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
+                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
+                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
             elif ann.type == 'circle':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                page.draw_oval(rect, color=color, width=ann.lineWidth or 2)
+                page.draw_oval(rect, color=color, width=ann.lineWidth or 2,
+                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
+                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
+                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
             elif ann.type == 'arrow':
                 x1, y1 = ann.x, ann.y
                 x2, y2 = ann.x + (ann.width or 0), ann.y + (ann.height or 0)
-                page.draw_line(fitz.Point(x1, y1), fitz.Point(x2, y2), color=color, width=ann.lineWidth or 2)
+                page.draw_line(fitz.Point(x1, y1), fitz.Point(x2, y2), color=color, width=ann.lineWidth or 2,
+                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann))
                 # Arrowhead
-                angle = fitz.utils.degrees(fitz.utils.atan2(y2 - y1, x2 - x1))
-                head_len = 10
+                angle = math.atan2(y2 - y1, x2 - x1)
+                head_len = max(8, (ann.lineWidth or 2) * 4)
                 p1 = fitz.Point(x2, y2)
-                p2 = fitz.Point(x2 - head_len * fitz.utils.cos(angle - 30), y2 - head_len * fitz.utils.sin(angle - 30))
-                p3 = fitz.Point(x2 - head_len * fitz.utils.cos(angle + 30), y2 - head_len * fitz.utils.sin(angle + 30))
-                page.draw_polygon([p1, p2, p3], color=color, fill=color)
+                p2 = fitz.Point(x2 - head_len * math.cos(angle - math.pi / 6), y2 - head_len * math.sin(angle - math.pi / 6))
+                p3 = fitz.Point(x2 - head_len * math.cos(angle + math.pi / 6), y2 - head_len * math.sin(angle + math.pi / 6))
+                shape = page.new_shape()
+                shape.draw_polyline([p1, p2, p3])
+                shape.finish(color=color, fill=color, closePath=True,
+                             stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
+                shape.commit()
             elif ann.type == 'draw':
                 if ann.points and len(ann.points) > 1:
-                    pts = [fitz.Point(p.x, p.y) for p in ann.points]
-                    page.draw_polyline(pts, color=color, width=ann.lineWidth or 2)
+                    # points llegan como dicts del JSON, no objetos (p["x"], no p.x)
+                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
+                    page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
+                                       dashes=dashes_for(ann), stroke_opacity=stroke_op(ann))
             elif ann.type == 'signature':
                 if ann.points and len(ann.points) > 1:
-                    pts = [fitz.Point(p.x, p.y) for p in ann.points]
+                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
                     page.draw_polyline(pts, color=(0, 0, 0), width=3)
             elif ann.type == 'text':
                 fs = ann.fontSize or 14
@@ -972,8 +1025,10 @@ class PdfService:
                 "filename": os.path.basename(doc.name).replace('.pdf', '.docx'),
                 "data_base64": base64.b64encode(data).decode('utf-8'),
             }
-        except Exception as e:
-            print("Export word error:", e)
+        except DocumentNotFoundError:
+            raise
+        except Exception:
+            logger.exception("export_word falló (doc %s)", doc_id)
             return None
 
     def get_form_fields(self, doc_id: str, page_num: int) -> List[dict]:
@@ -1041,7 +1096,10 @@ class PdfService:
                 os.rename(temp_path, save_path)
             self._dirty[doc_id] = False
             return save_path
+        except DocumentNotFoundError:
+            raise
         except Exception:
+            logger.exception("save_with_password falló (doc %s)", doc_id)
             return None
 
     def duplicate_page(self, doc_id: str, page_num: int) -> bool:

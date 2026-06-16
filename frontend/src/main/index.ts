@@ -14,6 +14,9 @@ app.commandLine.appendSwitch('max-old-space-size', '4096')
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 const fileQueue: string[] = []
+// El renderer reporta si hay documentos con cambios sin guardar; al cerrar la
+// ventana se confirma antes de descartarlos (no hay autoguardado).
+let hasUnsavedChanges = false
 
 // Safe logging to file (avoids EPIPE when no console is attached)
 const logDir = join(app.getPath('userData'), 'logs')
@@ -130,6 +133,21 @@ function createWindow(): void {
   mainWindow.setAlwaysOnTop(true, 'screen-saver')
   mainWindow.setAlwaysOnTop(false)
 
+  mainWindow.on('close', (e) => {
+    if (!hasUnsavedChanges || !mainWindow) return
+    const choice = dialog.showMessageBoxSync(mainWindow, {
+      type: 'warning',
+      title: 'Cambios sin guardar',
+      message: 'Hay documentos con cambios sin guardar.',
+      detail: 'Si sales ahora, los cambios se perderán. Usa Guardar antes de salir si quieres conservarlos.',
+      buttons: ['Salir sin guardar', 'Cancelar'],
+      defaultId: 1,
+      cancelId: 1,
+    })
+    if (choice === 1) e.preventDefault()
+    else hasUnsavedChanges = false
+  })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
     mainWindow?.focus()
@@ -235,14 +253,17 @@ function handleFileOpen(filePath: string) {
   }
 }
 
-// Single instance lock
+// Single instance lock. app.exit() (no app.quit()): quit es asíncrono y la
+// instancia secundaria alcanzaba a ejecutar whenReady -> killExistingBackend,
+// matando el pdf-engine de la instancia principal (doc_ids muertos, páginas 404).
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
-  app.quit()
+  app.exit(0)
 } else {
   app.on('second-instance', (_event, commandLine) => {
-    const filePath = commandLine.find((arg) => arg.toLowerCase().endsWith('.pdf'))
-    if (filePath) handleFileOpen(filePath)
+    commandLine
+      .filter((arg) => arg.toLowerCase().endsWith('.pdf'))
+      .forEach((f) => handleFileOpen(f))
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
@@ -308,6 +329,10 @@ app.whenReady().then(async () => {
     safeLog('RENDERER', String(message).slice(0, 2000))
   })
 
+  ipcMain.on('app:dirty-state', (_event, dirty: boolean) => {
+    hasUnsavedChanges = !!dirty
+  })
+
   ipcMain.handle('file:readBase64', async (_event, filePath: string) => {
     try {
       const buffer = readFileSync(filePath)
@@ -318,9 +343,10 @@ app.whenReady().then(async () => {
     }
   })
 
-  // Check for file argument on launch
-  const pdfArg = process.argv.find((arg) => arg.toLowerCase().endsWith('.pdf'))
-  if (pdfArg) fileQueue.push(pdfArg)
+  // Check for file arguments on launch
+  process.argv
+    .filter((arg) => arg.toLowerCase().endsWith('.pdf'))
+    .forEach((arg) => fileQueue.push(arg))
 
   // Create window immediately — don't block on backend startup
   createWindow()

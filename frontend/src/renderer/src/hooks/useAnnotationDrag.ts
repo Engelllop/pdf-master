@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { usePdfStore, type Annotation, type PdfState } from '../store/usePdfStore'
+import { type Annotation } from '../store/usePdfStore'
+import { useStoreSlice } from './useStoreSlice'
 
 export type ResizeCorner = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
@@ -10,7 +11,10 @@ export function useAnnotationDrag(
   toScreenCoords: (pdfX: number, pdfY: number) => { x: number; y: number },
   getAnnotationBounds: (ann: Annotation, pageData: { width: number; height: number; originalWidth: number; originalHeight: number }, toScreen: (x: number, y: number) => { x: number; y: number }) => { x: number; y: number; w: number; h: number } | null,
 ) {
-  const store = usePdfStore() as PdfState
+  const store = useStoreSlice(
+    'selectedAnnotationId', 'selectAnnotation', 'updateAnnotation',
+    'activeTool', 'docs', 'getAnnotationsForPage',
+  )
   const { selectedAnnotationId, selectAnnotation, updateAnnotation } = store
 
   const [draggingAnn, setDraggingAnn] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)

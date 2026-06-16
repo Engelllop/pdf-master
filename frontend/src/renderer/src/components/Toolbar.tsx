@@ -1,4 +1,4 @@
-import { usePdfStore } from '../store/usePdfStore'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   FolderOpen, Save, FilePlus, Minimize2, Trash2, RotateCw, RotateCcw,
   ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCcw as ResetZoom,
@@ -6,32 +6,51 @@ import {
   X, ChevronDown, ChevronUp, Merge, Undo2, Redo2,
   Sun, Moon, BookOpen, ArrowLeft, ArrowRight, Printer,
   Mail, FileDown, Clock, GitCompare, RefreshCw, Scissors, Stamp, FileText, Presentation, ScrollText,
-  Volume2, VolumeX, ScanText, MonitorPlay, Loader2, ChevronsUpDown,
+  Volume2, VolumeX, ScanText, MonitorPlay, HelpCircle,
 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import Tooltip from './Tooltip'
+import TabStrip from './TabStrip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { openDocument } from '../lib/openDocument'
+import { requestCloseDoc } from '../lib/closeDocument'
 
 const API_BASE = 'http://localhost:8745'
 
 export default function Toolbar() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
   const {
     docs, activeDocId, sidebarOpen, toolsPanelOpen,
-    toggleSidebar, toggleToolsPanel, addDoc, closeDoc,
-    setActiveDoc, setPage, nextPage, prevPage, setZoom,
+    toggleSidebar, toggleToolsPanel, addDoc,
+    setPage, nextPage, prevPage, setZoom,
     setFitMode, computeFitZoom, viewerWidth, viewerHeight,
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
     updateDocPageCount, updateDocPageSizes, showToast,
     setDocDirty, undo, redo, invalidatePageCache, invalidateThumbnails, setSaveStatus,
-    theme, setTheme, readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode, autoSaveEnabled, setAutoSaveEnabled, goBack, goForward, navHistoryIndex, navHistory,
+    theme, setTheme, readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode, goBack, goForward, navHistoryIndex, navHistory,
     toggleCompareMode, setCompareDoc, compareMode, compareDocId, incrementDocVersion,
-    loadingDocId,
-  } = store
+  } = useStoreSlice(
+    'docs', 'activeDocId', 'sidebarOpen', 'toolsPanelOpen',
+    'toggleSidebar', 'toggleToolsPanel', 'addDoc',
+    'setPage', 'nextPage', 'prevPage', 'setZoom',
+    'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
+    'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
+    'updateDocPageCount', 'updateDocPageSizes', 'showToast',
+    'setDocDirty', 'undo', 'redo', 'invalidatePageCache', 'invalidateThumbnails', 'setSaveStatus',
+    'theme', 'setTheme', 'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode', 'goBack', 'goForward', 'navHistoryIndex', 'navHistory',
+    'toggleCompareMode', 'setCompareDoc', 'compareMode', 'compareDocId', 'incrementDocVersion',
+  )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+
+  // Único punto de error de los handlers: toast al usuario + traza a backend.log
+  // (antes había ~25 catch idénticos que tragaban el stack).
+  const toastActionError = (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err)
+    window.api.logError(`[toolbar] ${err instanceof Error ? err.stack || msg : msg}`).catch(() => {})
+    showToast('Error: ' + msg, 'error')
+  }
+
   const [searchInput, setSearchInput] = useState('')
   const [showSearch, setShowSearch] = useState(false)
   const [replaceInput, setReplaceInput] = useState('')
@@ -39,19 +58,10 @@ export default function Toolbar() {
   const [replaceAllPages, setReplaceAllPages] = useState(true)
   const [menuOpen, setMenuOpen] = useState<string | null>(null)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [tabMenu, setTabMenu] = useState<{ docId: string; path: string; x: number; y: number } | null>(null)
-  const [tabListOpen, setTabListOpen] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
-  const tabStripRef = useRef<HTMLDivElement>(null)
-
-  // Keep the active tab visible when switching via keyboard / tab list.
-  useEffect(() => {
-    if (!activeDocId || !tabStripRef.current) return
-    tabStripRef.current.querySelector(`[data-tab-id="${activeDocId}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
-  }, [activeDocId])
 
   useEffect(() => {
     if (showSearch && searchRef.current) searchRef.current.focus()
@@ -113,9 +123,9 @@ export default function Toolbar() {
         setSaveStatus('idle')
         showToast('Error al guardar', 'error')
       }
-    } catch (err: any) {
+    } catch (err) {
       setSaveStatus('idle')
-      showToast('Error: ' + err.message, 'error')
+      toastActionError(err)
     }
   }
 
@@ -130,8 +140,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al guardar', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -149,8 +159,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al exportar a Word', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -166,7 +176,7 @@ export default function Toolbar() {
         incrementDocVersion(activeDoc.doc_id)
         showToast('Numeración aplicada', 'success')
       } else showToast('Error al numerar páginas', 'error')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { toastActionError(err) }
   }
 
   const handleMarkupSummary = async () => {
@@ -184,7 +194,7 @@ export default function Toolbar() {
         link.click()
         showToast('Resumen de marcas generado', 'success')
       } else showToast('Error al generar resumen', 'error')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { toastActionError(err) }
   }
 
   const handleRedactMatches = async () => {
@@ -200,7 +210,7 @@ export default function Toolbar() {
         incrementDocVersion(activeDoc.doc_id)
         showToast(`${data.redacted} ocurrencia(s) redactada(s)`, 'success')
       } else showToast('Error al redactar', 'error')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { toastActionError(err) }
   }
 
   const handleMakeSearchable = async () => {
@@ -219,7 +229,7 @@ export default function Toolbar() {
       } else if (res.status === 503) {
         showToast('Tesseract OCR no está instalado', 'error')
       } else showToast('Error en OCR', 'error')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { toastActionError(err) }
   }
 
   const handleNewWindow = () => { window.api.newWindow() }
@@ -279,9 +289,9 @@ export default function Toolbar() {
         setSaveStatus('idle')
         showToast('Error al guardar con contraseña', 'error')
       }
-    } catch (err: any) {
+    } catch (err) {
       setSaveStatus('idle')
-      showToast('Error: ' + err.message, 'error')
+      toastActionError(err)
     }
   }
 
@@ -300,8 +310,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al crear PDF', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -323,8 +333,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al agregar marca de agua', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -351,8 +361,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al redactar', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -379,8 +389,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al recortar', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -395,8 +405,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al exportar', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -411,8 +421,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al exportar', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -426,8 +436,8 @@ export default function Toolbar() {
       } else {
         showToast('OCR falló o Tesseract no está instalado', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -447,8 +457,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al exportar imagen', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -474,8 +484,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al actualizar metadatos', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -500,8 +510,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al agregar encabezado/pie', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -530,8 +540,8 @@ export default function Toolbar() {
           showToast('PDFs combinados', 'success')
         }
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -545,8 +555,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al comprimir', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -598,8 +608,8 @@ export default function Toolbar() {
       } else {
         showToast('Error al dividir PDF', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -627,8 +637,8 @@ export default function Toolbar() {
       setCompareDoc(docId)
       toggleCompareMode()
       showToast('Modo comparación activado', 'success')
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -646,8 +656,8 @@ export default function Toolbar() {
         incrementDocVersion(activeDoc.doc_id)
         showToast(`Página rotada ${degrees}°`, 'success')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -665,8 +675,8 @@ export default function Toolbar() {
         incrementDocVersion(activeDoc.doc_id)
         showToast(`Documento rotado ${degrees}°`, 'success')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -691,8 +701,8 @@ export default function Toolbar() {
           showToast('Página eliminada', 'success')
         }
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -746,8 +756,8 @@ export default function Toolbar() {
           showToast('Texto no encontrado', 'info')
         }
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -779,8 +789,8 @@ export default function Toolbar() {
           showToast('Texto no encontrado', 'info')
         }
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      toastActionError(err)
     }
   }
 
@@ -801,7 +811,7 @@ export default function Toolbar() {
             <FolderOpen size={15} /> <span>Archivo</span>
           </button>
           {menuOpen === 'file' && (
-            <div className={`absolute top-full left-0 z-50 w-56 border rounded shadow-xl py-1 max-h-[80vh] overflow-y-auto ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+            <div className={`menu-pop absolute top-full left-0 z-50 w-56 border rounded shadow-xl py-1 max-h-[80vh] overflow-y-auto ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
               <MenuItem icon={FolderOpen} label="Abrir..." onClick={handleOpen} />
               <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
               <MenuItem icon={Save} label="Guardar" onClick={handleSave} disabled={!activeDoc} />
@@ -827,7 +837,6 @@ export default function Toolbar() {
               <MenuItem icon={FileText} label="Editar metadatos..." onClick={handleEditMetadata} disabled={!activeDoc} />
               <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
               <MenuItem icon={MonitorPlay} label="Nueva ventana" onClick={handleNewWindow} />
-              <MenuItem icon={Save} label={autoSaveEnabled ? 'Autoguardado: Activado ✓' : 'Autoguardado: Desactivado'} onClick={() => setAutoSaveEnabled(!autoSaveEnabled)} />
               <div className="relative">
                 <button onClick={() => setSplitSubmenuOpen(!splitSubmenuOpen)} disabled={!activeDoc}
                   className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left rounded transition-colors ${!activeDoc ? 'opacity-40 cursor-not-allowed' : tc('hover:bg-slate-700 text-slate-200', 'hover:bg-gray-100 text-gray-800')}`}>
@@ -848,7 +857,7 @@ export default function Toolbar() {
               </div>
               <MenuItem icon={Minimize2} label="Comprimir PDF" onClick={handleCompress} disabled={!activeDoc} />
               <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
-              <MenuItem icon={X} label="Cerrar documento" onClick={() => activeDoc && closeDoc(activeDoc.doc_id)} disabled={!activeDoc} />
+              <MenuItem icon={X} label="Cerrar documento" onClick={() => activeDoc && requestCloseDoc(activeDoc.doc_id)} disabled={!activeDoc} />
               {recentFiles.length > 0 && (
                 <>
                   <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
@@ -868,58 +877,10 @@ export default function Toolbar() {
           )}
         </div>
 
-        <div className="flex-1 flex items-center overflow-x-auto no-scrollbar" ref={tabStripRef}>
-          {docs.map((doc) => (
-            <div key={doc.doc_id} data-tab-id={doc.doc_id} onClick={() => setActiveDoc(doc.doc_id)}
-              onContextMenu={(e) => { e.preventDefault(); setTabMenu({ docId: doc.doc_id, path: doc.file_path, x: e.clientX, y: e.clientY }) }}
-              title={doc.file_path}
-              className={`group flex items-center gap-2 px-4 h-full border-r cursor-pointer text-sm min-w-fit transition-colors ${
-                doc.doc_id === activeDocId
-                  ? tc('bg-slate-800 text-slate-100 border-t-2 border-t-blue-500 border-slate-700', 'bg-gray-100 text-gray-900 border-t-2 border-t-blue-500 border-gray-300')
-                  : tc('bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-slate-700', 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 border-gray-300')
-              }`}>
-              {loadingDocId === doc.doc_id && <Loader2 size={12} className="animate-spin text-blue-400 shrink-0" />}
-              <span className="truncate max-w-[140px]">{doc.dirty ? '● ' : ''}{doc.file_name}</span>
-              <button onClick={(e) => { e.stopPropagation(); closeDoc(doc.doc_id) }}
-                className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity ${tc('hover:bg-slate-600', 'hover:bg-gray-200')}`}>
-                <X size={12} />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {docs.length > 1 && (
-          <div className="relative h-full flex items-center">
-            <Tooltip content="Ir a pestaña…">
-              <button onClick={() => setTabListOpen((o) => !o)} aria-label="Lista de pestañas"
-                className={`p-2 h-full transition-colors ${tabListOpen ? 'text-blue-400' : tc('text-slate-400', 'text-gray-500')} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-                <ChevronsUpDown size={16} />
-              </button>
-            </Tooltip>
-            {tabListOpen && (
-              <>
-                <div className="fixed inset-0 z-[60]" onClick={() => setTabListOpen(false)} />
-                <div className={`absolute right-0 top-full z-[61] mt-0 w-72 max-h-[60vh] overflow-y-auto py-1 rounded-b-md border shadow-xl text-sm ${tc('bg-slate-800 border-slate-700 text-slate-200', 'bg-white border-gray-300 text-gray-800')}`}>
-                  {docs.map((doc) => (
-                    <button key={doc.doc_id}
-                      onClick={() => { setActiveDoc(doc.doc_id); setTabListOpen(false) }}
-                      title={doc.file_path}
-                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${doc.doc_id === activeDocId ? tc('bg-slate-700', 'bg-gray-100') : ''} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-                      {loadingDocId === doc.doc_id
-                        ? <Loader2 size={13} className="animate-spin text-blue-400 shrink-0" />
-                        : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : tc('text-slate-500', 'text-gray-400')}`} />}
-                      <span className="truncate flex-1">{doc.dirty ? '● ' : ''}{doc.file_name}</span>
-                      {doc.doc_id === activeDocId && <span className="text-[10px] text-blue-400 shrink-0">activo</span>}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        <TabStrip />
 
         <div className="flex items-center h-full">
-          <Tooltip content={sidebarOpen ? 'Ocultar páginas (Ctrl+Shift+L)' : 'Mostrar páginas (Ctrl+Shift+L)'}>
+          <Tooltip content={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'} shortcut="Ctrl+Shift+L">
             <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
               className={`p-2 h-full transition-colors ${sidebarOpen ? 'text-blue-400' : tc('text-slate-400', 'text-gray-500')} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
               <PanelLeft size={16} />
@@ -954,30 +915,30 @@ export default function Toolbar() {
               </button>
             </Tooltip>
             <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
-            <Tooltip content="Alejar (-)">
-              <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} aria-label="Alejar" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Alejar" shortcut="Ctrl+-">
+              <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} aria-label="Alejar" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ZoomOut size={16} />
               </button>
             </Tooltip>
             <span className={`text-xs w-12 text-center font-mono ${tc('text-slate-300', 'text-gray-700')}`}>{Math.round(activeDoc.zoom * 100)}%</span>
-            <Tooltip content="Acercar (+)">
-              <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} aria-label="Acercar" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Acercar" shortcut="Ctrl++">
+              <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} aria-label="Acercar" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ZoomIn size={16} />
               </button>
             </Tooltip>
-            <Tooltip content="Zoom 100% (Ctrl+0)">
-              <button onClick={() => { setZoom(activeDoc.doc_id, 1); setFitMode(activeDoc.doc_id, 'custom') }} aria-label="Zoom 100%" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Zoom 100%" shortcut="Ctrl+0">
+              <button onClick={() => { setZoom(activeDoc.doc_id, 1); setFitMode(activeDoc.doc_id, 'custom') }} aria-label="Zoom 100%" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ResetZoom size={16} />
               </button>
             </Tooltip>
           </div>
 
-          <div className="w-px h-5 bg-slate-700 mx-1" />
+          <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
           <div className="flex items-center gap-1">
-            <Tooltip content="Página anterior">
+            <Tooltip content="Página anterior" shortcut="↑ / PgUp">
               <button onClick={() => prevPage(activeDoc.doc_id)} disabled={activeDoc.currentPage === 0} aria-label="Página anterior"
-                className="p-1.5 rounded hover:bg-slate-700 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+                className={`p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ChevronLeft size={16} />
               </button>
             </Tooltip>
@@ -987,7 +948,7 @@ export default function Toolbar() {
                 className={`w-10 border rounded px-1 py-0.5 text-center focus:outline-none focus:border-blue-500 ${tc('bg-slate-900 border-slate-600 text-slate-200', 'bg-white border-gray-300 text-gray-800')}`} />
               <span className={tc('text-slate-400', 'text-gray-500')}>/ {activeDoc.page_count}</span>
             </div>
-            <Tooltip content="Página siguiente">
+            <Tooltip content="Página siguiente" shortcut="↓ / PgDn">
               <button onClick={() => nextPage(activeDoc.doc_id)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1} aria-label="Página siguiente"
                 className={`p-1.5 rounded disabled:opacity-30 disabled:cursor-not-allowed transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ChevronRight size={16} />
@@ -995,53 +956,53 @@ export default function Toolbar() {
             </Tooltip>
           </div>
 
-          <div className="w-px h-5 bg-slate-700 mx-1" />
+          <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
           <div className="flex items-center gap-1">
-            <Tooltip content="Deshacer (Ctrl+Z)">
-              <button onClick={undo} aria-label="Deshacer" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Deshacer" shortcut="Ctrl+Z">
+              <button onClick={undo} aria-label="Deshacer" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <Undo2 size={16} />
               </button>
             </Tooltip>
-            <Tooltip content="Rehacer (Ctrl+Y)">
-              <button onClick={redo} aria-label="Rehacer" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Rehacer" shortcut="Ctrl+Y">
+              <button onClick={redo} aria-label="Rehacer" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <Redo2 size={16} />
               </button>
             </Tooltip>
             <Tooltip content="Atrás">
               <button onClick={() => activeDoc && goBack(activeDoc.doc_id)} disabled={navHistoryIndex <= 0}
-                aria-label="Atrás" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 disabled:opacity-30 transition-colors">
+                aria-label="Atrás" className={`p-1.5 rounded disabled:opacity-30 transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ArrowLeft size={16} />
               </button>
             </Tooltip>
             <Tooltip content="Adelante">
               <button onClick={() => activeDoc && goForward(activeDoc.doc_id)} disabled={navHistoryIndex >= navHistory.length - 1}
-                aria-label="Adelante" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 disabled:opacity-30 transition-colors">
+                aria-label="Adelante" className={`p-1.5 rounded disabled:opacity-30 transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ArrowRight size={16} />
               </button>
             </Tooltip>
           </div>
 
-          <div className="w-px h-5 bg-slate-700 mx-1" />
+          <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
           <div className="flex items-center gap-1">
-            <Tooltip content="Rotar 90° CCW">
-              <button onClick={() => handleRotate(-90)} aria-label="Rotar 90° en sentido antihorario" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Rotar página 90° a la izquierda">
+              <button onClick={() => handleRotate(-90)} aria-label="Rotar 90° en sentido antihorario" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <RotateCcw size={16} />
               </button>
             </Tooltip>
-            <Tooltip content="Rotar 90° CW">
-              <button onClick={() => handleRotate(90)} aria-label="Rotar 90° en sentido horario" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Rotar página 90° a la derecha">
+              <button onClick={() => handleRotate(90)} aria-label="Rotar 90° en sentido horario" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <RotateCw size={16} />
               </button>
             </Tooltip>
-            <Tooltip content="Rotar TODO 90° CCW">
-              <button onClick={() => handleRotateAll(-90)} aria-label="Rotar todo el documento 90° antihorario" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
-                <RefreshCw size={16} />
+            <Tooltip content="Rotar todas las páginas 90° a la izquierda">
+              <button onClick={() => handleRotateAll(-90)} aria-label="Rotar todo el documento 90° antihorario" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
+                <RefreshCw size={16} className="-scale-x-100" />
               </button>
             </Tooltip>
-            <Tooltip content="Rotar TODO 90° CW">
-              <button onClick={() => handleRotateAll(90)} aria-label="Rotar todo el documento 90° horario" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+            <Tooltip content="Rotar todas las páginas 90° a la derecha">
+              <button onClick={() => handleRotateAll(90)} aria-label="Rotar todo el documento 90° horario" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <RefreshCw size={16} />
               </button>
             </Tooltip>
@@ -1056,38 +1017,43 @@ export default function Toolbar() {
 
           <div className="flex items-center gap-1">
             <Tooltip content="Imprimir">
-              <button onClick={() => window.print()} aria-label="Imprimir" className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+              <button onClick={() => window.print()} aria-label="Imprimir" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <Printer size={16} />
               </button>
             </Tooltip>
             <Tooltip content={readingMode ? 'Salir de modo lectura' : 'Modo lectura'}>
-              <button onClick={toggleReadingMode} aria-label={readingMode ? 'Salir de modo lectura' : 'Modo lectura'} className={`p-1.5 rounded transition-colors ${readingMode ? 'bg-blue-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}>
+              <button onClick={toggleReadingMode} aria-label={readingMode ? 'Salir de modo lectura' : 'Modo lectura'} className={`p-1.5 rounded transition-colors ${readingMode ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <BookOpen size={16} />
               </button>
             </Tooltip>
             <Tooltip content={continuousMode ? 'Vista de página única' : 'Scroll continuo'}>
-              <button onClick={() => toggleContinuousMode()} disabled={!activeDoc} aria-label="Scroll continuo" className={`p-1.5 rounded transition-colors disabled:opacity-30 ${continuousMode ? 'bg-blue-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}>
+              <button onClick={() => toggleContinuousMode()} disabled={!activeDoc} aria-label="Scroll continuo" className={`p-1.5 rounded transition-colors disabled:opacity-30 ${continuousMode ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <ScrollText size={16} />
               </button>
             </Tooltip>
             <Tooltip content="Modo presentación">
-              <button onClick={() => togglePresentationMode()} disabled={!activeDoc} aria-label="Modo presentación" className="p-1.5 rounded transition-colors hover:bg-slate-700 text-slate-300 disabled:opacity-30">
+              <button onClick={() => togglePresentationMode()} disabled={!activeDoc} aria-label="Modo presentación" className={`p-1.5 rounded transition-colors disabled:opacity-30 ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 <Presentation size={16} />
               </button>
             </Tooltip>
             <Tooltip content={isSpeaking ? 'Detener lectura' : 'Leer página en voz alta'}>
-              <button onClick={handleReadAloud} disabled={!activeDoc} aria-label="Leer en voz alta" className={`p-1.5 rounded transition-colors disabled:opacity-30 ${isSpeaking ? 'bg-blue-600 text-white' : 'hover:bg-slate-700 text-slate-300'}`}>
+              <button onClick={handleReadAloud} disabled={!activeDoc} aria-label="Leer en voz alta" className={`p-1.5 rounded transition-colors disabled:opacity-30 ${isSpeaking ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 {isSpeaking ? <VolumeX size={16} /> : <Volume2 size={16} />}
               </button>
             </Tooltip>
             <Tooltip content={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
-              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors">
+              <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
                 {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+            </Tooltip>
+            <Tooltip content="Atajos de teclado" shortcut="F1">
+              <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-shortcuts'))} aria-label="Atajos de teclado" className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`}>
+                <HelpCircle size={16} />
               </button>
             </Tooltip>
           </div>
 
-          <div className="w-px h-5 bg-slate-700 mx-1" />
+          <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
 
           <div className="flex items-center gap-2">
             {showSearch ? (
@@ -1125,7 +1091,7 @@ export default function Toolbar() {
                 </div>
               </div>
             ) : (
-              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded hover:bg-slate-700 text-slate-300 transition-colors" title="Buscar">
+              <button onClick={() => setShowSearch(true)} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-200 text-gray-600')}`} title="Buscar">
                 <Search size={16} />
               </button>
             )}
@@ -1133,39 +1099,6 @@ export default function Toolbar() {
         </div>
       )}
 
-      {tabMenu && (
-        <>
-          <div className="fixed inset-0 z-[60]" onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null) }} />
-          <div className={`fixed z-[61] min-w-[200px] py-1 rounded-md border shadow-xl text-sm ${tc('bg-slate-800 border-slate-700 text-slate-200', 'bg-white border-gray-300 text-gray-800')}`}
-            style={{ left: Math.min(tabMenu.x, window.innerWidth - 220), top: Math.min(tabMenu.y, window.innerHeight - 120) }}>
-            <button onClick={() => { window.api.showInFolder(tabMenu.path); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <FolderOpen size={14} className={tc('text-slate-400', 'text-gray-500')} /> Abrir ubicación del archivo
-            </button>
-            <button onClick={() => { navigator.clipboard.writeText(tabMenu.path).catch(() => {}); showToast('Ruta copiada', 'success'); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <FileText size={14} className={tc('text-slate-400', 'text-gray-500')} /> Copiar ruta
-            </button>
-            <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
-            <button onClick={() => { closeDoc(tabMenu.docId); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <X size={14} className={tc('text-slate-400', 'text-gray-500')} /> Cerrar pestaña
-            </button>
-            <button disabled={docs.length < 2} onClick={() => { docs.filter((d) => d.doc_id !== tabMenu.docId).forEach((d) => closeDoc(d.doc_id)); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 disabled:opacity-30 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <X size={14} className={tc('text-slate-400', 'text-gray-500')} /> Cerrar las demás
-            </button>
-            <button onClick={() => { const i = docs.findIndex((d) => d.doc_id === tabMenu.docId); docs.slice(i + 1).forEach((d) => closeDoc(d.doc_id)); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <X size={14} className={tc('text-slate-400', 'text-gray-500')} /> Cerrar a la derecha
-            </button>
-            <button onClick={() => { docs.forEach((d) => closeDoc(d.doc_id)); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-red-400 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
-              <Trash2 size={14} /> Cerrar todas
-            </button>
-          </div>
-        </>
-      )}
     </div>
   )
 }

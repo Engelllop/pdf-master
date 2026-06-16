@@ -135,6 +135,52 @@ class TestAnnotations:
         resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
         assert resp.status_code == 200
 
+    def test_embed_with_stroke_style_opacity_fill(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "r1", "type": "rect", "page": 0, "x": 10, "y": 10, "width": 80, "height": 40,
+             "color": "#ff0000", "lineWidth": 4, "lineStyle": "dashed", "opacity": 0.6,
+             "fillColor": "#00ff00", "fillOpacity": 0.25},
+            {"id": "c1", "type": "circle", "page": 0, "x": 100, "y": 10, "width": 50, "height": 50,
+             "color": "#0000ff", "lineWidth": 1.5, "lineStyle": "dotted", "opacity": 0.8},
+            {"id": "h1", "type": "highlight", "page": 0, "x": 10, "y": 80, "width": 120, "height": 14,
+             "color": "#fbbf24", "opacity": 0.3},
+            {"id": "a1", "type": "arrow", "page": 0, "x": 10, "y": 120, "width": 60, "height": 30,
+             "color": "#000000", "lineWidth": 3, "lineStyle": "dashed", "opacity": 0.5},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+        assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+
+    def test_embed_draw_and_signature_points(self, client, open_doc):
+        # Regresión: points llegan como dicts del JSON; p.x crasheaba con
+        # AttributeError y el guardado con dibujo libre/firma devolvía 500.
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "d1", "type": "draw", "page": 0, "x": 10, "y": 10,
+             "color": "#ff0000", "lineWidth": 2,
+             "points": [{"x": 10, "y": 10}, {"x": 30, "y": 25}, {"x": 50, "y": 12}]},
+            {"id": "f1", "type": "signature", "page": 0, "x": 60, "y": 60,
+             "points": [{"x": 60, "y": 60}, {"x": 80, "y": 70}, {"x": 95, "y": 58}]},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+
+    def test_sidecar_preserves_stroke_and_rotation(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [{
+            "id": "s1", "type": "rect", "page": 0, "x": 1, "y": 2, "width": 30, "height": 30,
+            "color": "#ff0000", "lineWidth": 5, "lineStyle": "dotted", "opacity": 0.4,
+            "fillColor": "#123456", "fillOpacity": 0.2, "rotation": 45,
+        }]}
+        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 200
+        loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
+        assert loaded["lineStyle"] == "dotted"
+        assert loaded["lineWidth"] == 5
+        assert loaded["opacity"] == 0.4
+        assert loaded["fillColor"] == "#123456"
+        assert loaded["rotation"] == 45
+
 
 class TestDocumentOps:
     def test_rotate_marks_dirty_and_save_clears(self, client, open_doc):

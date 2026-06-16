@@ -29,6 +29,32 @@ function reportOpenFailure() {
   }, 600)
 }
 
+// Reabre un documento cuyo doc_id murió (el motor se reinició pero el health-check
+// nunca falló, p.ej. otro proceso lo reemplazó) y remapea el id conservando el
+// estado local. Se dispara al detectar un 404 en page-info/page-image.
+const reopening = new Set<string>()
+export async function reopenDeadDoc(docId: string): Promise<string | null> {
+  const { docs, remapDocId } = usePdfStore.getState()
+  const doc = docs.find((d) => d.doc_id === docId)
+  if (!doc || reopening.has(docId)) return null
+  reopening.add(docId)
+  try {
+    const res = await fetch(`${API_BASE}/pdf/open`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_path: doc.file_path }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    remapDocId(docId, data.doc_id)
+    return data.doc_id
+  } catch {
+    return null
+  } finally {
+    reopening.delete(docId)
+  }
+}
+
 export function openDocument(filePath: string, opts: OpenDocumentOptions = {}): Promise<string | null> {
   const run = () => openDocumentImpl(filePath, opts)
   const result = openChain.then(run, run)

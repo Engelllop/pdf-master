@@ -1,147 +1,38 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
-import { usePdfStore, type Annotation } from '../store/usePdfStore'
+import { type Annotation } from '../store/usePdfStore'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 import { usePageLoader } from '../hooks/usePageLoader'
 import { usePanZoom } from '../hooks/usePanZoom'
 import { useAnnotationDraw } from '../hooks/useAnnotationDraw'
 import { useAnnotationDrag } from '../hooks/useAnnotationDrag'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
-import { useAutoSave } from '../hooks/useAutoSave'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
 import { useFormFields } from '../hooks/useFormFields'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import DetailTile from './DetailTile'
+import TextLayer from './viewer/TextLayer'
+import SelectionOverlay from './viewer/SelectionOverlay'
+import FormFieldsLayer from './viewer/FormFieldsLayer'
+import { renderAnnotation, strokePropsFor, getAnnotationBounds } from './viewer/annotationRender'
 import { openDocument } from '../lib/openDocument'
-import { Loader2, MessageSquare } from 'lucide-react'
+import { recoverImage } from '../lib/recoverImage'
+import { Loader2 } from 'lucide-react'
 
 const API_BASE = 'http://localhost:8745'
 
-// If the page bitmap <img> fails to load directly from the backend URL, fetch it
-// (the same mechanism the thumbnails use, which works) and swap in a blob: URL.
-// This self-heals the "blank page / broken image" issue and logs the real cause so
-// it shows up in backend.log via the main process console forwarder.
-async function recoverImage(img: HTMLImageElement, url: string): Promise<void> {
-  if (img.dataset.recoveringUrl === url) return // one retry per distinct page URL
-  img.dataset.recoveringUrl = url
-  try {
-    const res = await fetch(url)
-    if (!res.ok) {
-      console.error(`PAGEIMG HTTP ${res.status} ${url}`)
-      return
-    }
-    const blob = await res.blob()
-    const prev = img.dataset.blobUrl
-    const objectUrl = URL.createObjectURL(blob)
-    img.dataset.blobUrl = objectUrl
-    img.src = objectUrl
-    if (prev) URL.revokeObjectURL(prev)
-  } catch (err) {
-    console.error(`PAGEIMG FETCH-FAIL ${url} ${(err as Error)?.message || err}`)
-  }
-}
-
-interface SpanItem { text: string; x0: number; y0: number; x1: number; y1: number; size: number }
-
-// Invisible, selectable text layer overlaid on the page bitmap (PDF.js-style).
-// The container is pointer-events:none so empty areas fall through to the annotation
-// SVG below; individual spans capture pointer events only when no tool is active.
-function TextLayer({ docId, page, pageData, active }: {
-  docId: string
-  page: number
-  pageData: { width: number; height: number; originalWidth: number; originalHeight: number }
-  active: boolean
-}) {
-  const [spans, setSpans] = useState<SpanItem[]>([])
-  useEffect(() => {
-    const c = new AbortController()
-    fetch(`${API_BASE}/pdf/spans/${docId}/${page}`, { signal: c.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.spans) setSpans(d.spans) })
-      .catch(() => {})
-    return () => { c.abort(); setSpans([]) }
-  }, [docId, page])
-  const sx = pageData.width / pageData.originalWidth
-  const sy = pageData.height / pageData.originalHeight
-  return (
-    <div className="absolute top-0 left-0" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text' }}>
-      {spans.map((s, i) => {
-        const h = (s.y1 - s.y0) * sy
-        return (
-          <span key={i} style={{
-            position: 'absolute',
-            left: s.x0 * sx,
-            top: s.y0 * sy,
-            width: (s.x1 - s.x0) * sx,
-            height: h,
-            fontSize: h * 0.82,
-            lineHeight: `${h}px`,
-            color: 'transparent',
-            whiteSpace: 'pre',
-            overflow: 'hidden',
-            cursor: 'text',
-            pointerEvents: active ? 'auto' : 'none',
-          }}>{s.text}</span>
-        )
-      })}
-    </div>
-  )
-}
-
-function getAnnotationBounds(
-  ann: Annotation,
-  pageData: { width: number; height: number; originalWidth: number; originalHeight: number },
-  toScreen: (x: number, y: number) => { x: number; y: number },
-): { x: number; y: number; w: number; h: number } | null {
-  const sx = pageData.width / pageData.originalWidth
-  const sy = pageData.height / pageData.originalHeight
-  switch (ann.type) {
-    case 'highlight':
-    case 'rect':
-    case 'circle': {
-      const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y, w: (ann.width || 0) * sx, h: (ann.height || 0) * sy }
-    }
-    case 'underline':
-    case 'strikethrough': {
-      const s = toScreen(ann.x, ann.y)
-      const h = (ann.height || 16) * sy
-      return { x: s.x, y: s.y, w: (ann.width || 0) * sx, h }
-    }
-    case 'text': {
-      const s = toScreen(ann.x, ann.y)
-      const fs = (ann.fontSize || 14)
-      const tw = ann.width ? ann.width * sx : Math.max(80, (ann.text?.length || 4) * fs * 0.55) * sx
-      const th = ann.height ? ann.height * sy : Math.max(24, fs * 1.4) * sy
-      return { x: s.x, y: s.y, w: tw, h: th }
-    }
-    case 'note': {
-      const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y, w: (ann.width || 28) * sx, h: (ann.height || 28) * sy }
-    }
-    case 'image': {
-      const s = toScreen(ann.x, ann.y)
-      return { x: s.x, y: s.y, w: (ann.width || 200) * sx, h: (ann.height || 150) * sy }
-    }
-    case 'arrow': {
-      const s1 = toScreen(ann.x, ann.y)
-      const s2 = toScreen(ann.x + (ann.width || 0), ann.y + (ann.height || 0))
-      return { x: Math.min(s1.x, s2.x), y: Math.min(s1.y, s2.y), w: Math.abs(s2.x - s1.x), h: Math.abs(s2.y - s1.y) }
-    }
-    case 'draw': {
-      if (!ann.points || ann.points.length === 0) return null
-      const pts = ann.points.map((p) => toScreen(p.x, p.y))
-      const xs = pts.map((p) => p.x)
-      const ys = pts.map((p) => p.y)
-      return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
-    }
-    default:
-      return null
-  }
-}
-
 export default function Viewer() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
+  const store = useStoreSlice(
+    'docs', 'activeDocId', 'activeTool', 'annotationColor', 'annotationLineWidth',
+    'selectedAnnotationId', 'selectedImageData', 'selectedStamp', 'stampColor',
+    'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode',
+    'setViewerSize', 'selectAnnotation', 'deleteAnnotation', 'addBookmark',
+    'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
+    'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'setDocDirty',
+    'setSelectedImageData', 'setSelectedImagePath', 'setViewerScroll', 'showToast',
+    'updateAnnotation',
+  )
   const {
     docs, activeDocId,
     setViewerSize, selectAnnotation, deleteAnnotation, addBookmark,
@@ -327,9 +218,6 @@ export default function Viewer() {
   // Keyboard shortcuts
   useKeyboardShortcuts(activeDoc, store.selectedAnnotationId, deleteAnnotation, cancelDraw)
 
-  // Auto-save
-  useAutoSave(activeDoc)
-
   // File drop
   const { isDraggingFile, handleDragOver, handleDragLeave, handleDrop } = useFileDrop()
 
@@ -507,357 +395,14 @@ export default function Viewer() {
   const annotations = activeDoc && pageData ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage) : []
   const annotationsRight = activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []
 
-  const renderAnnotation = (ann: Annotation, isPreview = false, onSelect?: () => void) => {
-    const s = toScreenCoords(ann.x, ann.y)
-    const key = isPreview ? 'preview' : ann.id
-    const opacity = isPreview ? 0.6 : 0.5
-    const clickProps = (!isPreview && onSelect)
-      ? { onClick: (e: React.MouseEvent) => { e.stopPropagation(); onSelect() }, style: { cursor: 'pointer' } }
-      : {}
-
-    switch (ann.type) {
-      case 'highlight': {
-        const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
-        const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
-        return (
-          <rect key={key} x={w < 0 ? s.x + w : s.x} y={h < 0 ? s.y + h : s.y}
-            width={Math.abs(w)} height={Math.abs(h)}
-            fill={ann.color || '#fbbf24'} fillOpacity={opacity} rx={2} {...clickProps} />
-        )
-      }
-      case 'underline': {
-        const ulH = (ann.height || 16) * (pageData!.height / pageData!.originalHeight)
-        return (
-          <line key={key} x1={s.x} y1={s.y + ulH - 2} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + ulH - 2}
-            stroke={ann.color || '#3b82f6'} strokeWidth={2} {...clickProps} />
-        )
-      }
-      case 'strikethrough': {
-        const stH = (ann.height || 16) * (pageData!.height / pageData!.originalHeight)
-        return (
-          <line key={key} x1={s.x} y1={s.y + stH / 2} x2={s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))} y2={s.y + stH / 2}
-            stroke={ann.color || '#ef4444'} strokeWidth={2} {...clickProps} />
-        )
-      }
-      case 'rect': {
-        const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
-        const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
-        return (
-          <rect key={key} x={w < 0 ? s.x + w : s.x} y={h < 0 ? s.y + h : s.y}
-            width={Math.abs(w)} height={Math.abs(h)}
-            fill="none" stroke={ann.color || '#fff'} strokeWidth={2} rx={2} {...clickProps} />
-        )
-      }
-      case 'circle': {
-        const w = (ann.width || 0) * (pageData!.width / pageData!.originalWidth)
-        const h = (ann.height || 0) * (pageData!.height / pageData!.originalHeight)
-        return (
-          <ellipse key={key} cx={s.x + w / 2} cy={s.y + h / 2} rx={Math.abs(w) / 2} ry={Math.abs(h) / 2}
-            fill="none" stroke={ann.color || '#fff'} strokeWidth={2} {...clickProps} />
-        )
-      }
-      case 'arrow': {
-        const x2 = s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))
-        const y2 = s.y + ((ann.height || 0) * (pageData!.height / pageData!.originalHeight))
-        const angle = Math.atan2(y2 - s.y, x2 - s.x)
-        const headLen = 10
-        const x3 = x2 - headLen * Math.cos(angle - Math.PI / 6)
-        const y3 = y2 - headLen * Math.sin(angle - Math.PI / 6)
-        const x4 = x2 - headLen * Math.cos(angle + Math.PI / 6)
-        const y4 = y2 - headLen * Math.sin(angle + Math.PI / 6)
-        return (
-          <g key={key} {...clickProps}>
-            <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={ann.color || '#fff'} strokeWidth={2} />
-            <polygon points={`${x2},${y2} ${x3},${y3} ${x4},${y4}`} fill={ann.color || '#fff'} />
-          </g>
-        )
-      }
-      case 'draw':
-      case 'signature':
-        if (!ann.points || ann.points.length < 2) return null
-        const d = ann.points.map((p, i) => {
-          const sp = toScreenCoords(p.x, p.y)
-          return `${i === 0 ? 'M' : 'L'} ${sp.x} ${sp.y}`
-        }).join(' ')
-        return <path key={key} d={d} fill="none" stroke={ann.color || '#fff'} strokeWidth={ann.type === 'signature' ? 3 : 2} strokeLinecap="round" strokeLinejoin="round" {...clickProps} />
-      case 'note': {
-        const nw = (ann.width || 24) * (pageData!.width / pageData!.originalWidth)
-        const nh = (ann.height || 24) * (pageData!.height / pageData!.originalHeight)
-        const iconSize = Math.max(12, Math.min(nw, nh) * 0.6)
-        return (
-          <g key={key} {...clickProps}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onSelect) onSelect();
-              const screen = toScreenCoords(ann.x, ann.y)
-              setNotePopup({ annId: ann.id, x: screen.x, y: screen.y })
-              setNotePopupText(ann.text || '')
-            }}>
-            <rect x={s.x} y={s.y} width={nw} height={nh} fill={ann.color || '#fbbf24'} rx={3} />
-            <foreignObject x={s.x} y={s.y} width={nw} height={nh}>
-              <div className="flex items-center justify-center w-full h-full pointer-events-none">
-                <MessageSquare size={iconSize} color="#000" />
-              </div>
-            </foreignObject>
-          </g>
-        )
-      }
-      case 'text': {
-        const fontSize = ann.fontSize || store.textFontSize || 14
-        const fontFamily = ann.fontFamily || store.textFontFamily || 'Arial'
-        const sx2 = pageData!.width / pageData!.originalWidth
-        const sy2 = pageData!.height / pageData!.originalHeight
-        // fontSize is stored in PDF points; the SVG lives in bitmap-px space, so the
-        // on-screen size scales with zoom exactly like the page (and matches the editor).
-        const displayFontSize = fontSize * sx2
-        const textWidth = ann.width ? ann.width * sx2 : Math.max(120 * sx2, (ann.text?.length || 4) * displayFontSize * 0.6)
-        const textHeight = ann.height ? ann.height * sy2 : Math.max(30 * sy2, displayFontSize * 1.4)
-        return (
-          <foreignObject key={key} x={s.x} y={s.y} width={textWidth} height={textHeight}
-            {...clickProps}
-            onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(); startEditText(ann); }}>
-            <div className="leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily, fontSize: displayFontSize }}>
-              {ann.text}
-            </div>
-          </foreignObject>
-        )
-      }
-      case 'image': {
-        const iw = (ann.width || 200) * (pageData!.width / pageData!.originalWidth)
-        const ih = (ann.height || 150) * (pageData!.height / pageData!.originalHeight)
-        const rot = ann.rotation || 0
-        const cx = s.x + iw / 2
-        const cy = s.y + ih / 2
-        return (
-          <g key={key} {...clickProps} transform={`rotate(${rot}, ${cx}, ${cy})`}>
-            {ann.imageData ? (
-              <image href={ann.imageData} x={s.x} y={s.y} width={iw} height={ih} preserveAspectRatio="xMidYMid meet" />
-            ) : (
-              <rect x={s.x} y={s.y} width={iw} height={ih} fill="none" stroke={ann.color || '#fff'} strokeWidth={2} strokeDasharray="4 2" />
-            )}
-          </g>
-        )
-      }
-      case 'measure_distance': {
-        const x2 = s.x + ((ann.width || 0) * (pageData!.width / pageData!.originalWidth))
-        const y2 = s.y + ((ann.height || 0) * (pageData!.height / pageData!.originalHeight))
-        const midX = (s.x + x2) / 2
-        const midY = (s.y + y2) / 2
-        const angle = Math.atan2(y2 - s.y, x2 - s.x)
-        const label = ann.measurement?.label || ''
-        return (
-          <g key={key} {...clickProps}>
-            <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={ann.color || '#22d3ee'} strokeWidth={2} strokeDasharray="6 3" />
-            <circle cx={s.x} cy={s.y} r={3} fill={ann.color || '#22d3ee'} />
-            <circle cx={x2} cy={y2} r={3} fill={ann.color || '#22d3ee'} />
-            <g transform={`translate(${midX}, ${midY}) rotate(${(angle * 180) / Math.PI})`}>
-              <rect x={-label.length * 4.5 - 6} y={-12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-              <text x={0} y={5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
-            </g>
-          </g>
-        )
-      }
-      case 'measure_area': {
-        if (!ann.points || ann.points.length < 3) return null
-        const pts = ann.points.map((p) => toScreenCoords(p.x, p.y))
-        const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-        const label = ann.measurement?.label || ''
-        // Centroid for label
-        let cx = 0, cy = 0
-        pts.forEach((p) => { cx += p.x; cy += p.y })
-        cx /= pts.length
-        cy /= pts.length
-        return (
-          <g key={key} {...clickProps}>
-            <path d={d} fill={ann.color || '#22d3ee'} fillOpacity={0.15} stroke={ann.color || '#22d3ee'} strokeWidth={2} strokeDasharray="4 2" />
-            {pts.map((p, i) => (
-              <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />
-            ))}
-            <rect x={cx - label.length * 4.5 - 6} y={cy - 12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-            <text x={cx} y={cy + 5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
-          </g>
-        )
-      }
-      default:
-        return null
-    }
+  const textDefaults = { fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }
+  const openNotePopup = (ann: Annotation, screen: { x: number; y: number }) => {
+    setNotePopup({ annId: ann.id, x: screen.x, y: screen.y })
+    setNotePopupText(ann.text || '')
   }
 
-  // Selection box + 8 resize handles (left page)
-  let selectionBox: React.ReactNode = null
-  let resizeHandles: React.ReactNode = null
-  let rotateHandleLeft: React.ReactNode = null
-  let selectionBoxRight: React.ReactNode = null
-  let resizeHandlesRight: React.ReactNode = null
-  let rotateHandleRight: React.ReactNode = null
-  if (store.selectedAnnotationId && pageData && activeDoc) {
-    const ann = annotations.find((a) => a.id === store.selectedAnnotationId)
-    if (ann) {
-      const bounds = getAnnotationBounds(ann, pageData, toScreenCoords)
-      if (bounds && bounds.w > 0 && bounds.h > 0) {
-        const HANDLE_SIZE = 8
-        const hs = HANDLE_SIZE / 2
-        const corners = [
-          { key: 'nw' as const, x: bounds.x - hs, y: bounds.y - hs, cursor: 'nwse-resize' },
-          { key: 'n'  as const, x: bounds.x + bounds.w / 2 - hs, y: bounds.y - hs, cursor: 'ns-resize' },
-          { key: 'ne' as const, x: bounds.x + bounds.w - hs, y: bounds.y - hs, cursor: 'nesw-resize' },
-          { key: 'e'  as const, x: bounds.x + bounds.w - hs, y: bounds.y + bounds.h / 2 - hs, cursor: 'ew-resize' },
-          { key: 'se' as const, x: bounds.x + bounds.w - hs, y: bounds.y + bounds.h - hs, cursor: 'nwse-resize' },
-          { key: 's'  as const, x: bounds.x + bounds.w / 2 - hs, y: bounds.y + bounds.h - hs, cursor: 'ns-resize' },
-          { key: 'sw' as const, x: bounds.x - hs, y: bounds.y + bounds.h - hs, cursor: 'nesw-resize' },
-          { key: 'w'  as const, x: bounds.x - hs, y: bounds.y + bounds.h / 2 - hs, cursor: 'ew-resize' },
-        ]
-        selectionBox = (
-          <rect
-            x={bounds.x - 4} y={bounds.y - 4}
-            width={bounds.w + 8} height={bounds.h + 8}
-            fill="none" stroke="#3b82f6" strokeWidth={2}
-            strokeDasharray="4 2" rx={4}
-            pointerEvents="none"
-          />
-        )
-        resizeHandles = (
-          <>
-            {corners.map((c) => (
-              <rect
-                key={c.key}
-                x={c.x} y={c.y}
-                width={HANDLE_SIZE} height={HANDLE_SIZE}
-                fill="#3b82f6" stroke="white" strokeWidth={1}
-                style={{ cursor: c.cursor }}
-                onMouseDown={(e) => {
-                  e.stopPropagation()
-                  setResizingAnn({
-                    id: ann.id,
-                    corner: c.key,
-                    startX: e.nativeEvent.offsetX + c.x,
-                    startY: e.nativeEvent.offsetY + c.y,
-                    startW: bounds.w,
-                    startH: bounds.h,
-                    startBoundsX: bounds.x,
-                    startBoundsY: bounds.y,
-                  })
-                }}
-              />
-            ))}
-          </>
-        )
-        rotateHandleLeft = null
-        if (ann.type === 'image') {
-          const cx = bounds.x + bounds.w / 2
-          const hy = bounds.y - 20
-          rotateHandleLeft = (
-            <>
-              <line x1={cx} y1={bounds.y} x2={cx} y2={hy} stroke="#3b82f6" strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
-              <circle
-                cx={cx} cy={hy} r={6}
-                fill="#10b981" stroke="white" strokeWidth={1}
-                style={{ cursor: 'grab' }}
-                onMouseDown={(e) => {
-                  e.stopPropagation()
-                  const centerX = bounds.x + bounds.w / 2
-                  const centerY = bounds.y + bounds.h / 2
-                  const startAngle = Math.atan2(e.nativeEvent.offsetY - centerY, e.nativeEvent.offsetX - centerX)
-                  setRotatingAnn({
-                    id: ann.id,
-                    startAngle,
-                    startRotation: ann.rotation || 0,
-                    centerX,
-                    centerY,
-                  })
-                }}
-              />
-            </>
-          )
-        }
-      }
-    }
-  }
-
-  // Selection box + resize handles for right page
-  if (store.selectedAnnotationId && pageDataRight && activeDoc) {
-    const ann = annotationsRight.find((a) => a.id === store.selectedAnnotationId)
-    if (ann) {
-      const bounds = getAnnotationBounds(ann, pageDataRight, toScreenCoordsRight)
-      if (bounds && bounds.w > 0 && bounds.h > 0) {
-        const HANDLE_SIZE = 8
-        const hs = HANDLE_SIZE / 2
-        const corners = [
-          { key: 'nw' as const, x: bounds.x - hs, y: bounds.y - hs, cursor: 'nwse-resize' },
-          { key: 'n'  as const, x: bounds.x + bounds.w / 2 - hs, y: bounds.y - hs, cursor: 'ns-resize' },
-          { key: 'ne' as const, x: bounds.x + bounds.w - hs, y: bounds.y - hs, cursor: 'nesw-resize' },
-          { key: 'e'  as const, x: bounds.x + bounds.w - hs, y: bounds.y + bounds.h / 2 - hs, cursor: 'ew-resize' },
-          { key: 'se' as const, x: bounds.x + bounds.w - hs, y: bounds.y + bounds.h - hs, cursor: 'nwse-resize' },
-          { key: 's'  as const, x: bounds.x + bounds.w / 2 - hs, y: bounds.y + bounds.h - hs, cursor: 'ns-resize' },
-          { key: 'sw' as const, x: bounds.x - hs, y: bounds.y + bounds.h - hs, cursor: 'nesw-resize' },
-          { key: 'w'  as const, x: bounds.x - hs, y: bounds.y + bounds.h / 2 - hs, cursor: 'ew-resize' },
-        ]
-        selectionBoxRight = (
-          <rect
-            x={bounds.x - 4} y={bounds.y - 4}
-            width={bounds.w + 8} height={bounds.h + 8}
-            fill="none" stroke="#3b82f6" strokeWidth={2}
-            strokeDasharray="4 2" rx={4}
-            pointerEvents="none"
-          />
-        )
-        resizeHandlesRight = (
-          <>
-            {corners.map((c) => (
-              <rect
-                key={c.key}
-                x={c.x} y={c.y}
-                width={HANDLE_SIZE} height={HANDLE_SIZE}
-                fill="#3b82f6" stroke="white" strokeWidth={1}
-                style={{ cursor: c.cursor }}
-                onMouseDown={(e) => {
-                  e.stopPropagation()
-                  setResizingAnnRight({
-                    id: ann.id,
-                    corner: c.key,
-                    startX: e.nativeEvent.offsetX + c.x,
-                    startY: e.nativeEvent.offsetY + c.y,
-                    startW: bounds.w,
-                    startH: bounds.h,
-                    startBoundsX: bounds.x,
-                    startBoundsY: bounds.y,
-                  })
-                }}
-              />
-            ))}
-          </>
-        )
-        rotateHandleRight = null
-        if (ann.type === 'image') {
-          const cx = bounds.x + bounds.w / 2
-          const hy = bounds.y - 20
-          rotateHandleRight = (
-            <>
-              <line x1={cx} y1={bounds.y} x2={cx} y2={hy} stroke="#3b82f6" strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
-              <circle
-                cx={cx} cy={hy} r={6}
-                fill="#10b981" stroke="white" strokeWidth={1}
-                style={{ cursor: 'grab' }}
-                onMouseDown={(e) => {
-                  e.stopPropagation()
-                  const centerX = bounds.x + bounds.w / 2
-                  const centerY = bounds.y + bounds.h / 2
-                  const startAngle = Math.atan2(e.nativeEvent.offsetY - centerY, e.nativeEvent.offsetX - centerX)
-                  setRotatingAnn({
-                    id: ann.id,
-                    startAngle,
-                    startRotation: ann.rotation || 0,
-                    centerX,
-                    centerY,
-                  })
-                }}
-              />
-            </>
-          )
-        }
-      }
-    }
-  }
+  const selectedAnnLeft = store.selectedAnnotationId ? annotations.find((a) => a.id === store.selectedAnnotationId) : undefined
+  const selectedAnnRight = store.selectedAnnotationId ? annotationsRight.find((a) => a.id === store.selectedAnnotationId) : undefined
 
   const recentFiles = (() => {
     try { return JSON.parse(localStorage.getItem('pdfmaster_recent') || '[]') as string[] }
@@ -953,58 +498,7 @@ export default function Viewer() {
               )}
 
               {/* Form fields overlay */}
-              {formFields.length > 0 && (
-                <div className="absolute top-0 left-0" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'auto', zIndex: 25 }}>
-                  {formFields.map((field) => {
-                    const sx = pageData.width / pageData.originalWidth
-                    const sy = pageData.height / pageData.originalHeight
-                    const style = {
-                      position: 'absolute' as const,
-                      left: field.rect.x * sx,
-                      top: field.rect.y * sy,
-                      width: field.rect.width * sx,
-                      height: field.rect.height * sy,
-                    }
-                    const isCheckbox = field.field_type.toLowerCase().includes('check')
-                    const isSelect = field.field_type.toLowerCase().includes('combo') || field.field_type.toLowerCase().includes('list')
-                    if (isCheckbox) {
-                      return (
-                        <input key={field.field_name} type="checkbox"
-                          checked={field.value === 'Yes' || field.value === 'On'}
-                          onChange={(e) => updateFormField(field.field_name, e.target.checked ? 'Yes' : 'Off')}
-                          className="accent-blue-600"
-                          style={style}
-                          title={field.field_name}
-                        />
-                      )
-                    }
-                    if (isSelect) {
-                      return (
-                        <select key={field.field_name}
-                          value={field.value}
-                          onChange={(e) => updateFormField(field.field_name, e.target.value)}
-                          className="bg-white text-black text-xs border border-blue-400 rounded"
-                          style={style}
-                          title={field.field_name}
-                        >
-                          {field.options.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      )
-                    }
-                    return (
-                      <input key={field.field_name} type="text"
-                        value={field.value}
-                        onChange={(e) => updateFormField(field.field_name, e.target.value)}
-                        className="bg-white/90 text-black text-xs border border-blue-400 rounded px-1"
-                        style={style}
-                        title={field.field_name}
-                      />
-                    )
-                  })}
-                </div>
-              )}
+              <FormFieldsLayer fields={formFields} pageData={pageData} onChange={updateFormField} />
 
               {/* Selectable text layer */}
               <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} pageData={pageData} active={!store.activeTool} />
@@ -1017,10 +511,15 @@ export default function Viewer() {
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
                 onDoubleClick={() => { if (drawingArea) closeArea() }}>
                 {/* Existing annotations */}
-                {annotations.map((ann) => renderAnnotation(ann, false, () => selectAnnotation(activeDoc.doc_id, ann.id)))}
+                {annotations.map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
+                  onSelect: () => selectAnnotation(activeDoc.doc_id, ann.id),
+                  onNoteClick: openNotePopup,
+                  onTextDoubleClick: startEditText,
+                  textDefaults,
+                }))}
 
                 {/* Preview while drawing */}
-                {drawPreview && (drawPreview as any).type !== 'textselect' && renderAnnotation(drawPreview as Annotation, true)}
+                {drawPreview && (drawPreview as any).type !== 'textselect' && renderAnnotation(drawPreview as Annotation, pageData, toScreenCoords, { isPreview: true, textDefaults })}
 
                 {/* Imán de snap para mediciones */}
                 {snapPoint && (() => {
@@ -1046,7 +545,10 @@ export default function Viewer() {
                   <path d={drawPoints.map((p, i) => {
                     const sp = toScreenCoords(p.x, p.y)
                     return `${i === 0 ? 'M' : 'L'} ${sp.x} ${sp.y}`
-                  }).join(' ')} fill="none" stroke={store.annotationColor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+                  }).join(' ')} fill="none" stroke={store.annotationColor}
+                    strokeWidth={store.annotationLineWidth * (pageData.width / pageData.originalWidth)}
+                    strokeDasharray={strokePropsFor(drawPreview as Annotation, pageData.width / pageData.originalWidth).strokeDasharray}
+                    strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
                 )}
                 {drawPreview?.type === 'signature' && drawPoints.length > 1 && (
                   <path d={drawPoints.map((p, i) => {
@@ -1090,9 +592,10 @@ export default function Viewer() {
                 })}
 
                 {/* Selection box */}
-                {selectionBox}
-                {resizeHandles}
-                {rotateHandleLeft}
+                {selectedAnnLeft && (
+                  <SelectionOverlay ann={selectedAnnLeft} pageData={pageData} toScreen={toScreenCoords}
+                    onResizeStart={setResizingAnn} onRotateStart={setRotatingAnn} />
+                )}
               </svg>
 
               {/* Note input popup */}
@@ -1262,126 +765,16 @@ export default function Viewer() {
                   if (!activeDoc) return
                   openMenu(e.clientX, e.clientY)
                 }}>
-                {annotationsRight.map((ann) => {
-                  const s = {
-                    x: ann.x * (pageDataRight.width / pageDataRight.originalWidth),
-                    y: ann.y * (pageDataRight.height / pageDataRight.originalHeight),
-                  }
-                  const key = ann.id
-                  const clickProps = {
-                    onClick: (e: React.MouseEvent) => { e.stopPropagation(); selectAnnotation(activeDoc.doc_id, ann.id) },
-                    style: { cursor: 'pointer' }
-                  }
-                  switch (ann.type) {
-                    case 'highlight':
-                      return <rect key={key} x={s.x} y={s.y} width={(ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth)} height={(ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight)} fill={ann.color || '#fbbf24'} fillOpacity={0.5} rx={2} {...clickProps} />
-                    case 'underline':
-                      return <line key={key} x1={s.x} y1={s.y + 14} x2={s.x + ((ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth))} y2={s.y + 14} stroke={ann.color || '#3b82f6'} strokeWidth={2} {...clickProps} />
-                    case 'strikethrough':
-                      return <line key={key} x1={s.x} y1={s.y + 7} x2={s.x + ((ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth))} y2={s.y + 7} stroke={ann.color || '#ef4444'} strokeWidth={2} {...clickProps} />
-                    case 'rect':
-                      return <rect key={key} x={s.x} y={s.y} width={(ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth)} height={(ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight)} fill="none" stroke={ann.color || '#fff'} strokeWidth={2} rx={2} {...clickProps} />
-                    case 'circle': {
-                      const w = (ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth)
-                      const h = (ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight)
-                      return <ellipse key={key} cx={s.x + w / 2} cy={s.y + h / 2} rx={w / 2} ry={h / 2} fill="none" stroke={ann.color || '#fff'} strokeWidth={2} {...clickProps} />
-                    }
-                    case 'arrow': {
-                      const x2 = s.x + ((ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth))
-                      const y2 = s.y + ((ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight))
-                      const angle = Math.atan2(y2 - s.y, x2 - s.x)
-                      const headLen = 10
-                      const x3 = x2 - headLen * Math.cos(angle - Math.PI / 6)
-                      const y3 = y2 - headLen * Math.sin(angle - Math.PI / 6)
-                      const x4 = x2 - headLen * Math.cos(angle + Math.PI / 6)
-                      const y4 = y2 - headLen * Math.sin(angle + Math.PI / 6)
-                      return (
-                        <g key={key} {...clickProps}>
-                          <line x1={s.x} y1={s.y} x2={x2} y2={y2} stroke={ann.color || '#fff'} strokeWidth={2} />
-                          <polygon points={`${x2},${y2} ${x3},${y3} ${x4},${y4}`} fill={ann.color || '#fff'} />
-                        </g>
-                      )
-                    }
-                    case 'draw':
-                    case 'signature':
-                      if (!ann.points || ann.points.length < 2) return null
-                      const d = ann.points.map((p, i) => {
-                        const spx = p.x * (pageDataRight.width / pageDataRight.originalWidth)
-                        const spy = p.y * (pageDataRight.height / pageDataRight.originalHeight)
-                        return `${i === 0 ? 'M' : 'L'} ${spx} ${spy}`
-                      }).join(' ')
-                      return <path key={key} d={d} fill="none" stroke={ann.color || '#fff'} strokeWidth={ann.type === 'signature' ? 3 : 2} strokeLinecap="round" strokeLinejoin="round" {...clickProps} />
-                    case 'note':
-                      return (
-                        <g key={key} {...clickProps} onClick={(e) => { e.stopPropagation(); selectAnnotation(activeDoc.doc_id, ann.id); setNotePopup({ annId: ann.id, x: s.x, y: s.y }); setNotePopupText(ann.text || '') }}>
-                          <rect x={s.x} y={s.y} width={24} height={24} fill={ann.color || '#fbbf24'} rx={3} />
-                        </g>
-                      )
-                    case 'text': {
-                      const fontSizeR = ann.fontSize || store.textFontSize || 14
-                      const fontFamilyR = ann.fontFamily || store.textFontFamily || 'Arial'
-                      const sx2r = pageDataRight!.width / pageDataRight!.originalWidth
-                      const sy2r = pageDataRight!.height / pageDataRight!.originalHeight
-                      const displayFontSizeR = fontSizeR * sx2r
-                      const textWidthR = ann.width ? ann.width * sx2r : Math.max(120 * sx2r, (ann.text?.length || 4) * displayFontSizeR * 0.6)
-                      const textHeightR = ann.height ? ann.height * sy2r : Math.max(30 * sy2r, displayFontSizeR * 1.4)
-                      return (
-                        <foreignObject key={key} x={s.x} y={s.y} width={textWidthR} height={textHeightR} {...clickProps}>
-                          <div className="leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily: fontFamilyR, fontSize: displayFontSizeR }}>
-                            {ann.text}
-                          </div>
-                        </foreignObject>
-                      )
-                    }
-                    case 'measure_distance': {
-                      const x2r = s.x + ((ann.width || 0) * (pageDataRight.width / pageDataRight.originalWidth))
-                      const y2r = s.y + ((ann.height || 0) * (pageDataRight.height / pageDataRight.originalHeight))
-                      const midXr = (s.x + x2r) / 2
-                      const midYr = (s.y + y2r) / 2
-                      const angler = Math.atan2(y2r - s.y, x2r - s.x)
-                      const labelr = ann.measurement?.label || ''
-                      return (
-                        <g key={key} {...clickProps}>
-                          <line x1={s.x} y1={s.y} x2={x2r} y2={y2r} stroke={ann.color || '#22d3ee'} strokeWidth={2} strokeDasharray="6 3" />
-                          <circle cx={s.x} cy={s.y} r={3} fill={ann.color || '#22d3ee'} />
-                          <circle cx={x2r} cy={y2r} r={3} fill={ann.color || '#22d3ee'} />
-                          <g transform={`translate(${midXr}, ${midYr}) rotate(${(angler * 180) / Math.PI})`}>
-                            <rect x={-labelr.length * 4.5 - 6} y={-12} width={labelr.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-                            <text x={0} y={5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{labelr}</text>
-                          </g>
-                        </g>
-                      )
-                    }
-                    case 'measure_area': {
-                      if (!ann.points || ann.points.length < 3) return null
-                      const ptsr = ann.points.map((p) => ({
-                        x: p.x * (pageDataRight.width / pageDataRight.originalWidth),
-                        y: p.y * (pageDataRight.height / pageDataRight.originalHeight),
-                      }))
-                      const dr = ptsr.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
-                      const labelr = ann.measurement?.label || ''
-                      let cxr = 0, cyr = 0
-                      ptsr.forEach((p) => { cxr += p.x; cyr += p.y })
-                      cxr /= ptsr.length
-                      cyr /= ptsr.length
-                      return (
-                        <g key={key} {...clickProps}>
-                          <path d={dr} fill={ann.color || '#22d3ee'} fillOpacity={0.15} stroke={ann.color || '#22d3ee'} strokeWidth={2} strokeDasharray="4 2" />
-                          {ptsr.map((p, i) => (
-                            <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />
-                          ))}
-                          <rect x={cxr - labelr.length * 4.5 - 6} y={cyr - 12} width={labelr.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-                          <text x={cxr} y={cyr + 5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{labelr}</text>
-                        </g>
-                      )
-                    }
-                    default:
-                      return null
-                  }
-                })}
-                {selectionBoxRight}
-                {resizeHandlesRight}
-                {rotateHandleRight}
+                {annotationsRight.map((ann) => renderAnnotation(ann, pageDataRight, toScreenCoordsRight, {
+                  onSelect: () => selectAnnotation(activeDoc.doc_id, ann.id),
+                  onNoteClick: openNotePopup,
+                  onTextDoubleClick: startEditText,
+                  textDefaults,
+                }))}
+                {selectedAnnRight && (
+                  <SelectionOverlay ann={selectedAnnRight} pageData={pageDataRight} toScreen={toScreenCoordsRight}
+                    onResizeStart={setResizingAnnRight} onRotateStart={setRotatingAnn} />
+                )}
               </svg>
             </div>
             {/* Text selection overlay for right page */}

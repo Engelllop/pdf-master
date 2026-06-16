@@ -16,6 +16,27 @@ from app.services.pdf_service import pdf_service, PasswordRequiredError
 
 router = APIRouter()
 
+_IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tif', '.tiff'}
+
+
+def _validate_output_path(path: str, exts: set) -> None:
+    """422 si la extensión no es la esperada o el directorio destino no existe."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in exts:
+        raise HTTPException(status_code=422, detail=f"Extensión de salida no permitida: '{ext}' (se espera {', '.join(sorted(exts))})")
+    directory = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(directory):
+        raise HTTPException(status_code=422, detail=f"El directorio de salida no existe: {directory}")
+
+
+def _validate_input_file(path: str, exts: set) -> None:
+    """422 si el archivo de entrada no existe o no tiene la extensión esperada."""
+    if not os.path.isfile(path):
+        raise HTTPException(status_code=422, detail=f"El archivo no existe: {path}")
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in exts:
+        raise HTTPException(status_code=422, detail=f"Extensión no permitida: '{ext}' (se espera {', '.join(sorted(exts))})")
+
 @router.post("/open", response_model=PdfInfo)
 def open_pdf(request: OpenPdfRequest):
     try:
@@ -30,21 +51,21 @@ def open_pdf(request: OpenPdfRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/page/{doc_id}/{page_num}", response_model=PageRender)
-def get_page(doc_id: str, page_num: int, zoom: float = Query(1.0)):
+def get_page(doc_id: str, page_num: int, zoom: float = Query(1.0, ge=0.05, le=32)):
     render = pdf_service.render_page(doc_id, page_num, zoom)
     if not render:
         raise HTTPException(status_code=404, detail="Page not found")
     return render
 
 @router.get("/page-info/{doc_id}/{page_num}")
-def get_page_info(doc_id: str, page_num: int, zoom: float = Query(1.0)):
+def get_page_info(doc_id: str, page_num: int, zoom: float = Query(1.0, ge=0.05, le=32)):
     info = pdf_service.get_page_info(doc_id, page_num, zoom)
     if not info:
         raise HTTPException(status_code=404, detail="Page not found")
     return info
 
 @router.get("/page-image/{doc_id}/{page_num}")
-def get_page_image(doc_id: str, page_num: int, zoom: float = Query(1.0)):
+def get_page_image(doc_id: str, page_num: int, zoom: float = Query(1.0, ge=0.05, le=32)):
     img_bytes = pdf_service.get_page_image_bytes(doc_id, page_num, zoom)
     if not img_bytes:
         raise HTTPException(status_code=404, detail="Page not found")
@@ -55,7 +76,7 @@ def get_page_image(doc_id: str, page_num: int, zoom: float = Query(1.0)):
 def get_tile(doc_id: str, page_num: int,
              x0: float = Query(...), y0: float = Query(...),
              x1: float = Query(...), y1: float = Query(...),
-             zoom: float = Query(1.0)):
+             zoom: float = Query(1.0, ge=0.05, le=32)):
     img_bytes = pdf_service.render_tile_bytes(doc_id, page_num, x0, y0, x1, y1, zoom)
     if not img_bytes:
         raise HTTPException(status_code=404, detail="Tile not found")
@@ -120,6 +141,7 @@ def delete_pages(doc_id: str, req: DeletePagesRequest):
 
 @router.post("/merge/{doc_id}", response_model=SaveResult)
 def merge_pdf(doc_id: str, req: MergeRequest):
+    _validate_input_file(req.source_path, {'.pdf'})
     ok = pdf_service.merge_pdf(doc_id, req.source_path)
     if not ok:
         raise HTTPException(status_code=400, detail="Merge failed")
@@ -127,8 +149,8 @@ def merge_pdf(doc_id: str, req: MergeRequest):
 
 @router.post("/split/{doc_id}", response_model=TempFileResult)
 def split_pdf(doc_id: str, req: SplitRequest, output_path: Optional[str] = Query(None)):
-    if output_path and not _is_safe_path(os.path.dirname(output_path) or os.getcwd(), output_path):
-        raise HTTPException(status_code=400, detail="Invalid output path")
+    if output_path:
+        _validate_output_path(output_path, {'.pdf'})
     path = pdf_service.split_pages(doc_id, req.pages, output_path)
     if not path:
         raise HTTPException(status_code=400, detail="Split failed")
@@ -136,6 +158,7 @@ def split_pdf(doc_id: str, req: SplitRequest, output_path: Optional[str] = Query
 
 @router.post("/compress/{doc_id}", response_model=SaveResult)
 def compress_pdf(doc_id: str, output_path: str = Query(...)):
+    _validate_output_path(output_path, {'.pdf'})
     ok = pdf_service.compress(doc_id, output_path)
     if not ok:
         raise HTTPException(status_code=400, detail="Compress failed")
@@ -143,6 +166,8 @@ def compress_pdf(doc_id: str, output_path: str = Query(...)):
 
 @router.post("/save/{doc_id}", response_model=SaveResult)
 def save_pdf(doc_id: str, output_path: Optional[str] = Query(None)):
+    if output_path:
+        _validate_output_path(output_path, {'.pdf'})
     path = pdf_service.save(doc_id, output_path)
     if not path:
         raise HTTPException(status_code=400, detail="Save failed")
@@ -157,6 +182,7 @@ def insert_text(doc_id: str, req: InsertTextRequest):
 
 @router.post("/insert-image/{doc_id}", response_model=SaveResult)
 def insert_image(doc_id: str, req: InsertImageRequest):
+    _validate_input_file(req.image_path, _IMAGE_EXTS)
     ok = pdf_service.insert_image(doc_id, req.page_num, req.x, req.y, req.width, req.height, req.image_path)
     if not ok:
         raise HTTPException(status_code=404, detail="Page or image not found")
@@ -178,8 +204,7 @@ def add_watermark(doc_id: str, req: WatermarkRequest):
 
 @router.post("/create-blank", response_model=PdfInfo)
 def create_blank(req: CreateBlankRequest):
-    if not _is_safe_path(os.path.dirname(req.output_path) or os.getcwd(), req.output_path):
-        raise HTTPException(status_code=400, detail="Invalid output path")
+    _validate_output_path(req.output_path, {'.pdf'})
     info = pdf_service.create_blank_pdf(req.output_path, req.page_width, req.page_height, req.page_count)
     if not info:
         raise HTTPException(status_code=400, detail="Failed to create blank PDF")
@@ -201,8 +226,7 @@ def crop_page(doc_id: str, req: CropRequest):
 
 @router.post("/export-excel/{doc_id}", response_model=SaveResult)
 def export_excel(doc_id: str, output_path: str = Query(...)):
-    if not _is_safe_path(os.path.dirname(output_path) or os.getcwd(), output_path):
-        raise HTTPException(status_code=400, detail="Invalid output path")
+    _validate_output_path(output_path, {'.xlsx'})
     ok = pdf_service.export_excel(doc_id, output_path)
     if not ok:
         raise HTTPException(status_code=400, detail="Export failed")
@@ -210,8 +234,7 @@ def export_excel(doc_id: str, output_path: str = Query(...)):
 
 @router.post("/export-pptx/{doc_id}", response_model=SaveResult)
 def export_pptx(doc_id: str, output_path: str = Query(...)):
-    if not _is_safe_path(os.path.dirname(output_path) or os.getcwd(), output_path):
-        raise HTTPException(status_code=400, detail="Invalid output path")
+    _validate_output_path(output_path, {'.pptx'})
     ok = pdf_service.export_pptx(doc_id, output_path)
     if not ok:
         raise HTTPException(status_code=400, detail="Export failed")
@@ -330,6 +353,8 @@ def make_searchable(doc_id: str, page: Optional[int] = Query(None)):
 
 @router.post("/save-password/{doc_id}", response_model=SaveResult)
 def save_with_password(doc_id: str, req: SavePasswordRequest):
+    if req.output_path:
+        _validate_output_path(req.output_path, {'.pdf'})
     path = pdf_service.save_with_password(doc_id, req.output_path, req.user_password, req.owner_password)
     if not path:
         raise HTTPException(status_code=400, detail="Save failed")
@@ -366,28 +391,3 @@ def close_pdf(doc_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "closed"}
 
-def _is_safe_path(base_dir: str, target_path: str) -> bool:
-    """Prevent directory traversal by ensuring target is within base_dir."""
-    try:
-        real_base = os.path.realpath(base_dir)
-        real_target = os.path.realpath(target_path)
-        return os.path.commonpath([real_base, real_target]) == real_base
-    except ValueError:
-        return False
-
-# Patch save endpoints to validate output paths
-_original_save = pdf_service.save
-_original_compress = pdf_service.compress
-
-def _safe_save(doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
-    if output_path and not _is_safe_path(os.path.dirname(output_path) or os.getcwd(), output_path):
-        return None
-    return _original_save(doc_id, output_path)
-
-def _safe_compress(doc_id: str, output_path: str) -> bool:
-    if not _is_safe_path(os.path.dirname(output_path) or os.getcwd(), output_path):
-        return False
-    return _original_compress(doc_id, output_path)
-
-pdf_service.save = _safe_save
-pdf_service.compress = _safe_compress

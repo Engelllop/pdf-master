@@ -2,6 +2,8 @@ import { create } from 'zustand'
 
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
 
+export type LineStyle = 'solid' | 'dashed' | 'dotted'
+
 export interface PageSize {
   page_num: number
   width: number
@@ -34,6 +36,10 @@ export interface Annotation {
   text?: string
   points?: Array<{ x: number; y: number }>
   lineWidth?: number
+  lineStyle?: LineStyle
+  opacity?: number
+  fillColor?: string
+  fillOpacity?: number
   measurement?: { value: number; unit: string; label: string }
   fontFamily?: string
   fontSize?: number
@@ -99,12 +105,16 @@ export interface PdfState {
   viewerHeight: number
   activeTool: string | null
   annotationColor: string
+  annotationLineWidth: number
+  annotationLineStyle: LineStyle
+  annotationOpacity: number
+  annotationFillColor: string | null
+  annotationFillOpacity: number
   viewMode: 'single' | 'double'
   theme: 'dark' | 'light'
   readingMode: boolean
   presentationMode: boolean
   continuousMode: boolean
-  autoSaveEnabled: boolean
   textFontFamily: string
   textFontSize: number
   bookmarks: Bookmark[]
@@ -136,6 +146,7 @@ export interface PdfState {
     page_sizes: PageSize[]
   }, activate?: boolean) => string
   closeDoc: (docId: string) => void
+  remapDocId: (oldId: string, newId: string) => void
   setActiveDoc: (docId: string) => void
   setPage: (docId: string, page: number) => void
   nextPage: (docId: string) => void
@@ -156,12 +167,16 @@ export interface PdfState {
   goToSearchResult: (docId: string, index: number) => void
   setActiveTool: (tool: string | null) => void
   setAnnotationColor: (color: string) => void
+  setAnnotationLineWidth: (width: number) => void
+  setAnnotationLineStyle: (style: LineStyle) => void
+  setAnnotationOpacity: (opacity: number) => void
+  setAnnotationFillColor: (color: string | null) => void
+  setAnnotationFillOpacity: (opacity: number) => void
   setViewMode: (mode: 'single' | 'double') => void
   setTheme: (theme: 'dark' | 'light') => void
   toggleReadingMode: () => void
   togglePresentationMode: () => void
   toggleContinuousMode: () => void
-  setAutoSaveEnabled: (enabled: boolean) => void
   addBookmark: (bookmark: Bookmark) => void
   removeBookmark: (id: string) => void
   goBack: (docId: string) => void
@@ -202,6 +217,17 @@ export interface PdfState {
 }
 
 const SCALES_KEY = 'pdfmaster_scales'
+const STROKE_KEY = 'pdfmaster_stroke'
+
+function loadStrokePrefs(): Record<string, unknown> {
+  try { return JSON.parse(localStorage.getItem(STROKE_KEY) || '{}') } catch { return {} }
+}
+
+function persistStrokePrefs(partial: Record<string, unknown>) {
+  try { localStorage.setItem(STROKE_KEY, JSON.stringify({ ...loadStrokePrefs(), ...partial })) } catch {}
+}
+
+const strokePrefs = loadStrokePrefs()
 
 function loadPersistedScale(filePath: string): MeasurementScale | null {
   try {
@@ -259,6 +285,11 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   viewerHeight: 600,
   activeTool: null,
   annotationColor: '#fbbf24',
+  annotationLineWidth: typeof strokePrefs.lineWidth === 'number' ? strokePrefs.lineWidth as number : 2,
+  annotationLineStyle: (['solid', 'dashed', 'dotted'].includes(strokePrefs.lineStyle as string) ? strokePrefs.lineStyle : 'solid') as LineStyle,
+  annotationOpacity: typeof strokePrefs.opacity === 'number' ? strokePrefs.opacity as number : 1,
+  annotationFillColor: typeof strokePrefs.fillColor === 'string' ? strokePrefs.fillColor as string : null,
+  annotationFillOpacity: typeof strokePrefs.fillOpacity === 'number' ? strokePrefs.fillOpacity as number : 0.3,
   viewMode: 'single',
   toasts: [],
   undoStack: [],
@@ -277,7 +308,6 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   readingMode: false,
   presentationMode: false,
   continuousMode: false,
-  autoSaveEnabled: (() => { try { return localStorage.getItem('pdfmaster_autosave') !== 'off' } catch { return true } })(),
   textFontFamily: 'Arial',
   textFontSize: 14,
   bookmarks: (() => {
@@ -320,6 +350,23 @@ export const usePdfStore = create<PdfState>((set, get) => ({
         redoStack: state.redoStack.filter((c) => c.docId !== docId),
       }
     })
+  },
+
+  // Tras un reinicio del motor el doc_id queda muerto (404). Reabrimos el archivo y
+  // sustituimos el id conservando todo el estado local (anotaciones, página, zoom).
+  // El pageCache se vacía porque sus URLs contienen el id viejo; docVersion sube
+  // para bustear el caché de <img> del navegador.
+  remapDocId: (oldId, newId) => {
+    set((state) => ({
+      docs: state.docs.map((d) =>
+        d.doc_id === oldId ? { ...d, doc_id: newId, pageCache: new Map(), docVersion: d.docVersion + 1 } : d
+      ),
+      activeDocId: state.activeDocId === oldId ? newId : state.activeDocId,
+      compareDocId: state.compareDocId === oldId ? newId : state.compareDocId,
+      loadingDocId: state.loadingDocId === oldId ? newId : state.loadingDocId,
+      undoStack: state.undoStack.map((c) => (c.docId === oldId ? { ...c, docId: newId } : c)),
+      redoStack: state.redoStack.map((c) => (c.docId === oldId ? { ...c, docId: newId } : c)),
+    }))
   },
 
   setActiveDoc: (docId) => set({ activeDocId: docId, selectedAnnotationId: null }),
@@ -489,6 +536,29 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   setActiveTool: (tool) => set({ activeTool: tool, selectedAnnotationId: null }),
   setAnnotationColor: (color) => set({ annotationColor: color }),
+  setAnnotationLineWidth: (width) => {
+    const v = Math.max(0.5, Math.min(20, width))
+    persistStrokePrefs({ lineWidth: v })
+    set({ annotationLineWidth: v })
+  },
+  setAnnotationLineStyle: (style) => {
+    persistStrokePrefs({ lineStyle: style })
+    set({ annotationLineStyle: style })
+  },
+  setAnnotationOpacity: (opacity) => {
+    const v = Math.max(0.05, Math.min(1, opacity))
+    persistStrokePrefs({ opacity: v })
+    set({ annotationOpacity: v })
+  },
+  setAnnotationFillColor: (color) => {
+    persistStrokePrefs({ fillColor: color })
+    set({ annotationFillColor: color })
+  },
+  setAnnotationFillOpacity: (opacity) => {
+    const v = Math.max(0.05, Math.min(1, opacity))
+    persistStrokePrefs({ fillOpacity: v })
+    set({ annotationFillOpacity: v })
+  },
 
   setViewMode: (mode) => set({ viewMode: mode }),
 
@@ -578,11 +648,6 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   toggleContinuousMode: () => {
     set((state) => ({ continuousMode: !state.continuousMode }))
-  },
-
-  setAutoSaveEnabled: (enabled) => {
-    try { localStorage.setItem('pdfmaster_autosave', enabled ? 'on' : 'off') } catch {}
-    set({ autoSaveEnabled: enabled })
   },
 
   addBookmark: (bookmark) => {

@@ -31,3 +31,42 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+html:not(.dark) ::-webkit-scrollbar-track {
+  background: #e5e7eb;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb {
+  background: #9ca3af;
+}
+
+html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Foco visible al navegar con teclado (no aparece con clic de ratón) */
+button:focus-visible,
+input:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+@keyframes menu-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.menu-pop {
+  animation: menu-in 120ms ease-out;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast-pop {
+  animation: toast-in 150ms ease-out;
+}

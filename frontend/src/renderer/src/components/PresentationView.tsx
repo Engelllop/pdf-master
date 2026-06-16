@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
-import { usePdfStore } from '../store/usePdfStore'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 
 const API_BASE = 'http://localhost:8745'
 
 // Fullscreen slideshow overlay. Click left/right halves or use arrow keys / space to
 // navigate; Esc exits. Renders only the current page bitmap on a black backdrop.
 export default function PresentationView() {
-  const store = usePdfStore()
+  const store = useStoreSlice('docs', 'activeDocId', 'nextPage', 'prevPage', 'togglePresentationMode')
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
   const [img, setImg] = useState<string | null>(null)
 

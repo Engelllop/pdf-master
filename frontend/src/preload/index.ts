@@ -10,6 +10,7 @@ const api = {
   showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
+  setDirtyState: (dirty: boolean) => ipcRenderer.send('app:dirty-state', dirty),
   onOpenFile: (callback: (path: string) => void) => {
     ipcRenderer.on('app:open-file', (_event, path) => callback(path))
   },

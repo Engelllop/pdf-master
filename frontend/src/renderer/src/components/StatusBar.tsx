@@ -1,11 +1,12 @@
-import { usePdfStore } from '../store/usePdfStore'
 import { Monitor, CheckCircle2, Loader2, Ruler } from 'lucide-react'
 import { useThemeClasses } from '../hooks/useThemeClasses'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 
 export default function StatusBar() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
-  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen, activeTool } = store
+  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen, activeTool } = useStoreSlice(
+    'docs', 'activeDocId', 'saveStatus', 'sidebarOpen', 'toolsPanelOpen', 'activeTool',
+  )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
 
   const scale = activeDoc?.measurementScale

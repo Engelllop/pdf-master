@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { usePdfStore } from '../store/usePdfStore'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2 } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
 import { useThemeClasses } from '../hooks/useThemeClasses'
@@ -30,7 +30,12 @@ function OutlineTree({ items, depth = 0, onJump, tc }: { items: OutlineItem[]; d
 
 export default function ThumbnailPanel() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
+  const store = useStoreSlice(
+    'docs', 'activeDocId', 'sidebarOpen', 'toggleSidebar', 'setPage', 'addThumbnail',
+    'bookmarks', 'removeBookmark', 'reorderPages', 'showToast', 'setDocDirty',
+    'incrementDocVersion', 'viewerScroll', 'updateDocPageCount', 'goToSearchResult',
+    'deleteAnnotation', 'invalidatePageCache', 'invalidateThumbnails', 'selectAnnotation',
+  )
   const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const scrollRef = useRef<HTMLDivElement>(null)

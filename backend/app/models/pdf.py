@@ -58,9 +58,15 @@ class Annotation(BaseModel):
     text: Optional[str] = None
     points: Optional[List[dict]] = None
     lineWidth: Optional[float] = None
+    lineStyle: Optional[str] = None
+    opacity: Optional[float] = None
+    fillColor: Optional[str] = None
+    fillOpacity: Optional[float] = None
     fontSize: Optional[float] = None
     fontFamily: Optional[str] = None
     measurement: Optional[MeasurementData] = None
+    rotation: Optional[float] = None
+    imageData: Optional[str] = None
 
 class AnnotationList(BaseModel):
     annotations: List[Annotation]

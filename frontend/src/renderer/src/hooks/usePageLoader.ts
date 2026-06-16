@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { usePdfStore } from '../store/usePdfStore'
+import { reopenDeadDoc } from '../lib/openDocument'
+import { useStoreSlice } from './useStoreSlice'
 
 const API_BASE = 'http://localhost:8745'
 const MAX_RENDER_ZOOM = 3
@@ -43,7 +44,10 @@ function isAbort(err: unknown): boolean {
 }
 
 export function usePageLoader() {
-  const store = usePdfStore()
+  const store = useStoreSlice(
+    'docs', 'activeDocId', 'getCachedPage', 'cachePage', 'setPage', 'computeFitZoom',
+    'viewerWidth', 'viewerHeight', 'setDocLoading', 'setZoom', 'viewMode',
+  )
   const { docs, activeDocId, getCachedPage, cachePage, setPage, computeFitZoom, viewerWidth, viewerHeight } = store
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -84,7 +88,15 @@ export function usePageLoader() {
 
     const fetchEntry = (p: number): Promise<PageData> =>
       fetch(`${API_BASE}/pdf/page-info/${docId}/${p}?zoom=${rz}`, { signal })
-        .then((res) => res.json())
+        .then((res) => {
+          if (res.status === 404) {
+            // doc_id muerto (el motor se reinició): reabrir y remapear; al cambiar
+            // el doc_id este efecto se vuelve a ejecutar con el id nuevo.
+            reopenDeadDoc(docId)
+            throw new Error('doc_id muerto, reabriendo')
+          }
+          return res.json()
+        })
         .then((data) => ({
           image: pageImageUrl(docId, p, rz, version),
           width: data.width,

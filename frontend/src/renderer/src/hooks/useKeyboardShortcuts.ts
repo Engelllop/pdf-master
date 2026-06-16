@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
-import { usePdfStore, type PdfState } from '../store/usePdfStore'
+import { type PdfState } from '../store/usePdfStore'
+import { useStoreSlice } from './useStoreSlice'
 
 export function useKeyboardShortcuts(
   activeDoc: PdfState['docs'][number] | undefined,
@@ -7,7 +8,7 @@ export function useKeyboardShortcuts(
   deleteAnnotation: (docId: string, annId: string) => void,
   cancelDraw: () => void,
 ) {
-  const store = usePdfStore() as PdfState
+  const store = useStoreSlice('setActiveTool', 'undo', 'redo')
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {

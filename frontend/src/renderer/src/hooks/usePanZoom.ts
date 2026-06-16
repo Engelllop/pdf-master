@@ -1,12 +1,13 @@
 import { useRef, useCallback, useState, useEffect } from 'react'
-import { usePdfStore, type PdfState } from '../store/usePdfStore'
+import { type PdfState } from '../store/usePdfStore'
+import { useStoreSlice } from './useStoreSlice'
 
 export function usePanZoom(
   containerRef: React.RefObject<HTMLDivElement | null>,
   activeDoc: PdfState['docs'][number] | undefined,
   pageData: { width: number; height: number; originalWidth: number } | null,
 ) {
-  const { setZoom, nextPage, prevPage, activeTool } = usePdfStore() as PdfState
+  const { setZoom, nextPage, prevPage, activeTool } = useStoreSlice('setZoom', 'nextPage', 'prevPage', 'activeTool')
 
   const [isPanning, setIsPanning] = useState(false)
   const panStart = useRef<{ x: number; y: number } | null>(null)

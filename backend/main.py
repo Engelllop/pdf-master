@@ -1,9 +1,19 @@
+import logging
 import uvicorn
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from anyio import to_thread
 from app.routers import pdf
+from app.services.pdf_service import DocumentNotFoundError, PasswordRequiredError
+
+# El main process de Electron captura stdout/stderr y lo vuelca en backend.log,
+# así que basta con loguear a stderr con formato.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 
 @asynccontextmanager
@@ -23,13 +33,26 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="PDF Master Engine", version="1.0.0", lifespan=lifespan)
 
+# Solo el renderer de Electron: file:// manda Origin "null" en producción y
+# http://localhost:<puerto> en dev (electron-vite). Antes era allow_origins=["*"].
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origin_regex=r"^(http://localhost:\d+|http://127\.0\.0\.1:\d+|null)$",
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(DocumentNotFoundError)
+async def document_not_found_handler(request: Request, exc: DocumentNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc) or "Document not found"})
+
+
+@app.exception_handler(PasswordRequiredError)
+async def password_required_handler(request: Request, exc: PasswordRequiredError):
+    return JSONResponse(status_code=401, content={"detail": str(exc) or "Password required"})
+
 
 app.include_router(pdf.router, prefix="/pdf", tags=["pdf"])
 

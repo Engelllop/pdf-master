@@ -1,7 +1,8 @@
 # PDF Master — Documentación Técnica
 
-> Versión documentada: 1.1.1  
-> Última actualización: 2026-06-04 (sesión de features masiva)
+> Versión documentada: **1.3.1**  
+> Última actualización: 2026-06-10  
+> Las secciones 1–10 describen la base (1.1.1). Los cambios de 1.2.x–1.3.1 están en el **Addendum (sección 11)**, que **prevalece** donde contradiga lo anterior. El changelog canónico por sesión vive en el vault Obsidian (`Documents\Memory\projects\pdf-master.md`).
 
 ---
 
@@ -354,6 +355,106 @@ frontend/dist/PDF-Master-Setup-1.1.1.exe
 - [ ] OCR batch (todas las páginas)
 - [ ] Comparación visual de PDFs con diff resaltado
 - [ ] Reconocimiento de tablas para export Excel estructurado
+
+---
+
+## 11. Addendum v1.2.x → v1.3.1 (2026-06-06 a 2026-06-10)
+
+> Esta sección **prevalece** sobre las anteriores donde haya contradicción.
+
+### 11.1 Regla de producto: sin escritura automática a disco (v1.3.1)
+
+**La app NUNCA escribe a disco sin acción explícita del usuario.** El autoguardado (embed de anotaciones + save in-place cada 30 s) sobrescribía el PDF original en silencio y dañó un archivo real. Fue **eliminado por completo** (`useAutoSave.ts`, `autoSaveEnabled` del store, toggle del menú). No reintroducir.
+
+En su lugar, **alertas de cambios sin guardar**:
+- **Cerrar pestaña** con doc dirty → `requestCloseDoc(docId)` (`renderer/src/lib/closeDocument.ts`): `window.confirm` antes de descartar. Usado en TODOS los puntos de cierre (X de pestaña, menú contextual, Ctrl+W, "Cerrar las demás/a la derecha/todas", menú Archivo).
+- **Cerrar la app** con docs dirty → el renderer reporta el estado vía IPC `app:dirty-state` (preload `setDirtyState`); el main process intercepta el evento `close` de la ventana con `dialog.showMessageBoxSync` ("Salir sin guardar" / "Cancelar").
+- El sidecar `<archivo>.pdf.pdfmaster.json` (persistencia de anotaciones) ahora **solo se escribe en guardado manual**.
+
+### 11.2 Render binario por URL (supersede §7.1)
+
+§7.1 quedó obsoleto: el visor **sí** usa `GET /pdf/page-image/{id}/{page}?zoom=&v=` (PNG binario). Base64 en JSON rompía el `<img>` con planos densos (data-URLs de decenas de MB). El problema de `file://` se resolvió con:
+- CSP `img-src` que permite `http://localhost:8745` y `blob:`.
+- `recoverImage()` en `Viewer.tsx`: si el `<img>` directo falla, reintenta `fetch` → `blob:` y registra la causa (`PAGEIMG ...` en el log).
+- `?v=docVersion` para cache-busting tras editar el documento.
+
+### 11.3 Concurrencia del backend (CRÍTICO — no tocar)
+
+- **PyMuPDF NO es thread-safe.** FastAPI corre los handlers `def` en threadpool; dos accesos simultáneos a fitz → **segfault** del proceso. Fix de raíz: threadpool limitado a **1 worker** en `main.py` (`lifespan`: `to_thread.current_default_thread_limiter().total_tokens = 1`). `health_check` es `async`, así que siempre responde. Validado con test de 88 peticiones concurrentes.
+- `RLock` en `PdfService` + **caps de resolución**: render 3000 px (base) / 6000 px (zoom), miniaturas 300 px.
+- **LRU de documentos**: máx 12 `fitz.Document` vivos; reabre desde disco al acceder; nunca evicta docs dirty.
+
+### 11.4 Estabilidad multi-instancia y auto-reparación (v1.3.0)
+
+- **Instancia única estricta** (`src/main/index.ts`): la instancia perdedora hace `app.exit(0)` **inmediato**. Antes usaba `app.quit()` (asíncrono) y alcanzaba a ejecutar `whenReady` → `killExistingBackend()` → **mataba el `pdf-engine.exe` de la instancia principal** → doc_ids muertos → páginas en blanco con health-check verde. `second-instance` y argv reenvían **todos** los `.pdf` del comando (antes solo el primero — abrir varios desde Explorer solo abría 1).
+- **Auto-reparación de doc_ids muertos**: si `page-info`/`page-image` devuelve **404** con motor sano, `reopenDeadDoc(docId)` (`lib/openDocument.ts`) reabre el archivo por `file_path` y `remapDocId(oldId, newId)` (store) sustituye el id **conservando anotaciones, página y zoom** (vacía `pageCache`, incrementa `docVersion`). Enganchado en `usePageLoader.fetchEntry` y `recoverImage`.
+- **Apertura serializada** (`openDocument.ts`): cola `openChain`; aperturas masivas entran como pestañas en segundo plano (`activate: false`).
+- **Health-check** (App.tsx): timeout 12 s, reinicia tras 5 fallos consecutivos y reabre los documentos.
+
+### 11.5 Modelo de anotaciones extendido (v1.3.0) — supersede tabla §4.3
+
+Campos nuevos en `Annotation` (frontend `usePdfStore.ts` + backend `models/pdf.py`):
+
+| Campo | Tipo | Uso |
+|-------|------|-----|
+| `lineWidth` | float (puntos PDF) | Grosor de trazo 0.5–12. Se renderiza `lineWidth * bitmapScale` → escala con el zoom y coincide 1:1 con el embebido. |
+| `lineStyle` | `'solid' \| 'dashed' \| 'dotted'` | SVG: `strokeDasharray` proporcional al grosor. PDF: `dashes="[w*3 w*2] 0"` / `"[0.1 w*2] 0"`. |
+| `opacity` | 0.05–1 | SVG: `opacity`/`fillOpacity`. PDF: `stroke_opacity` (shapes) o `annot.set_opacity()` (markup). |
+| `fillColor` / `fillOpacity` | hex / 0–1 | Relleno de rect/círculo (`fill` + `fill_opacity` en PyMuPDF). |
+| `rotation` / `imageData` | float / data-URL | Añadidos al modelo Pydantic: el sidecar los **descartaba silenciosamente** (la rotación de imágenes se perdía al reabrir). |
+
+UI: sección **"Trazo"** en `ToolsPanel.tsx`. Sin selección edita los **defaults de herramienta** (persistidos en `localStorage['pdfmaster_stroke']`); con una anotación seleccionada edita **esa anotación** (incluido el color, antes inmutable tras crear).
+
+Render unificado: `renderAnnotation(ann, pageData, toScreen, isPreview, onSelect)` parametrizado se usa para las páginas izquierda **y** derecha (antes la derecha tenía un switch duplicado de ~110 líneas desactualizado).
+
+Bugs corregidos en `embed_annotations` (todos latentes, destapados por tests):
+- Flecha: `fitz.utils.degrees/atan2/cos/sin` y `page.draw_polygon` **no existen** en PyMuPDF → embeber una flecha siempre crasheaba. Ahora `math.*` + `Shape.draw_polyline(closePath=True)`.
+- Draw/firma: `p.x` sobre los dicts del JSON (`'dict' object has no attribute 'x'`) → guardar con dibujo libre devolvía 500. Ahora `p["x"]`.
+
+### 11.6 Mediciones estilo Bluebeam (v1.2.x–1.3.0)
+
+- **Snapping**: `GET /pdf/snap-points/{doc}/{page}` (vértices/midpoints del vectorial vía `get_drawings`, caché 60 págs, máx 20k puntos). `useAnnotationDraw` imanta con tolerancia 10 px de pantalla; indicador verde en el visor.
+- **Escala persistida** por ruta en `localStorage['pdfmaster_scales']`; se rehidrata al reabrir. La StatusBar muestra `1 <unidad> = X pt` o "Sin calibrar".
+
+### 11.7 Tests y CI (desde 2026-06-09)
+
+- `backend/tests/` (pytest + TestClient): **25 tests** — render/caps, concurrencia (regresión segfault), LRU, anotaciones (roundtrip sidecar con stroke/rotation, embed con estilo/opacidad/relleno, draw/firma con points), ops de documento, PDFs protegidos. Correr: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q` **siempre tras tocar el backend**.
+- CI GitHub Actions (`.github/workflows/ci.yml`): pytest + typecheck en push/PR; tag `v*` compila y publica release (auto-update).
+
+### 11.8 Build actualizado (supersede §8)
+
+```powershell
+# Solo si cambió Python:
+cd backend
+.\venv\Scripts\pyinstaller.exe pdf-engine.spec --noconfirm --clean
+Copy-Item dist\pdf-engine.exe ..\frontend\resources\backend\ -Force
+
+# Subir "version" en frontend\package.json, luego:
+cd frontend
+npm run typecheck
+$env:CSC_IDENTITY_AUTO_DISCOVERY='false'
+npm run build:win    # → dist\PDF-Master-Setup-<version>.exe
+```
+Antes de instalar: cerrar la app del todo (que no quede `pdf-engine.exe` en el Administrador de tareas). Sin firma de código → aviso SmartScreen. Para probar el backend sin chocar con la app instalada: puerto **8746**.
+
+### 11.9 Historial de versiones (resumen)
+
+| Versión | Fecha | Resumen |
+|---------|-------|---------|
+| 1.3.1 | 2026-06-10 | **Autoguardado eliminado** + alertas de cambios sin guardar (pestaña y app). |
+| 1.3.0 | 2026-06-10 | Propiedades de trazo (grosor/estilo/opacidad/relleno), render unificado, instancia única estricta, auto-reparación de doc_ids (404), fix embed flecha y draw/firma. |
+| 1.2.8 | 2026-06-07 | `recoverImage` (img rota → fetch→blob), log del renderer en `backend.log`. |
+| 1.2.7 | 2026-06-06 | **Threadpool 1 worker** (segfault PyMuPDF), rutas `/text` unificadas. |
+| 1.2.5–1.2.6 | 2026-06-06 | LRU docs, tiles de zoom profundo, fixes de anotaciones (arrastre invertido, fontSize en puntos, editor in-place). |
+| 1.2.0–1.2.4 | 2026-06-05 | Branding/instalador, apertura masiva en serie, menú de pestañas. |
+| 1.1.9 | 2026-06-05 | Imágenes binarias por URL (adiós base64). |
+
+### 11.10 Limitaciones vigentes (actualiza §9)
+
+- Anotaciones de **imagen** no se embeben en el PDF (solo app/sidecar); pendiente `page.insert_image` (rotación solo en múltiplos de 90°).
+- **No hay backup** al guardar in-place: sobrescribe el original. Si se añade, debe ser **opt-in** (regla 11.1).
+- Mediciones no se embeben (visuales).
+- OCR requiere Tesseract instalado aparte; sin firma de código (SmartScreen); firma no criptográfica.
 
 ---
 

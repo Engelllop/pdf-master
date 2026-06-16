@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { usePdfStore, type Annotation, type PdfState } from '../store/usePdfStore'
+import { type Annotation, type PdfState } from '../store/usePdfStore'
+import { useStoreSlice } from './useStoreSlice'
 
 const API_BASE = 'http://localhost:8745'
 const SNAP_TOLERANCE_SCREEN_PX = 10
@@ -23,7 +24,12 @@ export function useAnnotationDraw(
   activeDoc: PdfState['docs'][number] | undefined,
   pageData: { width: number; height: number; originalWidth: number; originalHeight: number } | null,
 ) {
-  const store = usePdfStore() as PdfState
+  const store = useStoreSlice(
+    'activeTool', 'annotationColor', 'addAnnotation', 'setActiveTool', 'showToast',
+    'setMeasurementScale', 'textFontFamily', 'textFontSize',
+    'annotationLineWidth', 'annotationLineStyle', 'annotationOpacity',
+    'annotationFillColor', 'annotationFillOpacity',
+  )
   const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
 
   const [drawing, setDrawing] = useState(false)
@@ -124,6 +130,7 @@ export function useAnnotationDraw(
 
     const isSignature = activeTool === 'signature'
     const toolType = activeTool as Annotation['type']
+    const isShape = activeTool === 'rect' || activeTool === 'circle'
     setDrawPreview({
       id: crypto.randomUUID(),
       type: isSignature ? 'signature' : toolType,
@@ -131,7 +138,16 @@ export function useAnnotationDraw(
       x: pdf.x,
       y: pdf.y,
       color: isSignature ? '#000000' : annotationColor,
-      lineWidth: 2,
+      lineWidth: isSignature ? 3 : store.annotationLineWidth,
+      lineStyle: store.annotationLineStyle,
+      // El resalte usa su propia opacidad por defecto (0.5 al renderizar);
+      // solo se guarda si el usuario la bajó explícitamente.
+      opacity: activeTool === 'highlight'
+        ? (store.annotationOpacity < 1 ? store.annotationOpacity : undefined)
+        : store.annotationOpacity,
+      ...(isShape && store.annotationFillColor
+        ? { fillColor: store.annotationFillColor, fillOpacity: store.annotationFillOpacity }
+        : {}),
     })
     setDrawPoints([{ x: pdf.x, y: pdf.y }])
     return true
@@ -359,6 +375,9 @@ export function useAnnotationDraw(
       y: areaPoints[0].y,
       color: annotationColor,
       points: areaPoints,
+      lineWidth: store.annotationLineWidth,
+      lineStyle: store.annotationLineStyle,
+      opacity: store.annotationOpacity,
       measurement: { value, unit, label },
     })
     setDrawingArea(false)

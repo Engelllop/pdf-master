@@ -2,6 +2,14 @@
 
 Editor profesional de PDFs inspirado en Bluebeam Revu, UPDF y PDFelement.
 
+## Documentación
+
+- **`DOCUMENTATION.md`** — documentación técnica completa (arquitectura, API, decisiones; el Addendum §11 cubre v1.2.x–v1.3.1 y prevalece sobre secciones antiguas).
+- **`CHANGELOG_SESSION.md`** — registro de cambios por sesión de desarrollo.
+- Tests del backend: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q` (obligatorio tras tocar Python).
+
+> **Regla de producto:** la app **nunca** escribe a disco sin acción explícita del usuario (no hay autoguardado; hay alertas de cambios sin guardar). Ver `DOCUMENTATION.md` §11.1.
+
 ## Arquitectura
 
 - **Frontend:** Electron + Vite + React + TypeScript + Tailwind CSS

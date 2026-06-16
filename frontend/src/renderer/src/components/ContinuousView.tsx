@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { usePdfStore } from '../store/usePdfStore'
 import { useThemeClasses } from '../hooks/useThemeClasses'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 
 const API_BASE = 'http://localhost:8745'
 const GAP = 16
@@ -12,7 +12,7 @@ const MAX_WIDTH = 1000
 // scrollbar stays correct. Shares the page bitmap cache with the single-page viewer.
 export default function ContinuousView() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
+  const store = useStoreSlice('docs', 'activeDocId', 'setPage')
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
   const containerRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(MAX_WIDTH)

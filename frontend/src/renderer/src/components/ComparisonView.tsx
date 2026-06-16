@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { usePdfStore } from '../store/usePdfStore'
 import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, GitCompare } from 'lucide-react'
+import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
@@ -79,8 +79,9 @@ function ComparePagePanel({
 
 export default function ComparisonView() {
   const tc = useThemeClasses()
-  const store = usePdfStore()
-  const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = store
+  const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = useStoreSlice(
+    'docs', 'activeDocId', 'compareDocId', 'compareSync', 'clearCompare', 'setCompareSync',
+  )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const compareDoc = docs.find((d) => d.doc_id === compareDocId)
