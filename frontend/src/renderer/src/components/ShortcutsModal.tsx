@@ -1,5 +1,4 @@
 import { X, Keyboard } from 'lucide-react'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 
 interface ShortcutsModalProps {
   onClose: () => void
@@ -40,6 +39,7 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
       ['Ctrl+Z / Ctrl+Y', 'Deshacer / rehacer'],
       ['Ctrl+F', 'Buscar'],
       ['Supr / Retroceso', 'Eliminar anotación seleccionada'],
+      ['Enter', 'Cerrar polígono de medición de área'],
       ['Esc', 'Cancelar herramienta activa'],
     ],
   },
@@ -54,7 +54,6 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
 ]
 
 export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
-  const tc = useThemeClasses()
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
@@ -62,27 +61,27 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
         aria-modal="true"
         aria-label="Atajos de teclado"
         onClick={(e) => e.stopPropagation()}
-        className={`menu-pop w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border shadow-2xl ${tc('bg-slate-800 border-slate-600 text-slate-200', 'bg-white border-gray-300 text-gray-800')}`}
+        className="menu-pop w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
       >
-        <div className={`flex items-center gap-2 px-4 py-3 border-b sticky top-0 ${tc('border-slate-700 bg-slate-800', 'border-gray-200 bg-white')}`}>
-          <Keyboard size={18} className="text-blue-400" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">
+          <Keyboard size={18} className="text-accent" />
           <h2 className="text-sm font-semibold flex-1">Atajos de teclado</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+            className="p-1 rounded transition-colors text-muted hover:bg-hover">
             <X size={16} />
           </button>
         </div>
         <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           {SECTIONS.map((section) => (
             <div key={section.title}>
-              <h3 className={`text-[11px] uppercase tracking-wider mb-1.5 ${tc('text-slate-500', 'text-gray-500')}`}>
+              <h3 className="text-[11px] uppercase tracking-wider mb-1.5 text-muted">
                 {section.title}
               </h3>
               <ul className="space-y-1">
                 {section.items.map(([keys, label]) => (
                   <li key={keys + label} className="flex items-center justify-between gap-3 text-xs">
-                    <span className={tc('text-slate-300', 'text-gray-700')}>{label}</span>
-                    <kbd className={`shrink-0 px-1.5 py-0.5 rounded border font-sans text-[10px] ${tc('bg-slate-900 border-slate-600 text-slate-400', 'bg-gray-50 border-gray-300 text-gray-500')}`}>
+                    <span className="text-fg">{label}</span>
+                    <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-border font-sans text-[10px] bg-surface text-muted">
                       {keys}
                     </kbd>
                   </li>
@@ -91,7 +90,7 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
             </div>
           ))}
         </div>
-        <div className={`px-4 py-2 border-t text-[11px] ${tc('border-slate-700 text-slate-500', 'border-gray-200 text-gray-400')}`}>
+        <div className="px-4 py-2 border-t border-border text-[11px] text-muted">
           Pulsa F1 para abrir este panel en cualquier momento
         </div>
       </div>
