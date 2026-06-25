@@ -23,7 +23,7 @@ import { openDocument } from '../lib/openDocument'
 import { recoverImage } from '../lib/recoverImage'
 import { Loader2 } from 'lucide-react'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 export default function Viewer() {
   const tc = useThemeClasses()

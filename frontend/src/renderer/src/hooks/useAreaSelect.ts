@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useStoreSlice } from './useStoreSlice'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 export type AreaRect = { x0: number; y0: number; x1: number; y1: number }
 type PageData = { width: number; height: number; originalWidth: number; originalHeight: number } | null

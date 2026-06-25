@@ -3,7 +3,7 @@ import { type Annotation, type PdfState } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
 import { askForm } from '../lib/uiPrompt'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 const SNAP_TOLERANCE_SCREEN_PX = 10
 
 const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area']

@@ -3,7 +3,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from './api'
 
 // Caché de documentos PDF.js por `${docId}:${version}`. Una versión nueva (rotar,
 // borrar página, etc.) invalida la anterior y se destruye para liberar memoria.

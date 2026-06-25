@@ -4,7 +4,7 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 interface PageData {
   image: string

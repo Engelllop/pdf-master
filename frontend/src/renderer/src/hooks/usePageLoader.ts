@@ -3,7 +3,7 @@ import { reopenDeadDoc } from '../lib/openDocument'
 import { useStoreSlice } from './useStoreSlice'
 import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 const MAX_RENDER_ZOOM = 3
 
 // Render the page bitmap close to the resolution it is actually shown at, so high

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 export interface FormField {
   field_name: string

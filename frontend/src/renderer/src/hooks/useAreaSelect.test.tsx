@@ -17,7 +17,8 @@ function openDoc() {
 }
 
 function okFetch() {
-  return vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true }), text: async () => '' }) as unknown as Response)
+  return vi.fn((_path: string, _init?: RequestInit) =>
+    Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }), text: async () => '' } as unknown as Response))
 }
 
 function setup() {

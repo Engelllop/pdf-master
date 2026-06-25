@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { type PageDims } from './annotationRender'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../../lib/api'
 
 interface SpanItem { text: string; x0: number; y0: number; x1: number; y1: number; size: number }
 

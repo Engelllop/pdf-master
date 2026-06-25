@@ -20,7 +20,7 @@ import { useState, useRef, useEffect } from 'react'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 export default function Toolbar() {
   const tc = useThemeClasses()

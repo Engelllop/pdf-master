@@ -18,7 +18,7 @@ import { registerPromptHandler } from './lib/uiPrompt'
 import { openDocument } from './lib/openDocument'
 import { requestCloseDoc } from './lib/closeDocument'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from './lib/api'
 
 function App() {
   const store = useStoreSlice(

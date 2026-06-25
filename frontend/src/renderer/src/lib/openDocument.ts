@@ -1,7 +1,7 @@
 import { usePdfStore } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from './api'
 
 export interface OpenDocumentOptions {
   password?: string

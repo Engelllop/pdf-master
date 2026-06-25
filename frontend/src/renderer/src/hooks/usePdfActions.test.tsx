@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { usePdfActions } from './usePdfActions'
 import { usePdfStore } from '../store/usePdfStore'
+import { type FormValues } from '../components/FormModal'
 
 const initialState = usePdfStore.getState()
 
@@ -17,12 +18,13 @@ function openDoc(pages = 4) {
 }
 
 function okFetch(json: unknown = { success: true }) {
-  return vi.fn(async () => ({ ok: true, status: 200, json: async () => json, text: async () => '' }) as unknown as Response)
+  return vi.fn((_path: string, _init?: RequestInit) =>
+    Promise.resolve({ ok: true, status: 200, json: async () => json, text: async () => '' } as unknown as Response))
 }
 
 const helpers = () => ({
-  askForm: vi.fn(async () => ({ text: 'CONFIDENCIAL' })),
-  askConfirm: vi.fn(async () => true),
+  askForm: vi.fn(async (): Promise<FormValues | null> => ({ text: 'CONFIDENCIAL' })),
+  askConfirm: vi.fn(async (): Promise<boolean> => true),
   toastActionError: vi.fn(),
 })
 

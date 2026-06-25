@@ -5,7 +5,7 @@ import type { OutlineItem } from '../store/usePdfStore'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useFormModal } from './FormModal'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 function OutlineTree({ items, depth = 0, onJump, tc }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void; tc: (d: string, l: string) => string }) {
   return (

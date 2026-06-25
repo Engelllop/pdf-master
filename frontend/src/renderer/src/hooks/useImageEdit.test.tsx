@@ -37,7 +37,7 @@ describe('imgLocalOf', () => {
 
 describe('carga de imágenes de la página', () => {
   it('hace fetch a /images cuando la herramienta es editimage', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, json: async () => ({ images: [{ xref: 7, x0: 0, y0: 0, x1: 10, y1: 10 }] }) }) as unknown as Response)
+    const fetchMock = vi.fn((_path: string) => Promise.resolve({ ok: true, json: async () => ({ images: [{ xref: 7, x0: 0, y0: 0, x1: 10, y1: 10 }] }) } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
     usePdfStore.setState({ activeTool: 'editimage' })
     const { result } = setup()
@@ -48,7 +48,7 @@ describe('carga de imágenes de la página', () => {
 
 describe('applyImageTransform', () => {
   it('delete: llama a /transform-image con delete y marca dirty', async () => {
-    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ success: true }) }) as unknown as Response)
+    const fetchMock = vi.fn((_path: string, _init?: RequestInit) => Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }) } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
     const { result } = setup()
     const im = { xref: 7, x0: 100, y0: 100, x1: 300, y1: 200 }

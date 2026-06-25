@@ -2,7 +2,7 @@ import { useStoreSlice } from './useStoreSlice'
 import { type PdfDoc } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 type ActiveDoc = PdfDoc | undefined
 

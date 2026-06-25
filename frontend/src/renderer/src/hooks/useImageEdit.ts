@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from './useStoreSlice'
 
-const API_BASE = 'http://localhost:8745'
+import { API_BASE } from '../lib/api'
 
 type LocalRect = { l: number; t: number; w: number; h: number }
 export type PageImage = { xref: number; x0: number; y0: number; x1: number; y1: number }
