@@ -407,11 +407,15 @@ app.whenReady().then(async () => {
   // Adjunta el PDF como bloque "document" base64 para que Claude lea el documento
   // nativamente. Se hace en el main (no en el backend Python) para no tocar el
   // motor PyMuPDF ni recompilar el exe, y para mantener la API key fuera del renderer.
+  // AbortControllers vivos por requestId, para que el renderer pueda detener la generación.
+  const aiControllers = new Map<string, AbortController>()
   ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[] }) => {
     const { requestId, docId, apiKey, messages } = payload
     const send = (channel: string, data: object) => {
       if (!event.sender.isDestroyed()) event.sender.send(channel, { requestId, ...data })
     }
+    const controller = new AbortController()
+    aiControllers.set(requestId, controller)
     try {
       if (!apiKey) throw new Error('Falta la API key de Anthropic')
 
@@ -450,6 +454,7 @@ app.whenReady().then(async () => {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers,
+        signal: controller.signal,
         body: JSON.stringify({
           model: 'claude-opus-4-8',
           max_tokens: 8000,
@@ -492,9 +497,20 @@ app.whenReady().then(async () => {
       }
       send('ai:done', {})
     } catch (err) {
-      safeLog('ERROR', `[Main] AI chat failed: ${err}`)
-      send('ai:error', { error: err instanceof Error ? err.message : String(err) })
+      // El usuario detuvo la generación: cierre normal, no error.
+      if (err instanceof Error && err.name === 'AbortError') {
+        send('ai:done', {})
+      } else {
+        safeLog('ERROR', `[Main] AI chat failed: ${err}`)
+        send('ai:error', { error: err instanceof Error ? err.message : String(err) })
+      }
+    } finally {
+      aiControllers.delete(requestId)
     }
+  })
+
+  ipcMain.on('ai:abort', (_event, requestId: string) => {
+    aiControllers.get(requestId)?.abort()
   })
 
   ipcMain.handle('file:readBase64', async (_event, filePath: string) => {

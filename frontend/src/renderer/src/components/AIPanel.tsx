@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, X, Send, KeyRound, Loader2, Eraser } from 'lucide-react'
+import { Sparkles, X, Send, KeyRound, Loader2, Eraser, Square } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 
 const KEY_STORAGE = 'pdfmaster_anthropic_key'
@@ -13,16 +13,23 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORAGE) || '')
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
-  const [messages, setMessages] = useState<Msg[]>([])
+  // Conversación independiente por documento (clave = doc_id, o '__nodoc__' sin doc).
+  const [conversations, setConversations] = useState<Record<string, Msg[]>>({})
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const reqRef = useRef<string | null>(null)
+  const reqKeyRef = useRef<string>('__nodoc__')
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  const convKey = activeDocId || '__nodoc__'
+  const messages = conversations[convKey] || []
+  const setMsgsFor = (key: string, fn: (prev: Msg[]) => Msg[]) =>
+    setConversations((c) => ({ ...c, [key]: fn(c[key] || []) }))
 
   useEffect(() => {
     const offChunk = window.api.onAiChunk(({ requestId, text }) => {
       if (requestId !== reqRef.current) return
-      setMessages((m) => {
+      setMsgsFor(reqKeyRef.current, (m) => {
         const next = [...m]
         next[next.length - 1] = { role: 'assistant', text: next[next.length - 1].text + text }
         return next
@@ -33,7 +40,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     })
     const offErr = window.api.onAiError(({ requestId, error }) => {
       if (requestId !== reqRef.current) return
-      setMessages((m) => {
+      setMsgsFor(reqKeyRef.current, (m) => {
         const next = [...m]
         next[next.length - 1] = { role: 'assistant', text: `⚠️ ${error}` }
         return next
@@ -42,6 +49,11 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     })
     return () => { offChunk(); offDone(); offErr() }
   }, [])
+
+  const stop = () => {
+    if (reqRef.current) window.api.aiAbort(reqRef.current)
+    setStreaming(false); reqRef.current = null
+  }
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -55,7 +67,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     }
     window.addEventListener('app:ai-preset', onPreset as EventListener)
     return () => window.removeEventListener('app:ai-preset', onPreset as EventListener)
-  }, [apiKey, activeDocId, messages, streaming])
+  }, [apiKey, activeDocId, conversations, streaming])
 
   const saveKey = () => {
     const k = keyInput.trim()
@@ -67,10 +79,12 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const send = (text: string) => {
     const content = text.trim()
     if (!content || streaming || !apiKey) return
-    const history = [...messages, { role: 'user' as const, text: content }]
+    const key = activeDocId || '__nodoc__'
+    const history = [...(conversations[key] || []), { role: 'user' as const, text: content }]
     const requestId = crypto.randomUUID()
     reqRef.current = requestId
-    setMessages([...history, { role: 'assistant', text: '' }])
+    reqKeyRef.current = key
+    setMsgsFor(key, () => [...history, { role: 'assistant', text: '' }])
     setInput('')
     setStreaming(true)
     window.api.aiChat({ requestId, docId: activeDocId, apiKey, messages: history })
@@ -109,7 +123,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
             <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-fg text-toolbar' : 'bg-surface text-fg border border-border'
             }`}>
-              {m.text || (streaming && i === messages.length - 1 ? <Loader2 size={14} className="animate-spin" /> : '')}
+              {m.text || (streaming && reqKeyRef.current === convKey && i === messages.length - 1 ? <Loader2 size={14} className="animate-spin" /> : '')}
             </div>
           </div>
         ))}
@@ -120,13 +134,14 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder={activeDoc ? `Pregunta sobre ${activeDoc.file_name}…` : 'Abre un PDF para preguntar…'}
             className="flex-1 resize-none border border-border rounded px-2 py-1.5 text-sm bg-surface text-fg focus:outline-none focus:border-accent" />
-          <button onClick={() => send(input)} disabled={!input.trim() || streaming}
+          <button onClick={() => (streaming ? stop() : send(input))} disabled={!streaming && !input.trim()}
+            title={streaming ? 'Detener' : 'Enviar'}
             className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0">
-            {streaming ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            {streaming ? <Square size={16} /> : <Send size={16} />}
           </button>
         </div>
         {messages.length > 0 && (
-          <button onClick={() => setMessages([])} className="mt-1 text-[11px] text-muted hover:text-fg flex items-center gap-1">
+          <button onClick={() => setMsgsFor(convKey, () => [])} className="mt-1 text-[11px] text-muted hover:text-fg flex items-center gap-1">
             <Eraser size={11} /> Limpiar conversación
           </button>
         )}
