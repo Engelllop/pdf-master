@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Loader2, ChevronsUpDown, FileText, FolderOpen, X, Trash2 } from 'lucide-react'
+import { Loader2, ChevronsUpDown, FileText, FolderOpen, X, Trash2, Plus } from 'lucide-react'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useStoreSlice } from '../hooks/useStoreSlice'
@@ -28,27 +28,35 @@ export default function TabStrip() {
           <div key={doc.doc_id} data-tab-id={doc.doc_id} onClick={() => setActiveDoc(doc.doc_id)}
             onContextMenu={(e) => { e.preventDefault(); setTabMenu({ docId: doc.doc_id, path: doc.file_path, x: e.clientX, y: e.clientY }) }}
             title={doc.file_path}
-            className={`group flex items-center gap-2 px-4 h-full border-r cursor-pointer text-sm min-w-fit transition-colors ${
+            className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-2 mt-1 h-[calc(100%-4px)] rounded-t-lg cursor-pointer text-[13px] min-w-fit max-w-[220px] transition-colors ${
               doc.doc_id === activeDocId
-                ? tc('bg-slate-800 text-slate-100 border-t-2 border-t-blue-500 border-slate-700', 'bg-gray-100 text-gray-900 border-t-2 border-t-blue-500 border-gray-300')
-                : tc('bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200 border-slate-700', 'bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-700 border-gray-300')
+                ? 'bg-surface text-fg shadow-[0_-1px_0_var(--border),inset_1px_0_0_var(--border),inset_-1px_0_0_var(--border)]'
+                : 'text-muted hover:bg-hover hover:text-fg'
             }`}>
-            {loadingDocId === doc.doc_id && <Loader2 size={12} className="animate-spin text-blue-400 shrink-0" />}
+            {loadingDocId === doc.doc_id
+              ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
+              : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : 'text-muted'}`} />}
+            <span className="truncate max-w-[150px]">{doc.file_name}</span>
             {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" title="Cambios sin guardar" />}
-            <span className="truncate max-w-[140px]">{doc.file_name}</span>
             <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }}
-              className={`opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity ${tc('hover:bg-slate-600', 'hover:bg-gray-200')}`}>
+              className={`shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity ${tc('hover:bg-slate-600', 'hover:bg-gray-200')}`}>
               <X size={12} />
             </button>
           </div>
         ))}
+        <Tooltip content="Abrir PDF" shortcut="Ctrl+O">
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-open'))} aria-label="Abrir PDF"
+            className={`app-no-drag p-1.5 mx-1 rounded transition-colors shrink-0 ${tc('text-slate-400 hover:text-slate-100 hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+            <Plus size={16} />
+          </button>
+        </Tooltip>
       </div>
 
       {docs.length > 1 && (
-        <div className="relative h-full flex items-center">
+        <div className="app-no-drag relative h-full flex items-center">
           <Tooltip content="Ir a pestaña…">
             <button onClick={() => setTabListOpen((o) => !o)} aria-label="Lista de pestañas"
-              className={`p-2 h-full transition-colors ${tabListOpen ? 'text-blue-400' : tc('text-slate-400', 'text-gray-500')} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
+              className={`p-2 h-full transition-colors ${tabListOpen ? 'text-accent' : tc('text-slate-400', 'text-gray-500')} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
               <ChevronsUpDown size={16} />
             </button>
           </Tooltip>
@@ -62,10 +70,10 @@ export default function TabStrip() {
                     title={doc.file_path}
                     className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${doc.doc_id === activeDocId ? tc('bg-slate-700', 'bg-gray-100') : ''} ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
                     {loadingDocId === doc.doc_id
-                      ? <Loader2 size={13} className="animate-spin text-blue-400 shrink-0" />
+                      ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
                       : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : tc('text-slate-500', 'text-gray-400')}`} />}
                     <span className="truncate flex-1">{doc.file_name}</span>
-                    {doc.doc_id === activeDocId && <span className="text-[10px] text-blue-400 shrink-0">activo</span>}
+                    {doc.doc_id === activeDocId && <span className="text-[10px] text-accent shrink-0">activo</span>}
                   </button>
                 ))}
               </div>

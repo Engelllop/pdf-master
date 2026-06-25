@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { openDocument } from '../lib/openDocument'
+import { usePdfStore } from '../store/usePdfStore'
 
 export function useFileDrop() {
   const [isDraggingFile, setIsDraggingFile] = useState(false)
@@ -27,12 +28,29 @@ export function useFileDrop() {
   }, [])
 
   // Listen for files opened from main process (file association / second instance).
-  // Opened as background tabs so a tool printing 60+ plans at once doesn't render
-  // every document — only the first/active one renders; others render when clicked.
+  // Se abren como pestañas en segundo plano y se activa la última tras un debounce:
+  // un "abrir con" de un solo archivo salta a esa pestaña al instante, pero si una
+  // herramienta vuelca 60+ planos de golpe la pestaña salta una sola vez (al último)
+  // en lugar de re-renderizar en cada archivo.
   useEffect(() => {
-    const handler = (path: string) => { openDocument(path, { activate: false }) }
+    let activateTimer: ReturnType<typeof setTimeout> | null = null
+    let pendingId: string | null = null
+    const handler = async (path: string) => {
+      const id = await openDocument(path, { activate: false })
+      if (!id) return
+      pendingId = id
+      if (activateTimer) clearTimeout(activateTimer)
+      activateTimer = setTimeout(() => {
+        if (pendingId) usePdfStore.getState().setActiveDoc(pendingId)
+        activateTimer = null
+        pendingId = null
+      }, 350)
+    }
     window.api.onOpenFile(handler)
-    return () => { window.api.removeOpenFileListener() }
+    return () => {
+      if (activateTimer) clearTimeout(activateTimer)
+      window.api.removeOpenFileListener()
+    }
   }, [])
 
   return { isDraggingFile, handleDragOver, handleDragLeave, handleDrop }

@@ -241,10 +241,94 @@ export default function Viewer() {
     return () => ro.disconnect()
   }, [setViewerSize])
 
+  // Edición in-situ de texto existente (herramienta 'edittext')
+  const [editSpan, setEditSpan] = useState<{ x0: number; y0: number; x1: number; y1: number; size: number; color: string; font: string; value: string } | null>(null)
+
+  // Selección visual de área para recortar/redactar (herramientas 'croparea'/'redactarea')
+  type AreaRect = { x0: number; y0: number; x1: number; y1: number }
+  const [areaSel, setAreaSel] = useState<AreaRect | null>(null)
+  const areaSelRef = useRef<AreaRect | null>(null)
+  const areaDraggingRef = useRef(false)
+  const areaToolRef = useRef<'croparea' | 'redactarea' | null>(null)
+  const setArea = (r: AreaRect | null) => { areaSelRef.current = r; setAreaSel(r) }
+
+  // Edición de imágenes existentes (herramienta 'editimage')
+  type LocalRect = { l: number; t: number; w: number; h: number }
+  type PageImage = { xref: number; x0: number; y0: number; x1: number; y1: number }
+  const [pageImages, setPageImages] = useState<PageImage[]>([])
+  const [selImg, setSelImg] = useState<number | null>(null)
+  const [imgPreview, setImgPreview] = useState<LocalRect | null>(null)
+  const imgModeRef = useRef<'move' | 'resize' | null>(null)
+  const imgStartRef = useRef<{ ox: number; oy: number; rect: LocalRect } | null>(null)
+  const imgSx = pageData ? pageData.width / pageData.originalWidth : 1
+  const imgSy = pageData ? pageData.height / pageData.originalHeight : 1
+  const imgLocalOf = (im: PageImage): LocalRect => ({ l: im.x0 * imgSx, t: im.y0 * imgSy, w: (im.x1 - im.x0) * imgSx, h: (im.y1 - im.y0) * imgSy })
+
+  useEffect(() => {
+    if (!activeDoc || store.activeTool !== 'editimage' || !pageData) { setPageImages([]); setSelImg(null); setImgPreview(null); return }
+    fetch(`${API_BASE}/pdf/images/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+      .then((r) => r.json()).then(({ images }) => setPageImages(images || [])).catch(() => setPageImages([]))
+  }, [store.activeTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion, pageData?.width])
+
+  const applyImageTransform = async (im: PageImage, body: { new?: number[]; delete?: boolean; replace_path?: string }) => {
+    if (!activeDoc) return
+    try {
+      const res = await fetch(`${API_BASE}/pdf/transform-image/${activeDoc.doc_id}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ page_num: activeDoc.currentPage, xref: im.xref, old: [im.x0, im.y0, im.x1, im.y1], ...body }),
+      })
+      if (res.ok) {
+        store.setDocDirty(activeDoc.doc_id, true)
+        store.invalidatePageCache(activeDoc.doc_id)
+        store.invalidateThumbnails(activeDoc.doc_id)
+        store.incrementDocVersion(activeDoc.doc_id)
+        store.showToast(body.delete ? 'Imagen eliminada' : body.replace_path ? 'Imagen reemplazada' : 'Imagen actualizada', 'success')
+        setSelImg(null); setImgPreview(null)
+      } else store.showToast('Error al editar la imagen', 'error')
+    } catch { store.showToast('Error al editar la imagen', 'error') }
+  }
+
+  const applyArea = async (tool: 'croparea' | 'redactarea', s: AreaRect) => {
+    if (!activeDoc || !pageData) return
+    const sx = pageData.originalWidth / pageData.width
+    const sy = pageData.originalHeight / pageData.height
+    const rx0 = Math.min(s.x0, s.x1) * sx, rx1 = Math.max(s.x0, s.x1) * sx
+    const ry0 = Math.min(s.y0, s.y1) * sy, ry1 = Math.max(s.y0, s.y1) * sy
+    if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return }
+    try {
+      const res = tool === 'croparea'
+        ? await fetch(`${API_BASE}/pdf/crop/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, top: ry0, right: Math.max(0, pageData.originalWidth - rx1), bottom: Math.max(0, pageData.originalHeight - ry1), left: rx0 }) })
+        : await fetch(`${API_BASE}/pdf/redact/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0 }) })
+      if (res.ok) {
+        store.setDocDirty(activeDoc.doc_id, true)
+        store.invalidatePageCache(activeDoc.doc_id)
+        store.invalidateThumbnails(activeDoc.doc_id)
+        store.incrementDocVersion(activeDoc.doc_id)
+        store.showToast(tool === 'croparea' ? 'Página recortada' : 'Área redactada', 'success')
+      } else store.showToast('Error al aplicar', 'error')
+    } catch { store.showToast('Error al aplicar', 'error') }
+  }
+
   // Mouse handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!activeDoc || !pageData) return
     const pt = getSvgPoint(e)
+
+    // Editar texto existente: busca el span bajo el cursor y abre el editor in-place
+    if (store.activeTool === 'edittext') {
+      e.preventDefault()
+      const pdfX = pt.x * (pageData.originalWidth / pageData.width)
+      const pdfY = pt.y * (pageData.originalHeight / pageData.height)
+      fetch(`${API_BASE}/pdf/spans/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+        .then((r) => r.json())
+        .then(({ spans }: { spans: Array<{ x0: number; y0: number; x1: number; y1: number; text: string; size: number; color: string; font: string }> }) => {
+          const hit = spans.find((s) => pdfX >= s.x0 - 1 && pdfX <= s.x1 + 1 && pdfY >= s.y0 - 1 && pdfY <= s.y1 + 1)
+          if (!hit) { store.showToast('Haz clic justo sobre el texto que quieres editar', 'info'); return }
+          setEditSpan({ x0: hit.x0, y0: hit.y0, x1: hit.x1, y1: hit.y1, size: hit.size, color: hit.color || '#000000', font: hit.font || 'Arial', value: hit.text })
+        })
+        .catch(() => store.showToast('Error al leer el texto de la página', 'error'))
+      return
+    }
 
     // Image annotation tool
     if (store.activeTool === 'image') {
@@ -305,6 +389,30 @@ export default function Viewer() {
       return
     }
 
+    // Edición de imágenes existentes: seleccionar, mover, redimensionar
+    if (store.activeTool === 'editimage') {
+      e.preventDefault()
+      if (selImg != null && pageImages[selImg]) {
+        const r = imgPreview || imgLocalOf(pageImages[selImg])
+        if (Math.abs(pt.x - (r.l + r.w)) < 12 && Math.abs(pt.y - (r.t + r.h)) < 12) {
+          imgModeRef.current = 'resize'; imgStartRef.current = { ox: pt.x, oy: pt.y, rect: r }; setImgPreview(r); return
+        }
+      }
+      const idx = pageImages.findIndex((im) => { const r = imgLocalOf(im); return pt.x >= r.l && pt.x <= r.l + r.w && pt.y >= r.t && pt.y <= r.t + r.h })
+      if (idx >= 0) { setSelImg(idx); imgModeRef.current = 'move'; const r = imgLocalOf(pageImages[idx]); imgStartRef.current = { ox: pt.x, oy: pt.y, rect: r }; setImgPreview(r) }
+      else { setSelImg(null); setImgPreview(null) }
+      return
+    }
+
+    // Selección de área (recortar/redactar): arrastrar rectángulo
+    if (store.activeTool === 'croparea' || store.activeTool === 'redactarea') {
+      e.preventDefault()
+      areaDraggingRef.current = true
+      areaToolRef.current = store.activeTool
+      setArea({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y })
+      return
+    }
+
     // Drawing takes precedence
     if (store.activeTool) {
       e.preventDefault()
@@ -323,10 +431,41 @@ export default function Viewer() {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) return
     const pt = getSvgPoint(e)
+    if (areaDraggingRef.current) {
+      const s = areaSelRef.current
+      if (s) setArea({ x0: s.x0, y0: s.y0, x1: pt.x, y1: pt.y })
+      return
+    }
+    if (imgModeRef.current && imgStartRef.current) {
+      const st = imgStartRef.current, dx = pt.x - st.ox, dy = pt.y - st.oy
+      if (imgModeRef.current === 'move') setImgPreview({ l: st.rect.l + dx, t: st.rect.t + dy, w: st.rect.w, h: st.rect.h })
+      else setImgPreview({ l: st.rect.l, t: st.rect.t, w: Math.max(8, st.rect.w + dx), h: Math.max(8, st.rect.h + dy) })
+      return
+    }
     handleDrawMouseMove(pt)
   }
 
   const handleMouseUp = () => {
+    if (areaDraggingRef.current) {
+      areaDraggingRef.current = false
+      const tool = areaToolRef.current
+      const s = areaSelRef.current
+      setArea(null)
+      store.setActiveTool(null)
+      if (tool && s) applyArea(tool, s)
+      return
+    }
+    if (imgModeRef.current) {
+      const mode = imgModeRef.current; imgModeRef.current = null
+      const pr = imgPreview, idx = selImg
+      if (pr && idx != null && pageImages[idx] && pageData) {
+        const orig = imgLocalOf(pageImages[idx])
+        const moved = Math.abs(pr.l - orig.l) > 1 || Math.abs(pr.t - orig.t) > 1 || Math.abs(pr.w - orig.w) > 1 || Math.abs(pr.h - orig.h) > 1
+        if (moved) applyImageTransform(pageImages[idx], { new: [pr.l / imgSx, pr.t / imgSy, (pr.l + pr.w) / imgSx, (pr.t + pr.h) / imgSy] })
+      }
+      void mode
+      return
+    }
     handleDrawMouseUp()
   }
 
@@ -596,6 +735,29 @@ export default function Viewer() {
                   <SelectionOverlay ann={selectedAnnLeft} pageData={pageData} toScreen={toScreenCoords}
                     onResizeStart={setResizingAnn} onRotateStart={setRotatingAnn} />
                 )}
+
+                {/* Imágenes existentes (herramienta editar imagen) */}
+                {store.activeTool === 'editimage' && pageImages.map((im, i) => {
+                  const r = (selImg === i && imgPreview) ? imgPreview : imgLocalOf(im)
+                  const sel = selImg === i
+                  return (
+                    <g key={`${im.xref}-${i}`} style={{ cursor: 'move' }}>
+                      <rect x={r.l} y={r.t} width={r.w} height={r.h}
+                        fill={sel ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.04)'}
+                        stroke="#3b82f6" strokeWidth={sel ? 2 : 1} strokeDasharray={sel ? undefined : '4 3'} />
+                      {sel && <rect x={r.l + r.w - 5} y={r.t + r.h - 5} width={10} height={10} fill="#3b82f6" style={{ cursor: 'nwse-resize' }} />}
+                    </g>
+                  )
+                })}
+
+                {/* Rectángulo de selección de área (recortar/redactar) */}
+                {areaSel && (store.activeTool === 'croparea' || store.activeTool === 'redactarea') && (
+                  <rect x={Math.min(areaSel.x0, areaSel.x1)} y={Math.min(areaSel.y0, areaSel.y1)}
+                    width={Math.abs(areaSel.x1 - areaSel.x0)} height={Math.abs(areaSel.y1 - areaSel.y0)}
+                    fill={store.activeTool === 'redactarea' ? 'rgba(0,0,0,0.35)' : 'rgba(59,130,246,0.15)'}
+                    stroke={store.activeTool === 'redactarea' ? '#000000' : '#3b82f6'}
+                    strokeWidth={1} strokeDasharray="4 3" pointerEvents="none" />
+                )}
               </svg>
 
               {/* Note input popup */}
@@ -635,6 +797,63 @@ export default function Viewer() {
                       else if (e.key === 'Escape') { e.preventDefault(); setTextPos(null); setTextInput('') }
                     }}
                     onBlur={() => { if (textInput.trim()) saveText(); else { setTextPos(null); setTextInput('') } }} />
+                )
+              })()}
+
+              {/* Acciones de la imagen seleccionada */}
+              {store.activeTool === 'editimage' && selImg != null && pageImages[selImg] && (() => {
+                const im = pageImages[selImg]
+                const s = toScreenCoords(im.x0, im.y0)
+                return (
+                  <div className="absolute z-30 flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
+                    <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
+                      className="px-2 py-1 text-xs rounded bg-red-600 text-white shadow hover:bg-red-500">Eliminar</button>
+                    <button onMouseDown={(e) => e.stopPropagation()}
+                      onClick={async () => { const p = await window.api.openFile([{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
+                      className="px-2 py-1 text-xs rounded bg-fg text-toolbar shadow hover:opacity-90">Reemplazar</button>
+                  </div>
+                )
+              })()}
+
+              {/* Editor in-place de texto existente */}
+              {editSpan && activeDoc && (() => {
+                const sx2 = pageData.width / pageData.originalWidth
+                const s = toScreenCoords(editSpan.x0 * sx2, editSpan.y0 * sx2)
+                const fpx = (editSpan.size || 12) * sx2
+                const w = Math.max((editSpan.x1 - editSpan.x0) * sx2 + fpx * 3, fpx * 4)
+                const commit = async () => {
+                  const v = editSpan.value
+                  const span = editSpan
+                  setEditSpan(null)
+                  try {
+                    const res = await fetch(`${API_BASE}/pdf/edit-text/${activeDoc.doc_id}`, {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ page_num: activeDoc.currentPage, x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1, text: v, size: span.size, color: span.color, font: span.font }),
+                    })
+                    if (res.ok) {
+                      store.setDocDirty(activeDoc.doc_id, true)
+                      store.invalidatePageCache(activeDoc.doc_id)
+                      store.invalidateThumbnails(activeDoc.doc_id)
+                      store.incrementDocVersion(activeDoc.doc_id)
+                      store.showToast('Texto editado', 'success')
+                    } else store.showToast('Error al editar texto', 'error')
+                  } catch { store.showToast('Error al editar texto', 'error') }
+                }
+                return (
+                  <textarea autoFocus value={editSpan.value}
+                    onChange={(e) => setEditSpan({ ...editSpan, value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit() }
+                      else if (e.key === 'Escape') { e.preventDefault(); setEditSpan(null) }
+                    }}
+                    onBlur={commit}
+                    className="absolute z-30 outline-none resize-none overflow-hidden leading-tight"
+                    style={{
+                      left: s.x, top: s.y, fontSize: fpx, fontFamily: editSpan.font || 'Arial',
+                      color: editSpan.color || '#000', background: '#fff',
+                      width: w, height: fpx * 1.5,
+                      border: '1px solid rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
+                    }} />
                 )
               })()}
 

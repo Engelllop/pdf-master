@@ -13,8 +13,30 @@ from app.models.pdf import (
     ReplaceTextRequest, MetadataRequest, PageText, TextBlock,
 )
 from app.services.pdf_service import pdf_service, PasswordRequiredError
+from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class EditTextRequest(BaseModel):
+    page_num: int
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    text: str
+    size: Optional[float] = None
+    color: str = "#000000"
+    font: Optional[str] = None
+
+
+class TransformImageRequest(BaseModel):
+    page_num: int
+    xref: int
+    old: List[float]
+    new: Optional[List[float]] = None
+    delete: bool = False
+    replace_path: Optional[str] = None
 
 _IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tif', '.tiff'}
 
@@ -71,6 +93,14 @@ def get_page_image(doc_id: str, page_num: int, zoom: float = Query(1.0, ge=0.05,
         raise HTTPException(status_code=404, detail="Page not found")
     from fastapi import Response
     return Response(content=img_bytes, media_type="image/png")
+
+@router.get("/raw/{doc_id}")
+def get_raw_pdf(doc_id: str, v: int = Query(0)):
+    data = pdf_service.get_pdf_bytes(doc_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    from fastapi import Response
+    return Response(content=data, media_type="application/pdf")
 
 @router.get("/tile/{doc_id}/{page_num}")
 def get_tile(doc_id: str, page_num: int,
@@ -295,6 +325,26 @@ def get_text_clip(doc_id: str, page_num: int, req: TextClipRequest):
 @router.get("/spans/{doc_id}/{page_num}")
 def get_page_spans(doc_id: str, page_num: int):
     return {"spans": pdf_service.get_page_spans(doc_id, page_num)}
+
+@router.post("/edit-text/{doc_id}", response_model=SaveResult)
+def edit_text(doc_id: str, req: EditTextRequest):
+    ok = pdf_service.edit_text_span(doc_id, req.page_num, req.x0, req.y0, req.x1, req.y1, req.text, req.size, req.color, req.font)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return SaveResult(success=True)
+
+@router.get("/images/{doc_id}/{page_num}")
+def list_page_images(doc_id: str, page_num: int):
+    return {"images": pdf_service.list_page_images(doc_id, page_num)}
+
+@router.post("/transform-image/{doc_id}", response_model=SaveResult)
+def transform_image(doc_id: str, req: TransformImageRequest):
+    if req.replace_path:
+        _validate_input_file(req.replace_path, _IMAGE_EXTS)
+    ok = pdf_service.transform_image(doc_id, req.page_num, req.xref, req.old, req.new, req.delete, req.replace_path)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page or image not found")
+    return SaveResult(success=True)
 
 @router.get("/snap-points/{doc_id}/{page_num}")
 def get_snap_points(doc_id: str, page_num: int):

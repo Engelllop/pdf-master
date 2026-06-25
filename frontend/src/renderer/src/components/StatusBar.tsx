@@ -1,64 +1,81 @@
-import { Monitor, CheckCircle2, Loader2, Ruler } from 'lucide-react'
-import { useThemeClasses } from '../hooks/useThemeClasses'
+import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 
 export default function StatusBar() {
-  const tc = useThemeClasses()
-  const { docs, activeDocId, saveStatus, sidebarOpen, toolsPanelOpen, activeTool } = useStoreSlice(
-    'docs', 'activeDocId', 'saveStatus', 'sidebarOpen', 'toolsPanelOpen', 'activeTool',
+  const {
+    docs, activeDocId, saveStatus, activeTool,
+    setZoom, setPage, setFitMode, computeFitZoom, viewerWidth, viewerHeight,
+    continuousMode, toggleContinuousMode,
+  } = useStoreSlice(
+    'docs', 'activeDocId', 'saveStatus', 'activeTool',
+    'setZoom', 'setPage', 'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
+    'continuousMode', 'toggleContinuousMode',
   )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
 
   const scale = activeDoc?.measurementScale
   const measuring = !!activeTool && activeTool.startsWith('measure')
-
   const zoomPercent = activeDoc ? Math.round(activeDoc.zoom * 100) : 100
-  const pageLabel = activeDoc
-    ? `Página ${activeDoc.currentPage + 1} / ${activeDoc.page_count}`
-    : 'Sin documento'
   const dims = activeDoc
     ? `${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.width || 0)} × ${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.height || 0)} pt`
     : ''
 
+  const applyFit = (mode: 'fit-width' | 'fit-page') => {
+    if (!activeDoc) return
+    setFitMode(activeDoc.doc_id, mode)
+    setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight))
+  }
+
+  const iconBtn = 'p-1 rounded hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-30'
+
   return (
-    <div className={`h-7 border-t flex items-center px-3 text-xs select-none gap-4 ${tc('bg-slate-950 border-slate-700 text-slate-400', 'bg-gray-100 border-gray-300 text-gray-600')}`}>
-      <span className="min-w-[140px]">{pageLabel}</span>
-      {dims && <span className="min-w-[100px] text-slate-500">{dims}</span>}
-      <span className="min-w-[60px]">Zoom {zoomPercent}%</span>
+    <div className="h-8 border-t border-border bg-toolbar text-muted flex items-center px-3 text-xs select-none gap-3">
+      {activeDoc ? (
+        <span className="flex items-center gap-1">
+          Pág.
+          <input type="number" min={1} max={activeDoc.page_count} value={activeDoc.currentPage + 1}
+            onChange={(e) => { const v = parseInt(e.target.value); if (v >= 1 && v <= activeDoc.page_count) setPage(activeDoc.doc_id, v - 1) }}
+            className="w-10 border border-border rounded px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
+          / {activeDoc.page_count}
+        </span>
+      ) : (
+        <span>Sin documento</span>
+      )}
+      {dims && <span className="text-muted">{dims}</span>}
 
       {activeDoc && scale && (
         <span className="flex items-center gap-1 text-emerald-500" title="Escala de medición calibrada">
-          <Ruler size={12} />
-          1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
+          <Ruler size={12} /> 1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
         </span>
       )}
       {activeDoc && !scale && measuring && (
         <span className="flex items-center gap-1 text-amber-500" title="Usa Calibrar escala antes de medir">
-          <Ruler size={12} />
-          Sin calibrar
+          <Ruler size={12} /> Sin calibrar
         </span>
       )}
 
       <div className="flex-1" />
 
       {saveStatus === 'saving' && (
-        <span className="flex items-center gap-1 text-blue-400">
-          <Loader2 size={12} className="animate-spin" />
-          Guardando...
-        </span>
+        <span className="flex items-center gap-1 text-accent"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
       )}
       {saveStatus === 'saved' && (
-        <span className="flex items-center gap-1 text-emerald-400">
-          <CheckCircle2 size={12} />
-          Guardado
-        </span>
+        <span className="flex items-center gap-1 text-emerald-500"><CheckCircle2 size={12} /> Guardado</span>
       )}
 
-      {(sidebarOpen || toolsPanelOpen) && (
-        <span className="text-slate-500">
-          <Monitor size={12} className="inline mr-1" />
-          {sidebarOpen && toolsPanelOpen ? 'Paneles' : sidebarOpen ? 'Sidebar' : 'Tools'}
-        </span>
+      {activeDoc && (
+        <>
+          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'text-accent' : ''}`} title="Scroll continuo">
+            <ScrollText size={14} />
+          </button>
+          <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho"><MoveVertical size={14} /></button>
+          <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página"><Maximize2 size={14} /></button>
+          <div className="w-px h-4 bg-border" />
+          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar"><ZoomOut size={14} /></button>
+          <button onClick={() => { setZoom(activeDoc.doc_id, 1); setFitMode(activeDoc.doc_id, 'custom') }}
+            className="font-mono w-12 text-center text-fg hover:text-accent" title="Zoom 100%">{zoomPercent}%</button>
+          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} className={iconBtn} title="Acercar"><ZoomIn size={14} /></button>
+        </>
       )}
     </div>
   )

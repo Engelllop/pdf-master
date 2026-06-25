@@ -237,3 +237,13 @@ class TestDocumentOps:
         info = open_doc()
         assert client.post(f"/pdf/close/{info['doc_id']}").status_code == 200
         assert client.get(f"/pdf/page-image/{info['doc_id']}/0").status_code == 404
+
+    def test_open_does_not_lock_file_on_disk(self, client, pdf_factory):
+        """Bug 'el archivo está en uso' al eliminar: abrir por stream no debe pinear
+        el archivo en disco, así que puede borrarse aunque el doc siga abierto."""
+        path = pdf_factory(pages=1)
+        info = client.post("/pdf/open", json={"file_path": path}).json()
+        assert client.get(f"/pdf/page-image/{info['doc_id']}/0").status_code == 200
+        os.remove(path)  # en Windows fallaba con PermissionError antes del fix
+        assert not os.path.exists(path)
+        client.post(f"/pdf/close/{info['doc_id']}")

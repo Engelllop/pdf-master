@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import { usePdfStore } from './store/usePdfStore'
 import { useStoreSlice } from './hooks/useStoreSlice'
+import TopBar from './components/TopBar'
 import Toolbar from './components/Toolbar'
 import ThumbnailPanel from './components/ThumbnailPanel'
 import Viewer from './components/Viewer'
-import ToolsPanel from './components/ToolsPanel'
 import StatusBar from './components/StatusBar'
 import Toasts from './components/Toasts'
 import ComparisonView from './components/ComparisonView'
 import PresentationView from './components/PresentationView'
 import ContinuousView from './components/ContinuousView'
 import ShortcutsModal from './components/ShortcutsModal'
+import AIPanel from './components/AIPanel'
+import { useFormModal } from './components/FormModal'
+import { registerPromptHandler } from './lib/uiPrompt'
 import { openDocument } from './lib/openDocument'
 import { requestCloseDoc } from './lib/closeDocument'
 
@@ -26,6 +29,20 @@ function App() {
   const { theme, readingMode, compareMode, presentationMode, continuousMode } = store
   const [backendOk, setBackendOk] = useState(true)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [aiOpen, setAiOpen] = useState(false)
+  const { askForm, askConfirm, formModal } = useFormModal()
+
+  useEffect(() => { registerPromptHandler({ askForm, askConfirm }) }, [askForm, askConfirm])
+
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      setAiOpen(true)
+      const preset = (e as CustomEvent).detail?.preset as string | undefined
+      if (preset) setTimeout(() => window.dispatchEvent(new CustomEvent('app:ai-preset', { detail: { preset } })), 80)
+    }
+    window.addEventListener('app:ai-open', onOpen as EventListener)
+    return () => window.removeEventListener('app:ai-open', onOpen as EventListener)
+  }, [])
 
   // Panel de atajos: F1 lo abre/cierra; Esc lo cierra; la toolbar lo abre por evento.
   useEffect(() => {
@@ -49,8 +66,10 @@ function App() {
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark')
+      window.api.setTitleOverlay({ color: '#1e293b', symbolColor: '#e2e8f0' })
     } else {
       document.documentElement.classList.remove('dark')
+      window.api.setTitleOverlay({ color: '#ffffff', symbolColor: '#1f2329' })
     }
   }, [theme])
 
@@ -290,20 +309,22 @@ function App() {
           Motor PDF desconectado — Guarda tu trabajo y reinicia la aplicación
         </div>
       )}
-      {!readingMode && <Toolbar />}
-      {compareMode ? (
-        <div className="flex-1 flex overflow-hidden">
-          <ComparisonView />
+      {!readingMode && <TopBar />}
+      <div className="flex-1 flex overflow-hidden">
+        {!readingMode && !compareMode && <ThumbnailPanel />}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {!readingMode && <Toolbar />}
+          {compareMode ? (
+            <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
+          ) : (
+            continuousMode ? <ContinuousView /> : <Viewer />
+          )}
+          {!readingMode && <StatusBar />}
         </div>
-      ) : (
-        <div className="flex-1 flex overflow-hidden">
-          {!readingMode && <ThumbnailPanel />}
-          {continuousMode ? <ContinuousView /> : <Viewer />}
-          {!readingMode && !continuousMode && <ToolsPanel />}
-        </div>
-      )}
-      {!readingMode && <StatusBar />}
+        {!readingMode && aiOpen && <AIPanel onClose={() => setAiOpen(false)} />}
+      </div>
       <Toasts />
+      {formModal}
       {presentationMode && <PresentationView />}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
     </div>

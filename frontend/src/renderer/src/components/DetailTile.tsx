@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-
-const API_BASE = 'http://localhost:8745'
+import { renderPdfTile, revokePageUrl } from '../lib/pdfjs'
 
 interface PageGeom {
   width: number
@@ -28,6 +27,7 @@ export default function DetailTile({
 }) {
   const [tile, setTile] = useState<{ url: string; left: number; top: number; w: number; h: number } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const urlRef = useRef<string | null>(null)
 
   const bitmapScale = pageData.width / pageData.originalWidth // e.g. 3
   const cssScale = zoom / bitmapScale // > 1 means the base bitmap is being upscaled (blurry)
@@ -61,17 +61,25 @@ export default function DetailTile({
       const x1 = visRight * toPdf
       const y1 = visBottom * toPdf
       const tzoom = Math.min(zoom * (window.devicePixelRatio || 1), 8)
-      const url = `${API_BASE}/pdf/tile/${docId}/${page}?x0=${x0.toFixed(2)}&y0=${y0.toFixed(2)}&x1=${x1.toFixed(2)}&y1=${y1.toFixed(2)}&zoom=${tzoom.toFixed(2)}&v=${version}`
-      setTile({
-        url,
-        left: x0 * bitmapScale,
-        top: y0 * bitmapScale,
-        w: (x1 - x0) * bitmapScale,
-        h: (y1 - y0) * bitmapScale,
-      })
+      renderPdfTile(docId, version, page, x0, y0, x1, y1, tzoom)
+        .then((r) => {
+          revokePageUrl(urlRef.current || undefined)
+          urlRef.current = r.url
+          setTile({
+            url: r.url,
+            left: x0 * bitmapScale,
+            top: y0 * bitmapScale,
+            w: (x1 - x0) * bitmapScale,
+            h: (y1 - y0) * bitmapScale,
+          })
+        })
+        .catch(() => {})
     }, 180)
     return () => { if (timer.current) clearTimeout(timer.current) }
   }, [docId, page, zoom, version, scrollKey, cssScale, bitmapScale, pageData.originalWidth, containerRef])
+
+  // Revoca el blob del tile al desmontar
+  useEffect(() => () => { revokePageUrl(urlRef.current || undefined) }, [])
 
   if (!tile) return null
   return (

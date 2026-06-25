@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { type Annotation, type PdfState } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
+import { askForm } from '../lib/uiPrompt'
 
 const API_BASE = 'http://localhost:8745'
 const SNAP_TOLERANCE_SCREEN_PX = 10
@@ -225,8 +226,11 @@ export function useAnnotationDraw(
         { x: drawPreview.x || 0, y: drawPreview.y || 0 },
         { x: (drawPreview.x || 0) + (drawPreview.width || 0), y: (drawPreview.y || 0) + (drawPreview.height || 0) }
       )
-      const realInput = prompt(`Distancia medida: ${pixelDist.toFixed(1)} px\nIngresa la distancia real conocida (ej: 100):`)
-      if (!realInput) {
+      const v = await askForm(`Calibrar escala — ${pixelDist.toFixed(1)} px medidos`, [
+        { name: 'real', label: 'Distancia real conocida', type: 'number', defaultValue: '', placeholder: 'Ej. 100' },
+        { name: 'unit', label: 'Unidad', type: 'select', options: ['mm', 'cm', 'm', 'ft', 'in'], defaultValue: 'mm' },
+      ], 'Calibrar')
+      if (!v) {
         showToast('Calibración cancelada', 'info')
         setDrawing(false)
         setDrawPreview(null)
@@ -234,7 +238,7 @@ export function useAnnotationDraw(
         setActiveTool(null)
         return
       }
-      const realValue = parseFloat(realInput)
+      const realValue = parseFloat(String(v.real))
       if (!isFinite(realValue) || realValue <= 0) {
         showToast('Valor inválido', 'error')
         setDrawing(false)
@@ -243,9 +247,7 @@ export function useAnnotationDraw(
         setActiveTool(null)
         return
       }
-      const unitInput = prompt('Unidad (m, cm, mm, ft, in):', 'mm') || 'mm'
-      const validUnits = ['m', 'cm', 'mm', 'ft', 'in']
-      const unit = validUnits.includes(unitInput) ? unitInput as 'm' | 'cm' | 'mm' | 'ft' | 'in' : 'mm'
+      const unit = String(v.unit) as 'm' | 'cm' | 'mm' | 'ft' | 'in'
       setMeasurementScale(activeDoc.doc_id, {
         pixelsPerUnit: pixelDist / realValue,
         unit,
@@ -302,7 +304,8 @@ export function useAnnotationDraw(
         points: drawPoints,
       })
       if (activeTool === 'signature') {
-        const name = prompt('¿Nombre para guardar esta firma? (deja vacío para no guardar)')
+        const sv = await askForm('Guardar firma', [{ name: 'name', label: 'Nombre (vacío = no guardar)', type: 'text', defaultValue: '' }], 'Guardar')
+        const name = sv ? String(sv.name) : ''
         if (name && name.trim()) {
           const saved = JSON.parse(localStorage.getItem('pdfmaster_signatures') || '[]')
           saved.push({ id: crypto.randomUUID(), name: name.trim(), points: drawPoints })

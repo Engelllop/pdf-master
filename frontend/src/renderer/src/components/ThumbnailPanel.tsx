@@ -3,6 +3,7 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2 } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
 import { useThemeClasses } from '../hooks/useThemeClasses'
+import { useFormModal } from './FormModal'
 
 const API_BASE = 'http://localhost:8745'
 
@@ -38,6 +39,7 @@ export default function ThumbnailPanel() {
   )
   const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+  const { askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<'pages' | 'outline' | 'bookmarks' | 'annotations' | 'search'>('pages')
 
@@ -50,6 +52,14 @@ export default function ThumbnailPanel() {
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set())
   const [lastSelectedPage, setLastSelectedPage] = useState<number | null>(null)
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 50 })
+
+  // Esc limpia la selección de páginas (no interfiere con el Esc global de herramientas).
+  useEffect(() => {
+    if (selectedPages.size === 0) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedPages(new Set()) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [selectedPages.size])
 
   // Virtual scrolling
   useEffect(() => {
@@ -135,7 +145,7 @@ export default function ThumbnailPanel() {
 
   const handleDeleteSelected = async () => {
     if (!activeDoc || selectedPages.size === 0) return
-    if (!confirm(`Eliminar ${selectedPages.size} pagina(s)?`)) return
+    if (!(await askConfirm('Eliminar páginas', `¿Eliminar ${selectedPages.size} página(s) seleccionada(s)?`, 'Eliminar'))) return
     const pages = Array.from(selectedPages).sort((a, b) => b - a)
     try {
       const res = await fetch(`${API_BASE}/pdf/delete-pages/${activeDoc.doc_id}`, {
@@ -241,14 +251,25 @@ export default function ThumbnailPanel() {
   }
 
   if (!sidebarOpen) {
+    const rail: Array<{ id: typeof tab; icon: typeof FileText; title: string }> = [
+      { id: 'pages', icon: FileText, title: 'Páginas' },
+      { id: 'outline', icon: BookOpen, title: 'Esquema' },
+      { id: 'bookmarks', icon: Bookmark, title: 'Marcadores' },
+      { id: 'annotations', icon: MessageSquare, title: 'Anotaciones' },
+      { id: 'search', icon: Search, title: 'Búsqueda' },
+    ]
     return (
-      <button
-        onClick={toggleSidebar}
-        className={`w-8 border-r flex items-center justify-center transition-colors shrink-0 group ${tc('bg-slate-800 border-slate-700 hover:bg-slate-700', 'bg-white border-gray-300 hover:bg-gray-100')}`}
-        title="Mostrar paginas"
-      >
-        <PanelLeftClose size={16} className={`rotate-180 ${tc('text-slate-500 group-hover:text-slate-300', 'text-gray-500 group-hover:text-gray-700')}`} />
-      </button>
+      <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+        {rail.map(({ id, icon: Icon, title }) => (
+          <button key={id} onClick={() => { setTab(id); toggleSidebar() }} title={title} aria-label={title}
+            className={`relative p-2 rounded-token transition-colors ${tc('text-slate-400 hover:text-slate-100 hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+            <Icon size={18} />
+            {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+            )}
+          </button>
+        ))}
+      </div>
     )
   }
 
@@ -272,11 +293,11 @@ export default function ThumbnailPanel() {
     <div className={`w-52 border-r flex flex-col shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
         <div className="flex items-center gap-1">
-          <button onClick={() => setTab('pages')} className={`p-1 rounded transition-colors ${tab === 'pages' ? 'text-blue-400' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Paginas"><FileText size={14} /></button>
-          <button onClick={() => setTab('outline')} className={`p-1 rounded transition-colors ${tab === 'outline' ? 'text-blue-400' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Outline"><BookOpen size={14} /></button>
-          <button onClick={() => setTab('bookmarks')} className={`p-1 rounded transition-colors ${tab === 'bookmarks' ? 'text-blue-400' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Marcadores"><Bookmark size={14} /></button>
-          <button onClick={() => setTab('annotations')} className={`p-1 rounded transition-colors ${tab === 'annotations' ? 'text-blue-400' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Anotaciones"><MessageSquare size={14} /></button>
-          <button onClick={() => setTab('search')} className={`p-1 rounded transition-colors relative ${tab === 'search' ? 'text-blue-400' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Resultados de búsqueda"><Search size={14} />{activeDoc.searchResults.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" />}</button>
+          <button onClick={() => setTab('pages')} className={`p-1 rounded transition-colors ${tab === 'pages' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Paginas"><FileText size={14} /></button>
+          <button onClick={() => setTab('outline')} className={`p-1 rounded transition-colors ${tab === 'outline' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Outline"><BookOpen size={14} /></button>
+          <button onClick={() => setTab('bookmarks')} className={`p-1 rounded transition-colors ${tab === 'bookmarks' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Marcadores"><Bookmark size={14} /></button>
+          <button onClick={() => setTab('annotations')} className={`p-1 rounded transition-colors ${tab === 'annotations' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Anotaciones"><MessageSquare size={14} /></button>
+          <button onClick={() => setTab('search')} className={`p-1 rounded transition-colors relative ${tab === 'search' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Resultados de búsqueda"><Search size={14} />{activeDoc.searchResults.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-accent" />}</button>
         </div>
         <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
           <PanelLeftClose size={14} />
@@ -291,7 +312,7 @@ export default function ThumbnailPanel() {
             return (
               <div key={i}>
                 {dragOverIndex === i && dragIndex !== i && (
-                  <div className="h-0.5 bg-blue-500 rounded mb-1" />
+                  <div className="h-0.5 bg-accent rounded mb-1" />
                 )}
                 <div
                   data-page={i}
@@ -324,7 +345,7 @@ export default function ThumbnailPanel() {
                   onClick={(e) => handleThumbClick(i, e)}
                   className={`w-full rounded border transition-all cursor-pointer relative ${
                     activeDoc.currentPage === i
-                      ? isSelected ? 'border-green-500 bg-green-500/10' : 'border-blue-500 bg-blue-500/10'
+                      ? isSelected ? 'border-green-500 bg-green-500/10' : 'border-accent bg-black/5 dark:bg-white/10'
                       : isSelected ? 'border-green-500 bg-green-500/10' : tc('border-slate-700 hover:border-slate-500 bg-slate-900/50', 'border-gray-300 hover:border-gray-400 bg-gray-50')
                   } ${dragIndex === i ? 'opacity-50' : ''}`}
                 >
@@ -337,7 +358,7 @@ export default function ThumbnailPanel() {
                   )}
                   {activeDoc.currentPage === i && viewerScroll.scrollWidth > 0 && (
                     <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
-                      <div className="absolute border-2 border-blue-400 bg-blue-400/20" style={{
+                      <div className="absolute border-2 border-accent bg-accent/20" style={{
                         left: `${Math.max(0, Math.min(100, (viewerScroll.left / viewerScroll.scrollWidth) * 100))}%`,
                         top: `${Math.max(0, Math.min(100, (viewerScroll.top / viewerScroll.scrollHeight) * 100))}%`,
                         width: `${Math.max(0, Math.min(100, (viewerScroll.clientWidth / viewerScroll.scrollWidth) * 100))}%`,
@@ -358,19 +379,24 @@ export default function ThumbnailPanel() {
             )
           })}
           {selectedPages.size > 0 && (
-            <div className={`sticky bottom-2 mx-1 p-2 rounded-lg border shadow-lg flex flex-wrap gap-1.5 justify-center ${tc('bg-slate-800 border-slate-600', 'bg-white border-gray-300')}`}>
-              <span className={`text-[10px] w-full text-center mb-1 ${tc('text-slate-400', 'text-gray-500')}`}>{selectedPages.size} seleccionada(s)</span>
-              <button onClick={() => handleRotateSelected(90)} className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white" title="Rotar CW"><RotateCw size={14} /></button>
-              <button onClick={() => handleRotateSelected(-90)} className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white" title="Rotar CCW"><RotateCcw size={14} /></button>
-              <button onClick={handleDuplicate} className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white" title="Duplicar página"><Copy size={14} /></button>
-              <button onClick={handleInsertBlank} className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white" title="Insertar página en blanco después"><FilePlus2 size={14} /></button>
-              <button onClick={handleExtractSelected} className="p-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white" title="Extraer"><Scissors size={14} /></button>
-              <button onClick={handleDeleteSelected} className="p-1.5 rounded bg-red-600 hover:bg-red-500 text-white" title="Eliminar"><Trash2 size={14} /></button>
-              <button onClick={() => setSelectedPages(new Set())} className={`p-1.5 rounded ${tc('bg-slate-700 hover:bg-slate-600', 'bg-gray-200 hover:bg-gray-300')}`} title="Limpiar"><X size={14} /></button>
+            <div className={`sticky bottom-2 z-10 mx-1 rounded-xl border shadow-xl ${tc('bg-slate-800/95 border-slate-600', 'bg-white/95 border-gray-300')}`}>
+              <div className={`flex items-center justify-between px-2.5 pt-2 pb-1.5 border-b ${tc('border-slate-700', 'border-gray-200')}`}>
+                <span className={`text-[11px] font-medium ${tc('text-slate-300', 'text-gray-600')}`}>{selectedPages.size} seleccionada(s)</span>
+                <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors ${tc('text-slate-300 hover:text-white hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}><X size={15} /></button>
+              </div>
+              <div className="flex flex-wrap gap-1.5 justify-center p-2.5">
+                <button onClick={() => handleRotateSelected(90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° derecha"><RotateCw size={15} /></button>
+                <button onClick={() => handleRotateSelected(-90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° izquierda"><RotateCcw size={15} /></button>
+                <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página"><Copy size={15} /></button>
+                <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después"><FilePlus2 size={15} /></button>
+                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors" title="Extraer a nuevo PDF"><Scissors size={15} /></button>
+                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors" title="Eliminar página(s)"><Trash2 size={15} /></button>
+              </div>
             </div>
           )}
         </div>
       )}
+      {formModal}
       {tab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-2">
           {activeDoc.outline.length > 0 ? (
@@ -407,7 +433,7 @@ export default function ThumbnailPanel() {
                   onClick={() => goToSearchResult(activeDoc.doc_id, i)}
                   className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
                     i === activeDoc.searchIndex
-                      ? 'bg-blue-500/20 border border-blue-500'
+                      ? 'bg-black/5 dark:bg-white/10 border border-accent'
                       : tc('hover:bg-slate-700 border border-transparent', 'hover:bg-gray-100 border border-transparent')
                   }`}
                   title={r.snippet || ''}

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, GitCompare } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
@@ -19,11 +19,15 @@ function ComparePagePanel({
   page,
   zoom,
   label,
+  scrollRef,
+  onScroll,
 }: {
   docId: string
   page: number
   zoom: number
   label: string
+  scrollRef: React.RefObject<HTMLDivElement>
+  onScroll: () => void
 }) {
   const [data, setData] = useState<PageData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -52,26 +56,28 @@ function ComparePagePanel({
 
   const tc = useThemeClasses()
   return (
-    <div className={`flex-1 flex flex-col overflow-auto relative ${tc('bg-slate-900', 'bg-gray-100')}`}>
-      <div className={`px-3 py-1 border-b text-xs flex items-center justify-between ${tc('bg-slate-800 border-slate-700 text-slate-400', 'bg-white border-gray-300 text-gray-500')}`}>
-        <span>{label} — Página {page + 1}</span>
-        {loading && <span className="text-blue-400 animate-pulse">Cargando...</span>}
+    <div className={`flex-1 flex flex-col min-w-0 ${tc('bg-slate-900', 'bg-gray-100')}`}>
+      <div className={`px-3 py-1.5 border-b text-xs flex items-center justify-between shrink-0 ${tc('bg-slate-800 border-slate-700 text-slate-300', 'bg-white border-gray-300 text-gray-600')}`}>
+        <span className="truncate" title={label}>{label} — Pág. {page + 1}</span>
+        {loading && <span className="text-blue-400 animate-pulse shrink-0 ml-2">Cargando…</span>}
       </div>
-      <div className="flex-1 flex items-center justify-center overflow-auto p-4">
-        {data ? (
-          <img
-            src={data.image}
-            alt={`Página ${page + 1}`}
-            className={`rounded shadow-lg ${tc('bg-white', 'bg-gray-50')}`}
-            style={{
-              width: data.width * scale,
-              height: data.height * scale,
-            }}
-            draggable={false}
-          />
-        ) : (
-          <div className={`text-sm ${tc('text-slate-500', 'text-gray-500')}`}>Error al cargar página</div>
-        )}
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto">
+        <div className="min-h-full flex items-start justify-center p-4">
+          {data ? (
+            <img
+              src={data.image}
+              alt={`Página ${page + 1}`}
+              className="rounded shadow-lg bg-white"
+              style={{
+                width: data.width * scale,
+                height: data.height * scale,
+              }}
+              draggable={false}
+            />
+          ) : (
+            <div className={`self-center text-sm ${tc('text-slate-500', 'text-gray-500')}`}>{loading ? '' : 'Error al cargar página'}</div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -91,6 +97,28 @@ export default function ComparisonView() {
   const [rightPage, setRightPage] = useState(activeDoc?.currentPage || 0)
   const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
+
+  const leftScrollRef = useRef<HTMLDivElement>(null)
+  const rightScrollRef = useRef<HTMLDivElement>(null)
+
+  // Con el candado activo, mover un panel arrastra al otro. El guard por diferencia
+  // (>1px) corta el bucle de eco: al igualar el destino, su propio evento scroll ya
+  // coincide y no reescribe el origen.
+  const syncScroll = useCallback((source: 'left' | 'right') => {
+    if (!compareSync) return
+    const from = source === 'left' ? leftScrollRef.current : rightScrollRef.current
+    const to = source === 'left' ? rightScrollRef.current : leftScrollRef.current
+    if (!from || !to) return
+    if (Math.abs(to.scrollTop - from.scrollTop) > 1) to.scrollTop = from.scrollTop
+    if (Math.abs(to.scrollLeft - from.scrollLeft) > 1) to.scrollLeft = from.scrollLeft
+  }, [compareSync])
+
+  // Al activar el candado, alinear de inmediato el panel derecho con el izquierdo.
+  useEffect(() => {
+    if (!compareSync) return
+    const l = leftScrollRef.current, r = rightScrollRef.current
+    if (l && r) { r.scrollTop = l.scrollTop; r.scrollLeft = l.scrollLeft }
+  }, [compareSync])
 
   const runDiff = async () => {
     if (!activeDoc || !compareDoc) return
@@ -233,13 +261,17 @@ export default function ComparisonView() {
           page={leftPage}
           zoom={zoom}
           label={activeDoc.file_name}
+          scrollRef={leftScrollRef}
+          onScroll={() => syncScroll('left')}
         />
-        <div className="w-px bg-slate-700 shrink-0" />
+        <div className={`w-px shrink-0 ${tc('bg-slate-700', 'bg-gray-300')}`} />
         <ComparePagePanel
           docId={compareDoc.doc_id}
           page={rightPage}
           zoom={zoom}
           label={compareDoc.file_name}
+          scrollRef={rightScrollRef}
+          onScroll={() => syncScroll('right')}
         />
       </div>
     </div>

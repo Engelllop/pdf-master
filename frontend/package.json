@@ -1,6 +1,6 @@
 {
   "name": "pdf-master",
-  "version": "1.3.3",
+  "version": "1.4.4",
   "description": "PDF Master - Editor Profesional de PDFs",
   "main": "./out/main/index.js",
   "author": "PDF Master Team",
@@ -27,6 +27,7 @@
     "@electron-toolkit/utils": "^3.0.0",
     "electron-updater": "^6.8.3",
     "lucide-react": "^0.460.0",
+    "pdfjs-dist": "^4.7.76",
     "zustand": "^5.0.1"
   },
   "devDependencies": {

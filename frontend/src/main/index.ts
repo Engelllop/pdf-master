@@ -3,7 +3,8 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlink } from 'fs'
+import { tmpdir } from 'os'
 
 // GPU & performance flags
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -122,6 +123,8 @@ function createWindow(): void {
     height: 900,
     show: true,
     autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#ffffff', symbolColor: '#1f2329', height: 40 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -245,6 +248,23 @@ function initAutoUpdater(): void {
   }, 10000)
 }
 
+// "1-5,8,10-12" → [{from:0,to:4},{from:7,to:7},{from:9,to:11}] (Electron usa índices 0-based)
+function parsePageRanges(input: string): Array<{ from: number; to: number }> {
+  const out: Array<{ from: number; to: number }> = []
+  for (const part of input.split(',')) {
+    const t = part.trim()
+    if (!t) continue
+    if (t.includes('-')) {
+      const [a, b] = t.split('-').map((n) => parseInt(n, 10))
+      if (!isNaN(a) && !isNaN(b)) out.push({ from: Math.min(a, b) - 1, to: Math.max(a, b) - 1 })
+    } else {
+      const n = parseInt(t, 10)
+      if (!isNaN(n)) out.push({ from: n - 1, to: n - 1 })
+    }
+  }
+  return out.filter((r) => r.from >= 0 && r.to >= 0)
+}
+
 function handleFileOpen(filePath: string) {
   if (mainWindow) {
     mainWindow.webContents.send('app:open-file', filePath)
@@ -296,6 +316,10 @@ app.whenReady().then(async () => {
     return filePath
   })
 
+  ipcMain.handle('window:set-overlay', (_event, opts: { color: string; symbolColor: string }) => {
+    try { mainWindow?.setTitleBarOverlay({ ...opts, height: 40 }) } catch { /* ignore */ }
+  })
+
   ipcMain.handle('window:toggleFullscreen', () => {
     if (mainWindow) {
       mainWindow.setFullScreen(!mainWindow.isFullScreen())
@@ -331,6 +355,146 @@ app.whenReady().then(async () => {
 
   ipcMain.on('app:dirty-state', (_event, dirty: boolean) => {
     hasUnsavedChanges = !!dirty
+  })
+
+  // Impresión real del PDF: descarga los bytes (refleja cambios sin guardar),
+  // los carga en una ventana oculta con el visor PDF de Chromium y lanza el
+  // diálogo de impresión nativo sobre ese contenido nítido (no el DOM del visor).
+  ipcMain.handle('pdf:print', async (_event, docId: string, opts?: { pageRanges?: string; copies?: number }) => {
+    let tempPath: string | null = null
+    let printWin: BrowserWindow | null = null
+    try {
+      const res = await fetch(`http://localhost:8745/pdf/raw/${docId}`)
+      if (!res.ok) throw new Error(`raw fetch ${res.status}`)
+      const buf = Buffer.from(await res.arrayBuffer())
+      tempPath = join(tmpdir(), `pdfmaster-print-${Date.now()}.pdf`)
+      writeFileSync(tempPath, buf)
+
+      printWin = new BrowserWindow({
+        show: false,
+        webPreferences: { plugins: true },
+      })
+      const win = printWin
+      const cleanup = () => {
+        if (tempPath) unlink(tempPath, () => {})
+        if (!win.isDestroyed()) win.close()
+      }
+
+      await win.loadFile(tempPath)
+      await new Promise((r) => setTimeout(r, 400)) // deja al visor PDF renderizar
+
+      return await new Promise((resolve) => {
+        const printOpts: Electron.WebContentsPrintOptions = { silent: false }
+        if (opts?.pageRanges) {
+          const ranges = parsePageRanges(opts.pageRanges)
+          if (ranges.length > 0) printOpts.pageRanges = ranges
+        }
+        if (opts?.copies && opts.copies > 1) printOpts.copies = opts.copies
+        win.webContents.print(printOpts, (success, reason) => {
+          cleanup()
+          resolve({ success, reason })
+        })
+      })
+    } catch (err) {
+      if (tempPath) unlink(tempPath, () => {})
+      if (printWin && !printWin.isDestroyed()) printWin.close()
+      safeLog('ERROR', `[Main] Print failed: ${err}`)
+      return { success: false, error: String(err) }
+    }
+  })
+
+  // Asistente IA: streaming directo a la API de Claude (claude-opus-4-8).
+  // Adjunta el PDF como bloque "document" base64 para que Claude lea el documento
+  // nativamente. Se hace en el main (no en el backend Python) para no tocar el
+  // motor PyMuPDF ni recompilar el exe, y para mantener la API key fuera del renderer.
+  ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[] }) => {
+    const { requestId, docId, apiKey, messages } = payload
+    const send = (channel: string, data: object) => {
+      if (!event.sender.isDestroyed()) event.sender.send(channel, { requestId, ...data })
+    }
+    try {
+      if (!apiKey) throw new Error('Falta la API key de Anthropic')
+
+      let docBlock: object | null = null
+      if (docId) {
+        const res = await fetch(`http://localhost:8745/pdf/raw/${docId}`)
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer())
+          if (buf.length <= 28 * 1024 * 1024) {
+            docBlock = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } }
+          }
+        }
+      }
+
+      const apiMessages = messages.map((m, i) => {
+        if (m.role === 'user' && docBlock && i === messages.findIndex((x) => x.role === 'user')) {
+          return { role: 'user', content: [docBlock, { type: 'text', text: m.text }] }
+        }
+        return { role: m.role, content: m.text }
+      })
+
+      // Token OAuth de la suscripción (sk-ant-oat...) → Bearer + beta oauth.
+      // API key de pago (sk-ant-api...) → x-api-key. Soporta ambos.
+      const isOAuth = apiKey.startsWith('sk-ant-oat')
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+        'anthropic-version': '2023-06-01',
+      }
+      if (isOAuth) {
+        headers['authorization'] = `Bearer ${apiKey}`
+        headers['anthropic-beta'] = 'oauth-2025-04-20'
+      } else {
+        headers['x-api-key'] = apiKey
+      }
+
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model: 'claude-opus-4-8',
+          max_tokens: 8000,
+          stream: true,
+          system: 'Eres un asistente experto integrado en PDF Master, un lector y editor de PDF. Respondes en español de forma precisa y concisa sobre el documento PDF adjunto. Si te piden extraer datos, devuélvelos estructurados.',
+          messages: apiMessages,
+        }),
+      })
+
+      if (!resp.ok || !resp.body) {
+        const errText = await resp.text().catch(() => '')
+        let msg = `Error ${resp.status}`
+        try { msg = JSON.parse(errText)?.error?.message || msg } catch {}
+        throw new Error(msg)
+      }
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+      // @ts-ignore — resp.body es async-iterable en undici (Node 18+)
+      for await (const chunk of resp.body) {
+        buffer += decoder.decode(chunk as Buffer, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          const t = line.trim()
+          if (!t.startsWith('data:')) continue
+          const data = t.slice(5).trim()
+          if (data === '[DONE]') continue
+          try {
+            const ev = JSON.parse(data)
+            if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
+              send('ai:chunk', { text: ev.delta.text })
+            } else if (ev.type === 'error') {
+              throw new Error(ev.error?.message || 'Error de la API')
+            }
+          } catch (e) {
+            if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e
+          }
+        }
+      }
+      send('ai:done', {})
+    } catch (err) {
+      safeLog('ERROR', `[Main] AI chat failed: ${err}`)
+      send('ai:error', { error: err instanceof Error ? err.message : String(err) })
+    }
   })
 
   ipcMain.handle('file:readBase64', async (_event, filePath: string) => {

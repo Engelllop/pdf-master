@@ -3,6 +3,7 @@ import { create } from 'zustand'
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
 
 export type LineStyle = 'solid' | 'dashed' | 'dotted'
+export type RibbonTab = 'read' | 'comment' | 'edit' | 'form' | 'page' | 'protect' | 'convert' | 'tools' | 'ai' | 'batch'
 
 export interface PageSize {
   page_num: number
@@ -104,6 +105,7 @@ export interface PdfState {
   viewerWidth: number
   viewerHeight: number
   activeTool: string | null
+  activeRibbon: RibbonTab
   annotationColor: string
   annotationLineWidth: number
   annotationLineStyle: LineStyle
@@ -166,6 +168,7 @@ export interface PdfState {
   prevSearchResult: (docId: string) => void
   goToSearchResult: (docId: string, index: number) => void
   setActiveTool: (tool: string | null) => void
+  setActiveRibbon: (tab: RibbonTab) => void
   setAnnotationColor: (color: string) => void
   setAnnotationLineWidth: (width: number) => void
   setAnnotationLineStyle: (style: LineStyle) => void
@@ -279,11 +282,12 @@ function getPageCacheKey(page: number): string {
 export const usePdfStore = create<PdfState>((set, get) => ({
   docs: [],
   activeDocId: null,
-  sidebarOpen: true,
+  sidebarOpen: false,
   toolsPanelOpen: true,
   viewerWidth: 800,
   viewerHeight: 600,
   activeTool: null,
+  activeRibbon: 'read',
   annotationColor: '#fbbf24',
   annotationLineWidth: typeof strokePrefs.lineWidth === 'number' ? strokePrefs.lineWidth as number : 2,
   annotationLineStyle: (['solid', 'dashed', 'dotted'].includes(strokePrefs.lineStyle as string) ? strokePrefs.lineStyle : 'solid') as LineStyle,
@@ -304,7 +308,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   viewerScroll: { left: 0, top: 0, clientWidth: 0, clientHeight: 0, scrollWidth: 0, scrollHeight: 0 },
   selectedStamp: 'APROBADO',
   stampColor: '#22c55e',
-  theme: (() => { try { const t = localStorage.getItem('pdfmaster_theme'); return t === 'light' ? 'light' : 'dark' } catch { return 'dark' } })(),
+  theme: (() => { try { const t = localStorage.getItem('pdfmaster_theme'); return t === 'dark' ? 'dark' : 'light' } catch { return 'light' } })(),
   readingMode: false,
   presentationMode: false,
   continuousMode: false,
@@ -535,6 +539,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   setActiveTool: (tool) => set({ activeTool: tool, selectedAnnotationId: null }),
+  setActiveRibbon: (tab) => set({ activeRibbon: tab }),
   setAnnotationColor: (color) => set({ annotationColor: color }),
   setAnnotationLineWidth: (width) => {
     const v = Math.max(0.5, Math.min(20, width))

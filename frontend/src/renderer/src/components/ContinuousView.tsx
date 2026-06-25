@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
-const API_BASE = 'http://localhost:8745'
 const GAP = 16
 const BUFFER_PX = 1200
 const MAX_WIDTH = 1000
@@ -76,27 +76,38 @@ export default function ContinuousView() {
     el.scrollTo({ top: offsets[activeDoc.currentPage] ?? 0, behavior: 'auto' })
   }, [activeDoc?.currentPage, activeDoc?.doc_id])
 
-  // Assign binary image URLs for the visible window (the browser streams/caches the PNGs)
+  // Render the visible window locally with PDF.js (sin round-trip a Python).
+  const requestedRef = useRef<Set<number>>(new Set())
   useEffect(() => {
     if (!activeDoc) return
     const d = window.devicePixelRatio || 1
-    setLoaded((prev) => {
-      const next = { ...prev }
-      let changed = false
-      for (let i = range.start; i < range.end && i < pageCount; i++) {
-        if (next[i]) continue
+    let cancelled = false
+    const toRender: number[] = []
+    for (let i = range.start; i < range.end && i < pageCount; i++) {
+      if (!requestedRef.current.has(i)) { requestedRef.current.add(i); toRender.push(i) }
+    }
+    if (toRender.length === 0) return
+    ;(async () => {
+      for (const i of toRender) {
+        if (cancelled) return
         const ps = activeDoc.page_sizes[i]
         const pw = ps?.width || 612
         const rz = Math.min(3, Math.max(1, (width / pw) * d))
-        next[i] = `${API_BASE}/pdf/page-image/${activeDoc.doc_id}/${i}?zoom=${rz}&v=${activeDoc.docVersion}`
-        changed = true
+        try {
+          const r = await renderPdfPage(activeDoc.doc_id, activeDoc.docVersion, i, rz)
+          if (cancelled) { revokePageUrl(r.url); return }
+          setLoaded((prev) => prev[i] ? (revokePageUrl(r.url), prev) : { ...prev, [i]: r.url })
+        } catch { requestedRef.current.delete(i) }
       }
-      return changed ? next : prev
-    })
+    })()
+    return () => { cancelled = true }
   }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, width])
 
-  // Reset loaded bitmaps when the document or its layout changes
-  useEffect(() => { setLoaded({}) }, [activeDoc?.doc_id, activeDoc?.docVersion])
+  // Reset bitmaps (y revoca los blobs) cuando cambia el documento o su layout
+  useEffect(() => {
+    requestedRef.current = new Set()
+    setLoaded((prev) => { Object.values(prev).forEach(revokePageUrl); return {} })
+  }, [activeDoc?.doc_id, activeDoc?.docVersion, width])
 
   if (!activeDoc) {
     return <div className={`flex-1 flex items-center justify-center ${tc('bg-slate-900 text-slate-500', 'bg-gray-100 text-gray-500')}`}>Abre un PDF</div>

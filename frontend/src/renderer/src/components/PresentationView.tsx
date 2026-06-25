@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-
-const API_BASE = 'http://localhost:8745'
+import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
 // Fullscreen slideshow overlay. Click left/right halves or use arrow keys / space to
-// navigate; Esc exits. Renders only the current page bitmap on a black backdrop.
+// navigate; Esc exits. Renders only the current page bitmap (PDF.js) on a black backdrop.
 export default function PresentationView() {
   const store = useStoreSlice('docs', 'activeDocId', 'nextPage', 'prevPage', 'togglePresentationMode')
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
@@ -13,7 +12,12 @@ export default function PresentationView() {
 
   useEffect(() => {
     if (!activeDoc) { setImg(null); return }
-    setImg(`${API_BASE}/pdf/page-image/${activeDoc.doc_id}/${activeDoc.currentPage}?zoom=2&v=${activeDoc.docVersion}`)
+    let url: string | null = null
+    let cancelled = false
+    renderPdfPage(activeDoc.doc_id, activeDoc.docVersion, activeDoc.currentPage, 2)
+      .then((r) => { if (cancelled) { revokePageUrl(r.url); return } url = r.url; setImg(r.url) })
+      .catch(() => {})
+    return () => { cancelled = true; revokePageUrl(url || undefined) }
   }, [activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion])
 
   useEffect(() => {

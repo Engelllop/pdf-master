@@ -1,4 +1,5 @@
 import { usePdfStore } from '../store/usePdfStore'
+import { askForm } from './uiPrompt'
 
 const API_BASE = 'http://localhost:8745'
 
@@ -78,7 +79,8 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
     })
 
     if (res.status === 401) {
-      const pwd = prompt('Este PDF está protegido con contraseña. Ingrésala:')
+      const v = await askForm('PDF protegido', [{ name: 'pwd', label: 'Este PDF requiere contraseña', type: 'password', defaultValue: '' }], 'Abrir')
+      const pwd = v ? String(v.pwd) : ''
       if (pwd) return openDocumentImpl(filePath, { ...opts, password: pwd })
       showToast('Se requiere contraseña para abrir el PDF', 'error')
       return null

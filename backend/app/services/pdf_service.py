@@ -44,6 +44,20 @@ class PdfService:
         # so serialize all access to documents and caches.
         self._lock = threading.RLock()
 
+    @staticmethod
+    def _open_stream(file_path: str) -> fitz.Document:
+        """Abre el PDF leyendo los bytes a memoria, sin que PyMuPDF mantenga abierto
+        el archivo en disco. Así el motor nunca bloquea el archivo del usuario: puede
+        borrarlo, moverlo o sobrescribirlo aunque esté abierto en la app."""
+        with open(file_path, "rb") as fh:
+            data = fh.read()
+        return fitz.open(stream=data, filetype="pdf")
+
+    def _doc_path(self, doc_id: str) -> str:
+        """file_path original del doc (doc.name queda vacío al abrir por stream)."""
+        info = self._infos.get(doc_id)
+        return info.file_path if info else ""
+
     def _acquire(self, doc_id: str) -> fitz.Document:
         """Return the live fitz.Document for doc_id, reopening it from disk if it was
         evicted. Updates LRU recency and evicts other inactive non-dirty docs.
@@ -55,7 +69,7 @@ class PdfService:
             if doc is None:
                 info = self._infos[doc_id]
                 try:
-                    doc = fitz.open(info.file_path)
+                    doc = self._open_stream(info.file_path)
                 except Exception:
                     logger.exception("No se pudo reabrir %s desde %s", doc_id, info.file_path)
                     raise DocumentNotFoundError(f"File no longer available: {info.file_path}")
@@ -111,7 +125,7 @@ class PdfService:
             del self._snap_cache[k]
 
     def open_document(self, file_path: str, password: Optional[str] = None) -> PdfInfo:
-        doc = fitz.open(file_path)
+        doc = self._open_stream(file_path)
         if doc.needs_pass:
             if not password:
                 doc.close()
@@ -170,6 +184,16 @@ class PdfService:
                 "original_width": page.rect.width,
                 "original_height": page.rect.height,
             }
+
+    def get_pdf_bytes(self, doc_id: str) -> Optional[bytes]:
+        """Serializa el documento en memoria (incluye rotaciones/borrados aún sin
+        guardar) para que PDF.js lo renderice en el cliente. El PDF resultante queda
+        desencriptado (PyMuPDF ya autenticó al abrir), así PDF.js no pide contraseña."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            return doc.tobytes(garbage=0, deflate=True)
 
     def get_page_image_bytes(self, doc_id: str, page_num: int, zoom: float = 1.0) -> Optional[bytes]:
         with self._lock:
@@ -634,7 +658,7 @@ class PdfService:
         for p in pages:
             if 0 <= p < len(doc):
                 new_doc.insert_pdf(doc, from_page=p, to_page=p)
-        save_path = output_path or os.path.join(os.path.dirname(doc.name), f"split_{uuid.uuid4().hex[:8]}.pdf")
+        save_path = output_path or os.path.join(os.path.dirname(self._doc_path(doc_id)), f"split_{uuid.uuid4().hex[:8]}.pdf")
         new_doc.save(save_path)
         new_doc.close()
         return save_path
@@ -655,8 +679,9 @@ class PdfService:
             doc = self._acquire(doc_id)
             if not doc:
                 return None
-            save_path = output_path or doc.name
-            in_place = os.path.abspath(save_path) == os.path.abspath(doc.name)
+            save_path = output_path or self._doc_path(doc_id)
+            if not save_path:
+                return None
             temp_path = None
             try:
                 import tempfile
@@ -664,18 +689,10 @@ class PdfService:
                 fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
                 os.close(fd)
                 doc.save(temp_path, garbage=4, deflate=True)
-                if in_place:
-                    # On Windows the open fitz.Document holds the file handle, so
-                    # os.replace onto doc.name fails with PermissionError. Close,
-                    # replace, then reopen from the saved file.
-                    doc.close()
-                    self._docs.pop(doc_id, None)
-                    os.replace(temp_path, save_path)
-                    self._dirty[doc_id] = False
-                    self._acquire(doc_id)  # reopen so the doc stays usable
-                else:
-                    os.replace(temp_path, save_path)
-                    self._dirty[doc_id] = False
+                # El doc se abrió por stream: el motor no tiene el archivo abierto, así
+                # que os.replace sobre el original funciona sin cerrar/reabrir el handle.
+                os.replace(temp_path, save_path)
+                self._dirty[doc_id] = False
                 return save_path
             except Exception:
                 logger.exception("save falló (doc %s → %s)", doc_id, save_path)
@@ -994,8 +1011,119 @@ class PdfService:
                             "text": text,
                             "x0": x0, "y0": y0, "x1": x1, "y1": y1,
                             "size": sp.get("size", y1 - y0),
+                            "color": "#%06x" % (sp.get("color", 0) & 0xFFFFFF),
+                            "font": sp.get("font", ""),
                         })
             return spans
+
+    @staticmethod
+    def _base14_font(font: Optional[str]) -> str:
+        """Mapea el nombre de fuente detectado a una base14 de PyMuPDF."""
+        f = (font or "").lower()
+        bold = "bold" in f or "black" in f or "semibold" in f
+        italic = "italic" in f or "oblique" in f
+        if "courier" in f or "mono" in f or "consol" in f:
+            return "cobo" if bold and italic else "cobi" if italic else "cobo" if bold else "cour"
+        if "times" in f or "georgia" in f or "serif" in f or "roman" in f or "garamond" in f:
+            return "tibi" if bold and italic else "tiit" if italic else "tibo" if bold else "tiro"
+        return "hebi" if bold and italic else "heit" if italic else "hebo" if bold else "helv"
+
+    def edit_text_span(self, doc_id: str, page_num: int, x0: float, y0: float,
+                       x1: float, y1: float, text: str, size: Optional[float] = None,
+                       color: str = "#000000", font: Optional[str] = None) -> bool:
+        """Edición in-situ: tapa el span original con el color de fondo muestreado y
+        reinserta el texto nuevo en la misma posición, mapeando la fuente a una base14
+        aproximada (PyMuPDF no reusa fuentes incrustadas por nombre)."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return False
+            page = doc.load_page(page_num)
+            rect = fitz.Rect(x0, y0, x1, y1)
+            # Color de fondo: el píxel más claro del borde del span (evita los glifos).
+            fill = (1.0, 1.0, 1.0)
+            try:
+                pix = page.get_pixmap(clip=rect, colorspace=fitz.csRGB, alpha=False)
+                w, h = pix.width, pix.height
+                if w > 0 and h > 0:
+                    samples = []
+                    for px in range(0, w, max(1, w // 8)):
+                        samples.append(pix.pixel(px, 0))
+                        samples.append(pix.pixel(px, h - 1))
+                    bg = max(samples, key=lambda c: sum(c))
+                    fill = tuple(v / 255 for v in bg)
+            except Exception:
+                pass
+            page.add_redact_annot(rect, fill=fill)
+            page.apply_redactions()
+            c = color.lstrip("#")
+            rgb = tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(c) == 6 else (0, 0, 0)
+            fs = size or max(6.0, (y1 - y0) * 0.85)
+            try:
+                page.insert_text((x0, y1 - max(1.0, (y1 - y0) * 0.2)), text,
+                                 fontsize=fs, color=rgb, fontname=self._base14_font(font), overlay=True)
+            except Exception:
+                page.insert_text((x0, y1 - max(1.0, (y1 - y0) * 0.2)), text,
+                                 fontsize=fs, color=rgb, overlay=True)
+            self._dirty[doc_id] = True
+            return True
+
+    def list_page_images(self, doc_id: str, page_num: int) -> List[dict]:
+        """Imágenes de la página con su bbox (para editar/mover/borrar)."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return []
+            page = doc.load_page(page_num)
+            out: List[dict] = []
+            try:
+                for info in page.get_image_info(xrefs=True):
+                    xref = info.get("xref", 0)
+                    if not xref:
+                        continue
+                    x0, y0, x1, y1 = info["bbox"]
+                    out.append({"xref": xref, "x0": x0, "y0": y0, "x1": x1, "y1": y1})
+            except Exception:
+                pass
+            return out
+
+    def transform_image(self, doc_id: str, page_num: int, xref: int,
+                        old: List[float], new: Optional[List[float]] = None,
+                        delete: bool = False, replace_path: Optional[str] = None) -> bool:
+        """Mueve/redimensiona/borra/reemplaza una imagen existente: tapa el área
+        original y, si no es borrado, reinserta (la misma imagen o una nueva) en el
+        rect destino."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return False
+            page = doc.load_page(page_num)
+            img_bytes: Optional[bytes] = None
+            if not delete:
+                if replace_path:
+                    try:
+                        with open(replace_path, "rb") as f:
+                            img_bytes = f.read()
+                    except Exception:
+                        return False
+                else:
+                    try:
+                        ext = doc.extract_image(xref)
+                        img_bytes = ext.get("image") if ext else None
+                    except Exception:
+                        img_bytes = None
+            page.add_redact_annot(fitz.Rect(*old), fill=(1, 1, 1))
+            try:
+                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
+            except Exception:
+                page.apply_redactions()
+            if not delete and img_bytes:
+                try:
+                    page.insert_image(fitz.Rect(*(new or old)), stream=img_bytes)
+                except Exception:
+                    return False
+            self._dirty[doc_id] = True
+            return True
 
     def export_word(self, doc_id: str) -> Optional[dict]:
         doc = self._acquire(doc_id)
@@ -1022,7 +1150,7 @@ class PdfService:
             buffer.seek(0)
             data = buffer.read()
             return {
-                "filename": os.path.basename(doc.name).replace('.pdf', '.docx'),
+                "filename": os.path.basename(self._doc_path(doc_id)).replace('.pdf', '.docx'),
                 "data_base64": base64.b64encode(data).decode('utf-8'),
             }
         except DocumentNotFoundError:
@@ -1080,7 +1208,7 @@ class PdfService:
         doc = self._acquire(doc_id)
         if not doc:
             return None
-        save_path = output_path or doc.name
+        save_path = output_path or self._doc_path(doc_id)
         try:
             import tempfile
             dir_name = os.path.dirname(os.path.abspath(save_path))
@@ -1175,7 +1303,7 @@ class PdfService:
             doc = self._acquire(doc_id)
             if not doc:
                 return None
-            source_name = os.path.basename(doc.name)
+            source_name = os.path.basename(self._doc_path(doc_id))
         out = fitz.open()
         page = out.new_page()
         y = 60

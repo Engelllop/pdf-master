@@ -1,0 +1,90 @@
+import { useState } from 'react'
+import { X, Printer } from 'lucide-react'
+import { useThemeClasses } from '../hooks/useThemeClasses'
+import { useStoreSlice } from '../hooks/useStoreSlice'
+
+interface PrintDialogProps {
+  docId: string
+  pageCount: number
+  currentPage: number
+  onClose: () => void
+}
+
+export default function PrintDialog({ docId, pageCount, currentPage, onClose }: PrintDialogProps) {
+  const tc = useThemeClasses()
+  const { showToast } = useStoreSlice('showToast')
+  const [mode, setMode] = useState<'all' | 'current' | 'range'>('all')
+  const [range, setRange] = useState('')
+  const [copies, setCopies] = useState(1)
+  const [printing, setPrinting] = useState(false)
+
+  const handlePrint = async () => {
+    const pageRanges =
+      mode === 'all' ? undefined
+      : mode === 'current' ? `${currentPage + 1}`
+      : range.trim()
+    if (mode === 'range' && !pageRanges) { showToast('Indica un rango de páginas', 'info'); return }
+    setPrinting(true)
+    try {
+      const res = await window.api.printPdf(docId, { pageRanges, copies })
+      if (res?.success) { showToast('Enviado a la impresora', 'success'); onClose() }
+      else if (res?.reason === 'cancelled') onClose()
+      else showToast('No se pudo imprimir', 'error')
+    } catch {
+      showToast('No se pudo imprimir', 'error')
+    } finally {
+      setPrinting(false)
+    }
+  }
+
+  const radio = (val: typeof mode, label: string) => (
+    <label className="flex items-center gap-2 text-sm cursor-pointer text-fg">
+      <input type="radio" name="print-mode" checked={mode === val} onChange={() => setMode(val)} />
+      {label}
+    </label>
+  )
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-label="Imprimir" onClick={(e) => e.stopPropagation()}
+        className={`menu-pop w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel ${tc('border-slate-600 text-slate-200', 'border-gray-300 text-gray-800')}`}>
+        <div className={`flex items-center gap-2 px-4 py-3 border-b ${tc('border-slate-700', 'border-gray-200')}`}>
+          <Printer size={18} className="text-fg" />
+          <h2 className="text-sm font-semibold flex-1">Imprimir</h2>
+          <button onClick={onClose} aria-label="Cerrar"
+            className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-4 py-4 space-y-3">
+          <div className="space-y-2">
+            {radio('all', `Todo el documento (${pageCount} pág.)`)}
+            {radio('current', `Página actual (${currentPage + 1})`)}
+            <div className="flex items-center gap-2">
+              {radio('range', 'Rango:')}
+              <input type="text" value={range} placeholder="ej. 1-5, 8"
+                onChange={(e) => { setRange(e.target.value); setMode('range') }}
+                className="flex-1 border border-border rounded px-2 py-1 text-sm bg-panel text-fg focus:outline-none focus:border-accent" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-muted">Copias</span>
+            <input type="number" min={1} max={99} value={copies}
+              onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
+              className="w-16 border border-border rounded px-2 py-1 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
+          </div>
+        </div>
+
+        <div className={`flex justify-end gap-2 px-4 py-3 border-t ${tc('border-slate-700', 'border-gray-200')}`}>
+          <button onClick={onClose} className="px-3 py-1.5 text-sm rounded text-fg hover:bg-hover transition-colors">Cancelar</button>
+          <button onClick={handlePrint} disabled={printing}
+            className="px-4 py-1.5 text-sm rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
+            <Printer size={14} /> {printing ? 'Imprimiendo…' : 'Imprimir'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
