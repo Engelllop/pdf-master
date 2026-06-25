@@ -12,7 +12,7 @@ const api = {
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number }) => ipcRenderer.invoke('pdf:print', docId, opts),
-  aiChat: (payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[] }) => ipcRenderer.send('ai:chat', payload),
+  aiChat: (payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => ipcRenderer.send('ai:chat', payload),
   aiAbort: (requestId: string) => ipcRenderer.send('ai:abort', requestId),
   onAiChunk: (cb: (d: { requestId: string; text: string }) => void) => {
     const h = (_e: unknown, d: { requestId: string; text: string }) => cb(d)

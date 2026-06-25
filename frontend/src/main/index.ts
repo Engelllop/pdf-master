@@ -409,8 +409,8 @@ app.whenReady().then(async () => {
   // motor PyMuPDF ni recompilar el exe, y para mantener la API key fuera del renderer.
   // AbortControllers vivos por requestId, para que el renderer pueda detener la generación.
   const aiControllers = new Map<string, AbortController>()
-  ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[] }) => {
-    const { requestId, docId, apiKey, messages } = payload
+  ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => {
+    const { requestId, docId, apiKey, messages, scope = 'doc', page = 0 } = payload
     const send = (channel: string, data: object) => {
       if (!event.sender.isDestroyed()) event.sender.send(channel, { requestId, ...data })
     }
@@ -419,8 +419,18 @@ app.whenReady().then(async () => {
     try {
       if (!apiKey) throw new Error('Falta la API key de Anthropic')
 
+      // scope 'page' adjunta solo la imagen de la página actual (liviano, ideal para
+      // planos grandes); 'doc' adjunta el PDF completo para que Claude lo lea nativo.
       let docBlock: object | null = null
-      if (docId) {
+      if (docId && scope === 'page') {
+        const res = await fetch(`http://localhost:8745/pdf/page-image/${docId}/${page}?zoom=2.0`)
+        if (res.ok) {
+          const buf = Buffer.from(await res.arrayBuffer())
+          if (buf.length <= 28 * 1024 * 1024) {
+            docBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: buf.toString('base64') } }
+          }
+        }
+      } else if (docId) {
         const res = await fetch(`http://localhost:8745/pdf/raw/${docId}`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())

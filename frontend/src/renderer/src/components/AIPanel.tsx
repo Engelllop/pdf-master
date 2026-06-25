@@ -17,6 +17,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const [conversations, setConversations] = useState<Record<string, Msg[]>>({})
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [scope, setScope] = useState<'doc' | 'page'>('doc')
   const reqRef = useRef<string | null>(null)
   const reqKeyRef = useRef<string>('__nodoc__')
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -87,7 +88,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     setMsgsFor(key, () => [...history, { role: 'assistant', text: '' }])
     setInput('')
     setStreaming(true)
-    window.api.aiChat({ requestId, docId: activeDocId, apiKey, messages: history })
+    window.api.aiChat({ requestId, docId: activeDocId, apiKey, messages: history, scope, page: activeDoc?.currentPage ?? 0 })
   }
 
   if (!apiKey || editingKey) {
@@ -129,6 +130,15 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="border-t border-border p-2">
+        <div className="flex items-center gap-1 mb-1.5 text-[11px]">
+          <span className="text-muted">Contexto:</span>
+          {(['doc', 'page'] as const).map((s) => (
+            <button key={s} onClick={() => setScope(s)}
+              className={`px-2 py-0.5 rounded transition-colors ${scope === s ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover'}`}>
+              {s === 'doc' ? 'Documento' : 'Página actual'}
+            </button>
+          ))}
+        </div>
         <div className="flex items-end gap-2">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
