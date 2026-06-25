@@ -206,12 +206,35 @@ class EditMixin:
                 pass
             return out
 
+    @staticmethod
+    def _sample_bg_color(page, rect):
+        """Muestrea el color de fondo del borde exterior de rect para rellenar el
+        hueco al borrar/mover una imagen (antes quedaba siempre en blanco). Promedia
+        el marco de 1px de un clip ligeramente mayor que el rect; fallback a blanco."""
+        try:
+            pad = 3.0
+            outer = fitz.Rect(rect.x0 - pad, rect.y0 - pad, rect.x1 + pad, rect.y1 + pad) & page.rect
+            if outer.is_empty:
+                return (1, 1, 1)
+            pix = page.get_pixmap(clip=outer, alpha=False)
+            w, h = pix.width, pix.height
+            if w < 2 or h < 2:
+                return (1, 1, 1)
+            edge = [pix.pixel(x, 0) for x in range(w)] + [pix.pixel(x, h - 1) for x in range(w)]
+            edge += [pix.pixel(0, y) for y in range(h)] + [pix.pixel(w - 1, y) for y in range(h)]
+            n = len(edge)
+            return (sum(p[0] for p in edge) / n / 255.0,
+                    sum(p[1] for p in edge) / n / 255.0,
+                    sum(p[2] for p in edge) / n / 255.0)
+        except Exception:
+            return (1, 1, 1)
+
     def transform_image(self, doc_id: str, page_num: int, xref: int,
                         old: List[float], new: Optional[List[float]] = None,
                         delete: bool = False, replace_path: Optional[str] = None) -> bool:
         """Mueve/redimensiona/borra/reemplaza una imagen existente: tapa el área
-        original y, si no es borrado, reinserta (la misma imagen o una nueva) en el
-        rect destino."""
+        original con el color de fondo muestreado y, si no es borrado, reinserta (la
+        misma imagen o una nueva) en el rect destino."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or page_num < 0 or page_num >= len(doc):
@@ -231,7 +254,8 @@ class EditMixin:
                         img_bytes = ext.get("image") if ext else None
                     except Exception:
                         img_bytes = None
-            page.add_redact_annot(fitz.Rect(*old), fill=(1, 1, 1))
+            old_rect = fitz.Rect(*old)
+            page.add_redact_annot(old_rect, fill=self._sample_bg_color(page, old_rect))
             try:
                 page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
             except Exception:

@@ -64,6 +64,31 @@ class TestImages:
         assert client.get(f"/pdf/dirty/{doc_id}").json()["dirty"] is True
         client.post(f"/pdf/close/{doc_id}")
 
+    def test_transform_image_delete_samples_background(self, client, tmp_path):
+        """Al borrar, el hueco debe tomar el color de fondo (rojo), no blanco."""
+        path = str(tmp_path / "fondo_rojo.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=300, height=300)
+        page.draw_rect(page.rect, color=(0.85, 0.15, 0.15), fill=(0.85, 0.15, 0.15))
+        pix = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 20, 20))
+        pix.clear_with(20)  # imagen oscura encima del fondo rojo
+        page.insert_image(fitz.Rect(100, 100, 200, 200), pixmap=pix)
+        doc.save(path)
+        doc.close()
+        doc_id = _open(client, path)
+        im = client.get(f"/pdf/images/{doc_id}/0").json()["images"][0]
+        resp = client.post(f"/pdf/transform-image/{doc_id}", json={
+            "page_num": 0, "xref": im["xref"],
+            "old": [im["x0"], im["y0"], im["x1"], im["y1"]], "delete": True,
+        })
+        assert resp.status_code == 200, resp.text
+        live = client.get(f"/pdf/raw/{doc_id}")
+        with fitz.open(stream=live.content, filetype="pdf") as d:
+            center = d.load_page(0).get_pixmap(clip=fitz.Rect(140, 140, 160, 160), alpha=False)
+            r, g, b = center.pixel(center.width // 2, center.height // 2)
+            assert r > 150 and g < 120 and b < 120, f"esperaba rojo, no ({r},{g},{b})"
+        client.post(f"/pdf/close/{doc_id}")
+
     def test_transform_image_replace_missing_file_is_422(self, client, tmp_path):
         doc_id = _pdf_with_image(client, tmp_path)
         im = client.get(f"/pdf/images/{doc_id}/0").json()["images"][0]
