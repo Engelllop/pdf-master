@@ -101,7 +101,6 @@ export interface PdfState {
   docs: PdfDoc[]
   activeDocId: string | null
   sidebarOpen: boolean
-  toolsPanelOpen: boolean
   viewerWidth: number
   viewerHeight: number
   activeTool: string | null
@@ -160,7 +159,6 @@ export interface PdfState {
   computeFitZoom: (docId: string, page: number, mode: FitMode, vw: number, vh: number) => number
   addThumbnail: (docId: string, page: number, dataUrl: string) => void
   toggleSidebar: () => void
-  toggleToolsPanel: () => void
   setViewerSize: (w: number, h: number) => void
   setSearchQuery: (docId: string, query: string) => void
   setSearchResults: (docId: string, results: PdfDoc['searchResults']) => void
@@ -283,7 +281,6 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   docs: [],
   activeDocId: null,
   sidebarOpen: false,
-  toolsPanelOpen: true,
   viewerWidth: 800,
   viewerHeight: 600,
   activeTool: null,
@@ -492,7 +489,6 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-  toggleToolsPanel: () => set((state) => ({ toolsPanelOpen: !state.toolsPanelOpen })),
   setViewerSize: (w, h) => set({ viewerWidth: w, viewerHeight: h }),
 
   setSearchQuery: (docId, query) => {
