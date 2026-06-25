@@ -5,6 +5,10 @@ import { usePageLoader } from '../hooks/usePageLoader'
 import { usePanZoom } from '../hooks/usePanZoom'
 import { useAnnotationDraw } from '../hooks/useAnnotationDraw'
 import { useAnnotationDrag } from '../hooks/useAnnotationDrag'
+import { useRotateAnnotation } from '../hooks/useRotateAnnotation'
+import { useRightPageResize } from '../hooks/useRightPageResize'
+import { useImageEdit } from '../hooks/useImageEdit'
+import { useAreaSelect } from '../hooks/useAreaSelect'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
@@ -43,8 +47,8 @@ export default function Viewer() {
   const svgRef = useRef<SVGSVGElement>(null)
   const svgRightRef = useRef<SVGSVGElement>(null)
 
-  // Rotation drag state
-  const [rotatingAnn, setRotatingAnn] = useState<{ id: string; startAngle: number; startRotation: number; centerX: number; centerY: number } | null>(null)
+  // Rotación de anotaciones (compartida por ambas páginas)
+  const { setRotatingAnn } = useRotateAnnotation(svgRef, activeDocId)
 
   // Page loading
   const {
@@ -101,119 +105,8 @@ export default function Viewer() {
     setResizingAnn, handleMouseDown: handleDragMouseDown,
   } = useAnnotationDrag(svgRef, activeDocId, pageData, toScreenCoords, getAnnotationBounds)
 
-  // Resize state for right page
-  const [resizingAnnRight, setResizingAnnRight] = useState<{
-    id: string; corner: import('../hooks/useAnnotationDrag').ResizeCorner;
-    startX: number; startY: number;
-    startW: number; startH: number;
-    startBoundsX: number; startBoundsY: number;
-  } | null>(null)
-
-  // Window-level resize listener for right page
-  useEffect(() => {
-    if (!resizingAnnRight) return
-    const handleMove = (e: MouseEvent) => {
-      if (!svgRightRef.current) return
-      const rect = svgRightRef.current.getBoundingClientRect()
-      const svgX = e.clientX - rect.left
-      const svgY = e.clientY - rect.top
-      const deltaX = svgX - resizingAnnRight.startX
-      const deltaY = svgY - resizingAnnRight.startY
-
-      const doc = store.docs.find((d) => d.doc_id === activeDocId)
-      if (!doc) return
-      const ann = doc.annotations.find((a) => a.id === resizingAnnRight.id)
-      if (!ann) return
-      const scaleX = pageDataRight ? pageDataRight.originalWidth / pageDataRight.width : 1
-      const scaleY = pageDataRight ? pageDataRight.originalHeight / pageDataRight.height : 1
-
-      let newX = ann.x
-      let newY = ann.y
-      let newW = ann.width || 0
-      let newH = ann.height || 0
-
-      const dx = deltaX * scaleX
-      const dy = deltaY * scaleY
-
-      switch (resizingAnnRight.corner) {
-        case 'se':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
-          newH = Math.max(10, resizingAnnRight.startH + dy)
-          break
-        case 'nw':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
-          break
-        case 'ne':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
-          break
-        case 'sw':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newH = Math.max(10, resizingAnnRight.startH + dy)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
-          break
-        case 'n':
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
-          break
-        case 's':
-          newH = Math.max(10, resizingAnnRight.startH + dy)
-          break
-        case 'e':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
-          break
-        case 'w':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
-          break
-      }
-
-      if (ann.type === 'circle') {
-        const size = Math.min(newW, newH)
-        if (resizingAnnRight.corner === 'nw' || resizingAnnRight.corner === 'ne' || resizingAnnRight.corner === 'sw' || resizingAnnRight.corner === 'se') {
-          newW = size
-          newH = size
-        }
-      }
-
-      store.updateAnnotation(doc.doc_id, resizingAnnRight.id, { x: newX, y: newY, width: newW, height: newH })
-    }
-    const handleUp = () => setResizingAnnRight(null)
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-  }, [resizingAnnRight])
-
-  // Window-level rotation listener
-  useEffect(() => {
-    if (!rotatingAnn) return
-    const handleMove = (e: MouseEvent) => {
-      if (!svgRef.current) return
-      const rect = svgRef.current.getBoundingClientRect()
-      const mouseX = e.clientX - rect.left
-      const mouseY = e.clientY - rect.top
-      const angle = Math.atan2(mouseY - rotatingAnn.centerY, mouseX - rotatingAnn.centerX)
-      const deltaDeg = (angle - rotatingAnn.startAngle) * 180 / Math.PI
-      const newRotation = rotatingAnn.startRotation + deltaDeg
-      const doc = store.docs.find((d) => d.doc_id === activeDocId)
-      if (!doc) return
-      store.updateAnnotation(doc.doc_id, rotatingAnn.id, { rotation: newRotation })
-    }
-    const handleUp = () => setRotatingAnn(null)
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-  }, [rotatingAnn])
+  // Redimensionado de anotaciones en la página derecha (vista doble)
+  const { setResizingAnnRight } = useRightPageResize(svgRightRef, activeDocId, pageDataRight)
 
   // Keyboard shortcuts
   useKeyboardShortcuts(activeDoc, store.selectedAnnotationId, deleteAnnotation, cancelDraw)
@@ -245,69 +138,13 @@ export default function Viewer() {
   const [editSpan, setEditSpan] = useState<{ x0: number; y0: number; x1: number; y1: number; size: number; color: string; font: string; value: string } | null>(null)
 
   // Selección visual de área para recortar/redactar (herramientas 'croparea'/'redactarea')
-  type AreaRect = { x0: number; y0: number; x1: number; y1: number }
-  const [areaSel, setAreaSel] = useState<AreaRect | null>(null)
-  const areaSelRef = useRef<AreaRect | null>(null)
-  const areaDraggingRef = useRef(false)
-  const areaToolRef = useRef<'croparea' | 'redactarea' | null>(null)
-  const setArea = (r: AreaRect | null) => { areaSelRef.current = r; setAreaSel(r) }
+  const { areaSel, areaSelRef, areaDraggingRef, areaToolRef, setArea, applyArea } = useAreaSelect(activeDoc, pageData)
 
   // Edición de imágenes existentes (herramienta 'editimage')
-  type LocalRect = { l: number; t: number; w: number; h: number }
-  type PageImage = { xref: number; x0: number; y0: number; x1: number; y1: number }
-  const [pageImages, setPageImages] = useState<PageImage[]>([])
-  const [selImg, setSelImg] = useState<number | null>(null)
-  const [imgPreview, setImgPreview] = useState<LocalRect | null>(null)
-  const imgModeRef = useRef<'move' | 'resize' | null>(null)
-  const imgStartRef = useRef<{ ox: number; oy: number; rect: LocalRect } | null>(null)
-  const imgSx = pageData ? pageData.width / pageData.originalWidth : 1
-  const imgSy = pageData ? pageData.height / pageData.originalHeight : 1
-  const imgLocalOf = (im: PageImage): LocalRect => ({ l: im.x0 * imgSx, t: im.y0 * imgSy, w: (im.x1 - im.x0) * imgSx, h: (im.y1 - im.y0) * imgSy })
-
-  useEffect(() => {
-    if (!activeDoc || store.activeTool !== 'editimage' || !pageData) { setPageImages([]); setSelImg(null); setImgPreview(null); return }
-    fetch(`${API_BASE}/pdf/images/${activeDoc.doc_id}/${activeDoc.currentPage}`)
-      .then((r) => r.json()).then(({ images }) => setPageImages(images || [])).catch(() => setPageImages([]))
-  }, [store.activeTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion, pageData?.width])
-
-  const applyImageTransform = async (im: PageImage, body: { new?: number[]; delete?: boolean; replace_path?: string }) => {
-    if (!activeDoc) return
-    try {
-      const res = await fetch(`${API_BASE}/pdf/transform-image/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_num: activeDoc.currentPage, xref: im.xref, old: [im.x0, im.y0, im.x1, im.y1], ...body }),
-      })
-      if (res.ok) {
-        store.setDocDirty(activeDoc.doc_id, true)
-        store.invalidatePageCache(activeDoc.doc_id)
-        store.invalidateThumbnails(activeDoc.doc_id)
-        store.incrementDocVersion(activeDoc.doc_id)
-        store.showToast(body.delete ? 'Imagen eliminada' : body.replace_path ? 'Imagen reemplazada' : 'Imagen actualizada', 'success')
-        setSelImg(null); setImgPreview(null)
-      } else store.showToast('Error al editar la imagen', 'error')
-    } catch { store.showToast('Error al editar la imagen', 'error') }
-  }
-
-  const applyArea = async (tool: 'croparea' | 'redactarea', s: AreaRect) => {
-    if (!activeDoc || !pageData) return
-    const sx = pageData.originalWidth / pageData.width
-    const sy = pageData.originalHeight / pageData.height
-    const rx0 = Math.min(s.x0, s.x1) * sx, rx1 = Math.max(s.x0, s.x1) * sx
-    const ry0 = Math.min(s.y0, s.y1) * sy, ry1 = Math.max(s.y0, s.y1) * sy
-    if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return }
-    try {
-      const res = tool === 'croparea'
-        ? await fetch(`${API_BASE}/pdf/crop/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, top: ry0, right: Math.max(0, pageData.originalWidth - rx1), bottom: Math.max(0, pageData.originalHeight - ry1), left: rx0 }) })
-        : await fetch(`${API_BASE}/pdf/redact/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0 }) })
-      if (res.ok) {
-        store.setDocDirty(activeDoc.doc_id, true)
-        store.invalidatePageCache(activeDoc.doc_id)
-        store.invalidateThumbnails(activeDoc.doc_id)
-        store.incrementDocVersion(activeDoc.doc_id)
-        store.showToast(tool === 'croparea' ? 'Página recortada' : 'Área redactada', 'success')
-      } else store.showToast('Error al aplicar', 'error')
-    } catch { store.showToast('Error al aplicar', 'error') }
-  }
+  const {
+    pageImages, selImg, setSelImg, imgPreview, setImgPreview,
+    imgModeRef, imgStartRef, imgSx, imgSy, imgLocalOf, applyImageTransform,
+  } = useImageEdit(activeDoc, pageData)
 
   // Mouse handlers
   const handleMouseDown = (e: React.MouseEvent) => {
