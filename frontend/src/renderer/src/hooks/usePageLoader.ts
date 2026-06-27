@@ -63,9 +63,10 @@ export function usePageLoader() {
   // Recompute fit zoom when viewer size or panels change
   useEffect(() => {
     if (!activeDoc || activeDoc.fitMode === 'custom') return
+    if (!viewerWidth || !viewerHeight) return // viewer aún no medido: no calcular un fit espurio
     const newZoom = computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, activeDoc.fitMode, viewerWidth, viewerHeight)
     if (Math.abs(newZoom - activeDoc.zoom) > 0.01) {
-      store.setZoom(activeDoc.doc_id, newZoom)
+      store.setZoom(activeDoc.doc_id, newZoom, false) // preservar fitMode para que siga reajustándose
     }
   }, [viewerWidth, viewerHeight, activeDoc?.fitMode, activeDoc?.doc_id, activeDoc?.currentPage])
 

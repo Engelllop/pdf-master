@@ -27,7 +27,7 @@ export default function StatusBar() {
   const applyFit = (mode: 'fit-width' | 'fit-page') => {
     if (!activeDoc) return
     setFitMode(activeDoc.doc_id, mode)
-    setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight))
+    setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight), false)
   }
 
   const iconBtn = 'p-1 rounded hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-30'

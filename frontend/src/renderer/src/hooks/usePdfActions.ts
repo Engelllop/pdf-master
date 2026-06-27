@@ -545,7 +545,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!activeDoc) return
     setFitMode(activeDoc.doc_id, mode)
     const z = computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight)
-    setZoom(activeDoc.doc_id, z)
+    setZoom(activeDoc.doc_id, z, false) // preservar el modo fit
   }
 
   const handleInsertBlank = async () => {

@@ -24,7 +24,7 @@ export default function FloatingViewBar() {
   const zoomPercent = Math.round(activeDoc.zoom * 100)
   const applyFit = (mode: 'fit-width' | 'fit-page') => {
     setFitMode(activeDoc.doc_id, mode)
-    setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight))
+    setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight), false)
   }
   const iconBtn = 'p-1.5 rounded hover:bg-hover text-fg transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
 

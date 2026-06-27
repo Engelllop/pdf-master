@@ -152,7 +152,7 @@ export interface PdfState {
   setPage: (docId: string, page: number) => void
   nextPage: (docId: string) => void
   prevPage: (docId: string) => void
-  setZoom: (docId: string, zoom: number) => void
+  setZoom: (docId: string, zoom: number, markCustom?: boolean) => void
   setFitMode: (docId: string, mode: FitMode) => void
   cachePage: (docId: string, page: number, data: PdfDoc['pageCache'] extends Map<string, infer V> ? V : never) => void
   getCachedPage: (docId: string, page: number) => PdfDoc['pageCache'] extends Map<string, infer V> ? V | undefined : never
@@ -424,11 +424,11 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     })
   },
 
-  setZoom: (docId, zoom) => {
+  setZoom: (docId, zoom, markCustom = true) => {
     const clamped = Math.max(0.1, Math.min(8, zoom))
     set((state) => ({
       docs: state.docs.map((d) =>
-        d.doc_id === docId ? { ...d, zoom: clamped, fitMode: 'custom' } : d
+        d.doc_id === docId ? { ...d, zoom: clamped, ...(markCustom ? { fitMode: 'custom' as FitMode } : {}) } : d
       ),
     }))
   },
