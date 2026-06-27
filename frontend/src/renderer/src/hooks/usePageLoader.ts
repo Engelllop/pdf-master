@@ -4,18 +4,20 @@ import { useStoreSlice } from './useStoreSlice'
 import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
 import { API_BASE } from '../lib/api'
-const MAX_RENDER_ZOOM = 3
+const MAX_RENDER_ZOOM = 4
+const MIN_RENDER_ZOOM = 0.5
 
-// Render the page bitmap close to the resolution it is actually shown at, so high
-// zoom levels stay crisp instead of upscaling a fixed bitmap with CSS.
 function dpr(): number {
   return typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
 }
-function baseRenderZoom(): number {
-  return Math.min(MAX_RENDER_ZOOM, Math.max(1.5, 1.5 * dpr()))
-}
-function desiredRenderZoom(userZoom: number): number {
-  return Math.min(MAX_RENDER_ZOOM, Math.max(1, Math.ceil(userZoom * dpr() * 2) / 2))
+// Rasteriza a la resolución real a la que se muestra (zoom de display × dpr),
+// cuantizada a pasos de 0.5 para reusar bitmaps entre cambios pequeños. Antes se
+// rasterizaba a una escala fija (1.5×) y el navegador encogía ese bitmap gigante
+// hasta el tamaño "fit" → las líneas de 1px de los planos se difuminaban. Renderizar
+// al tamaño de display deja que PDF.js dibuje cada línea vectorialmente y nítida.
+function renderZoomFor(userZoom: number): number {
+  const q = Math.ceil(userZoom * dpr() * 2) / 2
+  return Math.min(MAX_RENDER_ZOOM, Math.max(MIN_RENDER_ZOOM, q))
 }
 
 export interface PageData {
@@ -80,7 +82,7 @@ export function usePageLoader() {
     const docId = activeDoc.doc_id
     const version = activeDoc.docVersion
     const page = activeDoc.currentPage
-    const rz = baseRenderZoom()
+    const rz = renderZoomFor(activeDoc.zoom)
     const controller = new AbortController()
     const signal = controller.signal
 
@@ -175,18 +177,19 @@ export function usePageLoader() {
     return () => { controller.abort() }
   }, [activeDoc?.doc_id, activeDoc?.currentPage, store.viewMode, activeDoc?.docVersion])
 
-  // Upgrade page resolution when the user zooms in beyond the current bitmap (debounced).
+  // Reajusta la resolución del bitmap para que coincida con el zoom actual, en AMBAS
+  // direcciones (al acercar sube; al alejar baja para no encoger un bitmap enorme).
   const lastUpgradeRef = useRef<{ key: string; rz: number }>({ key: '', rz: 0 })
   useEffect(() => {
     if (!activeDoc || !pageData) return
     const docId = activeDoc.doc_id
     const version = activeDoc.docVersion
     const page = activeDoc.currentPage
-    const desired = desiredRenderZoom(activeDoc.zoom)
+    const desired = renderZoomFor(activeDoc.zoom)
     const current = pageData.originalWidth > 0 ? pageData.width / pageData.originalWidth : 0
     const key = `${docId}:${page}`
-    if (desired <= current + 0.01) return
-    if (lastUpgradeRef.current.key === key && lastUpgradeRef.current.rz >= desired) return
+    if (Math.abs(desired - current) < 0.5) return
+    if (lastUpgradeRef.current.key === key && Math.abs(lastUpgradeRef.current.rz - desired) < 0.01) return
 
     const controller = new AbortController()
     const t = setTimeout(() => {

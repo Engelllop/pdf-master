@@ -579,6 +579,50 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     } catch (err) { toastActionError(err) }
   }
 
+  const handleExportTxt = async () => {
+    if (!activeDoc) return
+    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.txt'), filters: [{ name: 'Texto', extensions: ['txt'] }] })
+    if (!outputPath) return
+    try {
+      const res = await fetch(`${API_BASE}/pdf/export-txt/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      showToast(res.ok ? 'Exportado a TXT' : 'Error al exportar', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
+  const handleExportHtml = async () => {
+    if (!activeDoc) return
+    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.html'), filters: [{ name: 'HTML', extensions: ['html'] }] })
+    if (!outputPath) return
+    try {
+      const res = await fetch(`${API_BASE}/pdf/export-html/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      showToast(res.ok ? 'Exportado a HTML' : 'Error al exportar', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
+  const handleRemovePassword = async () => {
+    if (!activeDoc) return
+    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_sin_clave.pdf') })
+    if (!outputPath) return
+    try {
+      const res = await fetch(`${API_BASE}/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      showToast(res.ok ? 'PDF guardado sin contraseña' : 'Error al quitar contraseña', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
+  const handleImagesToPdf = async () => {
+    const images = await window.api.openFiles([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tif', 'tiff'] }])
+    if (!images || images.length === 0) return
+    const outputPath = await window.api.saveFile({ defaultPath: 'imagenes.pdf' })
+    if (!outputPath) return
+    try {
+      const res = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ images, output_path: outputPath }),
+      })
+      showToast(res.ok ? `PDF creado de ${images.length} imagen(es)` : 'Error al convertir', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
   const handleToolClick = async (toolId: string) => {
     if (toolId === 'image') {
       const path = await window.api.openFile([{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }])
@@ -604,5 +648,6 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     handleBatchCompress, handleBatchWatermark, handleBatchExportWord,
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
+    handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
   }
 }

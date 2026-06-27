@@ -132,6 +132,50 @@ class DocumentsMixin:
             logger.exception("save_with_password falló (doc %s)", doc_id)
             return None
 
+    def remove_password(self, doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
+        # El doc en memoria ya está desencriptado (apertura por stream); guardarlo sin
+        # cifrado produce un PDF sin contraseña.
+        doc = self._acquire(doc_id)
+        if not doc:
+            return None
+        save_path = output_path or self._doc_path(doc_id)
+        try:
+            import tempfile
+            dir_name = os.path.dirname(os.path.abspath(save_path))
+            fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
+            os.close(fd)
+            doc.save(temp_path, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_NONE)
+            if os.path.exists(save_path):
+                os.replace(temp_path, save_path)
+            else:
+                os.rename(temp_path, save_path)
+            self._dirty[doc_id] = False
+            return save_path
+        except DocumentNotFoundError:
+            raise
+        except Exception:
+            logger.exception("remove_password falló (doc %s)", doc_id)
+            return None
+
+    def images_to_pdf(self, image_paths: List[str], output_path: str) -> bool:
+        try:
+            out = fitz.open()
+            for img_path in image_paths:
+                img = fitz.open(img_path)
+                rect = img[0].rect
+                pdfbytes = img.convert_to_pdf()
+                img.close()
+                imgpdf = fitz.open("pdf", pdfbytes)
+                page = out.new_page(width=rect.width, height=rect.height)
+                page.show_pdf_page(rect, imgpdf, 0)
+                imgpdf.close()
+            out.save(output_path)
+            out.close()
+            return True
+        except Exception:
+            logger.exception("images_to_pdf falló")
+            return False
+
     def compare_text(self, doc_id_a: str, doc_id_b: str) -> Optional[dict]:
         import difflib
         with self._lock:

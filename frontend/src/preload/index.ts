@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
   openFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFile', filters),
+  openFiles: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFiles', filters),
   saveFile: (options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => ipcRenderer.invoke('dialog:saveFile', options),
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
   setTitleOverlay: (opts: { color: string; symbolColor: string }) => ipcRenderer.invoke('window:set-overlay', opts),

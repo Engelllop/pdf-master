@@ -1,5 +1,8 @@
-import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText } from 'lucide-react'
+import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText, ChevronDown } from 'lucide-react'
+import { useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
 export default function StatusBar() {
   const {
@@ -12,6 +15,7 @@ export default function StatusBar() {
     'continuousMode', 'toggleContinuousMode',
   )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+  const [zoomMenuOpen, setZoomMenuOpen] = useState(false)
 
   const scale = activeDoc?.measurementScale
   const measuring = !!activeTool && activeTool.startsWith('measure')
@@ -72,8 +76,29 @@ export default function StatusBar() {
           <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página"><Maximize2 size={14} /></button>
           <div className="w-px h-4 bg-border" />
           <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar"><ZoomOut size={14} /></button>
-          <button onClick={() => { setZoom(activeDoc.doc_id, 1); setFitMode(activeDoc.doc_id, 'custom') }}
-            className="font-mono w-12 text-center text-fg hover:text-accent" title="Zoom 100%">{zoomPercent}%</button>
+          <div className="relative">
+            <button onClick={() => setZoomMenuOpen((o) => !o)}
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-hover text-fg" title="Nivel de zoom">
+              <span className="font-mono w-9 text-right">{zoomPercent}%</span>
+              <ChevronDown size={12} className="text-muted" />
+            </button>
+            {zoomMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setZoomMenuOpen(false)} />
+                <div className="absolute bottom-full right-0 mb-1 z-50 w-32 border border-border rounded-token shadow-token py-1 bg-panel">
+                  {ZOOM_PRESETS.map((z) => (
+                    <button key={z} onClick={() => { setZoom(activeDoc.doc_id, z); setFitMode(activeDoc.doc_id, 'custom'); setZoomMenuOpen(false) }}
+                      className={`w-full text-left px-3 py-1 text-xs hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'text-accent' : 'text-fg'}`}>
+                      {Math.round(z * 100)}%
+                    </button>
+                  ))}
+                  <div className="h-px my-1 bg-border" />
+                  <button onClick={() => { applyFit('fit-width'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-xs text-fg hover:bg-hover">Ajustar al ancho</button>
+                  <button onClick={() => { applyFit('fit-page'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-xs text-fg hover:bg-hover">Ajustar página</button>
+                </div>
+              </>
+            )}
+          </div>
           <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} className={iconBtn} title="Acercar"><ZoomIn size={14} /></button>
         </>
       )}

@@ -417,6 +417,44 @@ def export_word(doc_id: str):
         raise HTTPException(status_code=400, detail="Export failed")
     return result
 
+@router.post("/export-txt/{doc_id}", response_model=SaveResult)
+def export_txt(doc_id: str, output_path: str = Query(...)):
+    _validate_output_path(output_path, {'.txt'})
+    if not pdf_service.export_txt(doc_id, output_path):
+        raise HTTPException(status_code=400, detail="Export failed")
+    return SaveResult(success=True, path=output_path)
+
+@router.post("/export-html/{doc_id}", response_model=SaveResult)
+def export_html(doc_id: str, output_path: str = Query(...)):
+    _validate_output_path(output_path, {'.html', '.htm'})
+    if not pdf_service.export_html(doc_id, output_path):
+        raise HTTPException(status_code=400, detail="Export failed")
+    return SaveResult(success=True, path=output_path)
+
+@router.post("/remove-password/{doc_id}", response_model=SaveResult)
+def remove_password(doc_id: str, output_path: Optional[str] = Query(None)):
+    if output_path:
+        _validate_output_path(output_path, {'.pdf'})
+    path = pdf_service.remove_password(doc_id, output_path)
+    if not path:
+        raise HTTPException(status_code=400, detail="Remove failed")
+    return SaveResult(success=True, path=path)
+
+
+class ImagesToPdfRequest(BaseModel):
+    images: List[str]
+    output_path: str
+
+
+@router.post("/images-to-pdf", response_model=SaveResult)
+def images_to_pdf(req: ImagesToPdfRequest):
+    _validate_output_path(req.output_path, {'.pdf'})
+    for p in req.images:
+        _validate_input_file(p, _IMAGE_EXTS)
+    if not pdf_service.images_to_pdf(req.images, req.output_path):
+        raise HTTPException(status_code=400, detail="Conversion failed")
+    return SaveResult(success=True, path=req.output_path)
+
 @router.get("/widgets/{doc_id}/{page_num}")
 def get_widgets(doc_id: str, page_num: int):
     return pdf_service.get_form_fields(doc_id, page_num)

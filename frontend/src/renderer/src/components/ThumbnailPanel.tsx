@@ -250,55 +250,70 @@ export default function ThumbnailPanel() {
     } catch (err: any) { showToast('Error: ' + err.message, 'error') }
   }
 
-  if (!sidebarOpen) {
-    const rail: Array<{ id: typeof tab; icon: typeof FileText; title: string }> = [
-      { id: 'pages', icon: FileText, title: 'Páginas' },
-      { id: 'outline', icon: BookOpen, title: 'Esquema' },
-      { id: 'bookmarks', icon: Bookmark, title: 'Marcadores' },
-      { id: 'annotations', icon: MessageSquare, title: 'Anotaciones' },
-      { id: 'search', icon: Search, title: 'Búsqueda' },
-    ]
-    return (
-      <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
-        {rail.map(({ id, icon: Icon, title }) => (
-          <button key={id} onClick={() => { setTab(id); toggleSidebar() }} title={title} aria-label={title}
-            className={`relative p-2 rounded-token transition-colors ${tc('text-slate-400 hover:text-slate-100 hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+  // Rail de iconos SIEMPRE visible (estilo SwifDoo/Acrobat): un clic abre el panel en
+  // esa sección; clic en la sección ya activa lo colapsa.
+  const railItems: Array<{ id: typeof tab; icon: typeof FileText; title: string }> = [
+    { id: 'pages', icon: FileText, title: 'Páginas' },
+    { id: 'outline', icon: BookOpen, title: 'Esquema' },
+    { id: 'bookmarks', icon: Bookmark, title: 'Marcadores' },
+    { id: 'annotations', icon: MessageSquare, title: 'Anotaciones' },
+    { id: 'search', icon: Search, title: 'Búsqueda' },
+  ]
+  const sectionTitle: Record<typeof tab, string> = {
+    pages: 'Páginas', outline: 'Esquema', bookmarks: 'Marcadores', annotations: 'Anotaciones', search: 'Búsqueda',
+  }
+  const onRail = (id: typeof tab) => {
+    if (sidebarOpen && tab === id) { toggleSidebar(); return }
+    setTab(id)
+    if (!sidebarOpen) toggleSidebar()
+  }
+  const railEl = (
+    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+      {railItems.map(({ id, icon: Icon, title }) => {
+        const on = sidebarOpen && tab === id
+        return (
+          <button key={id} onClick={() => onRail(id)} title={title} aria-label={title}
+            className={`relative p-2 rounded-token transition-colors ${on ? 'text-accent bg-hover' : tc('text-slate-400 hover:text-slate-100 hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
               <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
             )}
           </button>
-        ))}
-      </div>
-    )
-  }
+        )
+      })}
+    </div>
+  )
 
   if (!activeDoc) {
     return (
-      <div className={`w-52 border-r flex flex-col shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
-        <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
-          <span className={`text-xs font-semibold uppercase tracking-wider ${tc('text-slate-400', 'text-gray-500')}`}>Paginas</span>
-          <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
-            <PanelLeftClose size={14} />
-          </button>
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <p className={`text-sm text-center px-4 ${tc('text-slate-500', 'text-gray-500')}`}>Abre un PDF</p>
-        </div>
+      <div className="flex shrink-0">
+        {railEl}
+        {sidebarOpen && (
+          <div className={`w-56 border-r flex flex-col ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+            <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
+              <span className={`text-xs font-semibold uppercase tracking-wider ${tc('text-slate-400', 'text-gray-500')}`}>{sectionTitle[tab]}</span>
+              <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+                <PanelLeftClose size={14} />
+              </button>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+              <p className={`text-sm text-center px-4 ${tc('text-slate-500', 'text-gray-500')}`}>Abre un PDF</p>
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
   return (
-    <div className={`w-52 border-r flex flex-col shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+    <div className="flex shrink-0">
+      {railEl}
+      {formModal}
+      {sidebarOpen && (
+      <div className={`w-56 border-r flex flex-col ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setTab('pages')} className={`p-1 rounded transition-colors ${tab === 'pages' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Paginas"><FileText size={14} /></button>
-          <button onClick={() => setTab('outline')} className={`p-1 rounded transition-colors ${tab === 'outline' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Outline"><BookOpen size={14} /></button>
-          <button onClick={() => setTab('bookmarks')} className={`p-1 rounded transition-colors ${tab === 'bookmarks' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Marcadores"><Bookmark size={14} /></button>
-          <button onClick={() => setTab('annotations')} className={`p-1 rounded transition-colors ${tab === 'annotations' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Anotaciones"><MessageSquare size={14} /></button>
-          <button onClick={() => setTab('search')} className={`p-1 rounded transition-colors relative ${tab === 'search' ? 'text-accent' : tc('text-slate-500 hover:text-slate-300', 'text-gray-500 hover:text-gray-700')}`} title="Resultados de búsqueda"><Search size={14} />{activeDoc.searchResults.length > 0 && <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-accent" />}</button>
-        </div>
+        <span className={`text-xs font-semibold uppercase tracking-wider ${tc('text-slate-400', 'text-gray-500')}`}>{sectionTitle[tab]}</span>
         <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
           <PanelLeftClose size={14} />
         </button>
@@ -396,7 +411,6 @@ export default function ThumbnailPanel() {
           )}
         </div>
       )}
-      {formModal}
       {tab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-2">
           {activeDoc.outline.length > 0 ? (
@@ -464,6 +478,8 @@ export default function ThumbnailPanel() {
             <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Sin anotaciones</p>
           )}
         </div>
+      )}
+      </div>
       )}
     </div>
   )

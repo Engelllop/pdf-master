@@ -307,6 +307,15 @@ app.whenReady().then(async () => {
     return filePaths[0]
   })
 
+  ipcMain.handle('dialog:openFiles', async (_event, filters?: Electron.FileFilter[]) => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile', 'multiSelections'],
+      filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }]
+    })
+    if (canceled) return null
+    return filePaths
+  })
+
   ipcMain.handle('dialog:saveFile', async (_event, options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       filters: options?.filters || [{ name: 'PDF Files', extensions: ['pdf'] }],

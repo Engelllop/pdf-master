@@ -11,6 +11,7 @@ import Toasts from './components/Toasts'
 import ComparisonView from './components/ComparisonView'
 import PresentationView from './components/PresentationView'
 import ContinuousView from './components/ContinuousView'
+import FloatingViewBar from './components/FloatingViewBar'
 import ShortcutsModal from './components/ShortcutsModal'
 import AIPanel from './components/AIPanel'
 import { useFormModal } from './components/FormModal'
@@ -312,13 +313,14 @@ function App() {
       {!readingMode && <TopBar />}
       <div className="flex-1 flex overflow-hidden">
         {!readingMode && !compareMode && <ThumbnailPanel />}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="relative flex-1 flex flex-col overflow-hidden">
           {!readingMode && <Toolbar />}
           {compareMode ? (
             <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
           ) : (
             continuousMode ? <ContinuousView /> : <Viewer />
           )}
+          {!readingMode && !compareMode && <FloatingViewBar />}
           {!readingMode && <StatusBar />}
         </div>
         {!readingMode && aiOpen && <AIPanel onClose={() => setAiOpen(false)} />}

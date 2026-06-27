@@ -82,6 +82,41 @@ class ExportMixin:
             logger.exception("export_pptx falló (doc %s)", doc_id)
             return False
 
+    def export_txt(self, doc_id: str, output_path: str) -> bool:
+        doc = self._acquire(doc_id)
+        if not doc:
+            return False
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                for i in range(len(doc)):
+                    f.write(doc.load_page(i).get_text())
+                    if i < len(doc) - 1:
+                        f.write('\n\f\n')  # form feed entre páginas
+            return True
+        except DocumentNotFoundError:
+            raise
+        except Exception:
+            logger.exception("export_txt falló (doc %s)", doc_id)
+            return False
+
+    def export_html(self, doc_id: str, output_path: str) -> bool:
+        doc = self._acquire(doc_id)
+        if not doc:
+            return False
+        try:
+            parts = ['<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>']
+            for i in range(len(doc)):
+                parts.append(doc.load_page(i).get_text("html"))
+            parts.append('</body></html>')
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write('\n'.join(parts))
+            return True
+        except DocumentNotFoundError:
+            raise
+        except Exception:
+            logger.exception("export_html falló (doc %s)", doc_id)
+            return False
+
     def export_word(self, doc_id: str) -> Optional[dict]:
         doc = self._acquire(doc_id)
         if not doc:

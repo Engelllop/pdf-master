@@ -30,7 +30,7 @@ export default function TabStrip() {
             title={doc.file_path}
             className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-2 mt-1 h-[calc(100%-4px)] rounded-t-lg cursor-pointer text-[13px] min-w-fit max-w-[220px] transition-colors ${
               doc.doc_id === activeDocId
-                ? 'bg-surface text-fg shadow-[0_-1px_0_var(--border),inset_1px_0_0_var(--border),inset_-1px_0_0_var(--border)]'
+                ? 'bg-surface text-fg font-medium shadow-[0_-2px_0_var(--accent),inset_1px_0_0_var(--border),inset_-1px_0_0_var(--border)]'
                 : 'text-muted hover:bg-hover hover:text-fg'
             }`}>
             {loadingDocId === doc.doc_id

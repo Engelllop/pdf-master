@@ -10,6 +10,7 @@ import {
   Type, Image as ImageIcon, Images, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
   FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree, MoveVertical,
+  ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2,
 } from 'lucide-react'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
@@ -25,13 +26,13 @@ import { API_BASE } from '../lib/api'
 export default function Toolbar() {
   const tc = useThemeClasses()
   const {
-    docs, activeDocId, setPage,
+    docs, activeDocId, setPage, setZoom,
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
     showToast, setDocDirty, invalidatePageCache, invalidateThumbnails, incrementDocVersion,
     readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
     compareMode, activeRibbon, activeTool, annotationColor, setAnnotationColor,
   } = useStoreSlice(
-    'docs', 'activeDocId', 'setPage',
+    'docs', 'activeDocId', 'setPage', 'setZoom',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
     'showToast', 'setDocDirty', 'invalidatePageCache', 'invalidateThumbnails', 'incrementDocVersion',
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
@@ -57,6 +58,7 @@ export default function Toolbar() {
     handleBatchCompress, handleBatchWatermark, handleBatchExportWord,
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
+    handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
   } = usePdfActions(activeDoc, { askForm, askConfirm, toastActionError })
 
   const [searchInput, setSearchInput] = useState('')
@@ -196,14 +198,17 @@ export default function Toolbar() {
     }
   }
 
-  // Botón de la barra contextual: solo icono (la descripción va en el tooltip)
+  // Las barras de acción muestran icono + etiqueta (estilo SwifDoo); Leer y Comentar
+  // van solo con iconos (muchas herramientas, como en SwifDoo).
+  const withLabels = !['read', 'comment'].includes(activeRibbon)
   const TBtn = ({ icon: Icon, label, tip, onClick, active = false, disabled = false }: any) => (
     <Tooltip content={tip || label}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label}
-        className={`flex items-center justify-center p-2 rounded-token transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-          active ? 'bg-active text-accent' : 'text-fg hover:bg-hover'
-        }`}>
-        <Icon size={17} strokeWidth={1.75} />
+        className={`flex items-center justify-center gap-1.5 rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+          withLabels ? 'px-2.5 h-8 text-[13px]' : 'p-2'
+        } ${active ? 'bg-active text-accent' : 'text-fg hover:bg-hover'}`}>
+        <Icon size={withLabels ? 16 : 17} strokeWidth={1.75} />
+        {withLabels && <span>{label}</span>}
       </button>
     </Tooltip>
   )
@@ -234,6 +239,10 @@ export default function Toolbar() {
       case 'read':
         return (
           <>
+            <TBtn icon={ZoomOut} label="Alejar" tip="Alejar" onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
+            <span className="font-mono text-xs text-fg w-10 text-center tabular-nums">{Math.round(activeDoc.zoom * 100)}%</span>
+            <TBtn icon={ZoomIn} label="Acercar" tip="Acercar" onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} />
+            <Sep />
             <TBtn icon={Maximize2} label="Ajustar" tip="Ajustar página" onClick={() => handleFit('fit-page')} active={activeDoc.fitMode === 'fit-page'} />
             <TBtn icon={MoveVertical} label="Ancho" tip="Ajustar al ancho" onClick={() => handleFit('fit-width')} active={activeDoc.fitMode === 'fit-width'} />
             <Sep />
@@ -314,6 +323,7 @@ export default function Toolbar() {
         return (
           <>
             <TBtn icon={Lock} label="Contraseña" tip="Guardar con contraseña (AES-256)" onClick={handleSaveWithPassword} />
+            <TBtn icon={LockOpen} label="Quitar clave" tip="Guardar copia sin contraseña" onClick={handleRemovePassword} />
             <TBtn icon={Shield} label="Redactar" tip="Redactar área" onClick={handleRedact} />
             <TBtn icon={Search} label="Buscar+Redactar" tip="Redactar coincidencias (usa el buscador)" onClick={() => setShowSearch(true)} />
           </>
@@ -324,8 +334,11 @@ export default function Toolbar() {
             <TBtn icon={FileDown} label="Word" tip="Exportar a Word" onClick={handleExportWord} />
             <TBtn icon={FileSpreadsheet} label="Excel" tip="Exportar a Excel" onClick={handleExportExcel} />
             <TBtn icon={Presentation} label="PowerPoint" tip="Exportar a PowerPoint" onClick={handleExportPptx} />
+            <TBtn icon={FileType} label="TXT" tip="Exportar a texto plano" onClick={handleExportTxt} />
+            <TBtn icon={Code2} label="HTML" tip="Exportar a HTML" onClick={handleExportHtml} />
             <TBtn icon={FileImage} label="Imagen" tip="Guardar página como imagen" onClick={handleSavePageAsImage} />
             <Sep />
+            <TBtn icon={FilePlus2} label="Imágenes→PDF" tip="Crear PDF a partir de imágenes" onClick={handleImagesToPdf} />
             <TBtn icon={ScanText} label="OCR buscable" tip="Hacer página buscable (OCR)" onClick={handleMakeSearchable} />
           </>
         )

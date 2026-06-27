@@ -99,12 +99,14 @@ export function usePanZoom(
     const isAtTop = el.scrollTop <= 0
 
     if (e.deltaY > 0 && isAtBottom) {
+      if (activeDoc.currentPage >= activeDoc.page_count - 1) return // ya en la última: no saltar arriba
       e.preventDefault()
       isChangingPage.current = true
       nextPage(activeDoc.doc_id)
       el.scrollTo({ top: 0, behavior: 'auto' })
       setTimeout(() => { isChangingPage.current = false }, 300)
     } else if (e.deltaY < 0 && isAtTop && lastScrollDir.current === 'up') {
+      if (activeDoc.currentPage <= 0) return // ya en la primera: no saltar al fondo
       e.preventDefault()
       isChangingPage.current = true
       prevPage(activeDoc.doc_id)
