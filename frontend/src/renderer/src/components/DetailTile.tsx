@@ -22,7 +22,7 @@ export default function DetailTile({
   pageData: PageGeom
   zoom: number
   version: number
-  containerRef: React.RefObject<HTMLDivElement>
+  containerRef: React.RefObject<HTMLDivElement | null>
   scrollKey: string
 }) {
   const [tile, setTile] = useState<{ url: string; left: number; top: number; w: number; h: number } | null>(null)

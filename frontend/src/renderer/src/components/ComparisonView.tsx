@@ -26,7 +26,7 @@ function ComparePagePanel({
   page: number
   zoom: number
   label: string
-  scrollRef: React.RefObject<HTMLDivElement>
+  scrollRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
 }) {
   const [data, setData] = useState<PageData | null>(null)

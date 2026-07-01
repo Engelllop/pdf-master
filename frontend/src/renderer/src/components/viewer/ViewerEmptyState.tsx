@@ -4,7 +4,7 @@ import { openDocument } from '../../lib/openDocument'
 /** Pantalla de bienvenida del visor cuando no hay documento abierto: zona de
  * arrastre + lista de archivos recientes. */
 export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
-  containerRef: React.RefObject<HTMLDivElement>
+  containerRef: React.RefObject<HTMLDivElement | null>
   onDragOver: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
 }) {

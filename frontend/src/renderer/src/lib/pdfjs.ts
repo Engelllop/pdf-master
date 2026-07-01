@@ -8,36 +8,41 @@ import { apiFetch } from './api'
 // Caché de documentos PDF.js por `${docId}:${version}`. Una versión nueva (rotar,
 // borrar página, etc.) invalida la anterior y se destruye para liberar memoria.
 const MAX_DOCS = 3
-const docCache = new Map<string, Promise<pdfjsLib.PDFDocumentProxy>>()
+// pdfjs 5+ quitó PDFDocumentProxy.destroy(): se destruye el loading task.
+const docCache = new Map<string, { task: pdfjsLib.PDFDocumentLoadingTask; promise: Promise<pdfjsLib.PDFDocumentProxy> }>()
+
+function destroyEntry(key: string): void {
+  const entry = docCache.get(key)
+  if (entry) {
+    entry.promise.then(() => entry.task.destroy()).catch(() => {})
+    docCache.delete(key)
+  }
+}
 
 export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib.PDFDocumentProxy> {
   const key = `${docId}:${version}`
   const existing = docCache.get(key)
-  if (existing) return existing
+  if (existing) return existing.promise
 
   // Invalida versiones anteriores del mismo doc
   for (const k of [...docCache.keys()]) {
-    if (k.startsWith(`${docId}:`)) {
-      docCache.get(k)?.then((d) => d.destroy()).catch(() => {})
-      docCache.delete(k)
-    }
+    if (k.startsWith(`${docId}:`)) destroyEntry(k)
   }
 
-  const promise = (async () => {
+  const entry = { task: null as unknown as pdfjsLib.PDFDocumentLoadingTask, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy> }
+  entry.promise = (async () => {
     const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
     if (!res.ok) throw new Error(`raw ${res.status}`)
     const data = await res.arrayBuffer()
-    return pdfjsLib.getDocument({ data }).promise
+    entry.task = pdfjsLib.getDocument({ data })
+    return entry.task.promise
   })()
-
-  docCache.set(key, promise)
+  const promise = entry.promise
+  docCache.set(key, entry)
   // Evicta el documento más antiguo si excede el tope
   if (docCache.size > MAX_DOCS) {
     const oldest = docCache.keys().next().value as string | undefined
-    if (oldest) {
-      docCache.get(oldest)?.then((d) => d.destroy()).catch(() => {})
-      docCache.delete(oldest)
-    }
+    if (oldest) destroyEntry(oldest)
   }
   promise.catch(() => docCache.delete(key))
   return promise
@@ -64,8 +69,7 @@ export async function renderPdfPage(
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(viewport.width)
   canvas.height = Math.ceil(viewport.height)
-  const ctx = canvas.getContext('2d')!
-  await page.render({ canvasContext: ctx, viewport }).promise
+  await page.render({ canvas, viewport }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/png'),
@@ -92,9 +96,8 @@ export async function renderPdfTile(
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.ceil((x1 - x0) * scale))
   canvas.height = Math.max(1, Math.ceil((y1 - y0) * scale))
-  const ctx = canvas.getContext('2d')!
   await page.render({
-    canvasContext: ctx, viewport,
+    canvas, viewport,
     transform: [1, 0, 0, 1, -x0 * scale, -y0 * scale],
   }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
