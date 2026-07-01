@@ -149,6 +149,17 @@ class AnnotationsMixin:
                 if annot:
                     annot.set_colors(stroke=color)
                     annot.update()
+            elif ann.type == 'image':
+                # imageData es un data-URL base64; insert_image solo rota en
+                # múltiplos de 90° → se redondea la rotación libre de la app.
+                if ann.imageData and ',' in ann.imageData:
+                    try:
+                        img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
+                        rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
+                        rotate = int(round((ann.rotation or 0) / 90.0) * 90) % 360
+                        page.insert_image(rect, stream=img_bytes, rotate=rotate)
+                    except Exception:
+                        logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':
                 # Marca de conteo: círculo relleno con cruz blanca; (x, y) es el centro
                 # y `text` lleva la categoría (queda como contenido del annot al pasar
@@ -193,3 +204,226 @@ class AnnotationsMixin:
             "filename": source_name.replace('.pdf', '') + "_marcas.pdf",
             "data_base64": base64.b64encode(data).decode('utf-8'),
         }
+
+    # --- XFDF (interoperabilidad con Acrobat/Bluebeam) ---
+    # XFDF usa coordenadas PDF con origen abajo-izquierda; las anotaciones de la app
+    # vienen de fitz (origen arriba-izquierda), así que todo se refleja con la altura
+    # de página: y_xfdf = H - y_app.
+
+    def _page_heights(self, doc_id: str) -> Optional[List[float]]:
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            return [doc.load_page(i).rect.height for i in range(len(doc))]
+
+    def export_xfdf(self, doc_id: str, annotations: List[Annotation], output_path: str) -> bool:
+        import xml.etree.ElementTree as ET
+        heights = self._page_heights(doc_id)
+        if heights is None:
+            return False
+        info = self._infos.get(doc_id)
+        NS = "http://ns.adobe.com/xfdf/"
+        ET.register_namespace("", NS)
+        root = ET.Element(f"{{{NS}}}xfdf", {"xml:space": "preserve"})
+        annots = ET.SubElement(root, f"{{{NS}}}annots")
+
+        def flip(page: int, y: float) -> float:
+            h = heights[page] if 0 <= page < len(heights) else 842.0
+            return h - y
+
+        def base_attrs(ann: Annotation) -> dict:
+            attrs = {"page": str(ann.page), "color": ann.color or "#FF0000"}
+            if ann.opacity is not None:
+                attrs["opacity"] = f"{ann.opacity:.2f}"
+            if ann.lineWidth:
+                attrs["width"] = f"{ann.lineWidth:g}"
+            return attrs
+
+        def rect_attr(ann: Annotation) -> str:
+            w = ann.width or 0
+            h = ann.height or 0
+            x0, x1 = sorted((ann.x, ann.x + w))
+            ytop, ybot = sorted((ann.y, ann.y + h))
+            return f"{x0:.2f},{flip(ann.page, ybot):.2f},{x1:.2f},{flip(ann.page, ytop):.2f}"
+
+        for ann in annotations:
+            a = base_attrs(ann)
+            el = None
+            if ann.type in ("highlight", "underline", "strikethrough"):
+                tag = {"highlight": "highlight", "underline": "underline", "strikethrough": "strikeout"}[ann.type]
+                a["rect"] = rect_attr(ann)
+                x0, x1 = sorted((ann.x, ann.x + (ann.width or 0)))
+                yt = flip(ann.page, ann.y)
+                yb = flip(ann.page, ann.y + (ann.height or 0))
+                a["coords"] = f"{x0:.2f},{yt:.2f},{x1:.2f},{yt:.2f},{x0:.2f},{yb:.2f},{x1:.2f},{yb:.2f}"
+                el = ET.SubElement(annots, f"{{{NS}}}{tag}", a)
+            elif ann.type == "rect":
+                a["rect"] = rect_attr(ann)
+                if ann.fillColor:
+                    a["interior-color"] = ann.fillColor
+                el = ET.SubElement(annots, f"{{{NS}}}square", a)
+            elif ann.type == "circle":
+                a["rect"] = rect_attr(ann)
+                if ann.fillColor:
+                    a["interior-color"] = ann.fillColor
+                el = ET.SubElement(annots, f"{{{NS}}}circle", a)
+            elif ann.type in ("arrow", "measure_distance"):
+                x2 = ann.x + (ann.width or 0)
+                y2 = ann.y + (ann.height or 0)
+                a["start"] = f"{ann.x:.2f},{flip(ann.page, ann.y):.2f}"
+                a["end"] = f"{x2:.2f},{flip(ann.page, y2):.2f}"
+                if ann.type == "arrow":
+                    a["tail"] = "None"
+                    a["head"] = "ClosedArrow"
+                a["rect"] = rect_attr(ann)
+                el = ET.SubElement(annots, f"{{{NS}}}line", a)
+                if ann.type == "measure_distance" and ann.measurement:
+                    a_contents = ET.SubElement(el, f"{{{NS}}}contents")
+                    a_contents.text = ann.measurement.label
+            elif ann.type in ("draw", "signature"):
+                if not ann.points:
+                    continue
+                a["rect"] = rect_attr(ann)
+                el = ET.SubElement(annots, f"{{{NS}}}ink", a)
+                inklist = ET.SubElement(el, f"{{{NS}}}inklist")
+                gesture = ET.SubElement(inklist, f"{{{NS}}}gesture")
+                gesture.text = ";".join(f"{p['x']:.2f},{flip(ann.page, p['y']):.2f}" for p in ann.points)
+            elif ann.type == "measure_area":
+                if not ann.points:
+                    continue
+                a["vertices"] = ";".join(f"{p['x']:.2f},{flip(ann.page, p['y']):.2f}" for p in ann.points)
+                a["rect"] = rect_attr(ann)
+                el = ET.SubElement(annots, f"{{{NS}}}polygon", a)
+                if ann.measurement:
+                    c = ET.SubElement(el, f"{{{NS}}}contents")
+                    c.text = ann.measurement.label
+            elif ann.type == "note":
+                y = flip(ann.page, ann.y)
+                a["rect"] = f"{ann.x:.2f},{y - 24:.2f},{ann.x + 24:.2f},{y:.2f}"
+                a["icon"] = "Comment"
+                el = ET.SubElement(annots, f"{{{NS}}}text", a)
+                c = ET.SubElement(el, f"{{{NS}}}contents")
+                c.text = ann.text or ""
+            elif ann.type == "text":
+                a["rect"] = rect_attr(ann) if ann.width else f"{ann.x:.2f},{flip(ann.page, ann.y) - 20:.2f},{ann.x + 200:.2f},{flip(ann.page, ann.y):.2f}"
+                el = ET.SubElement(annots, f"{{{NS}}}freetext", a)
+                c = ET.SubElement(el, f"{{{NS}}}contents")
+                c.text = ann.text or ""
+            elif ann.type == "count":
+                r = 9.0
+                y = flip(ann.page, ann.y)
+                a["rect"] = f"{ann.x - r:.2f},{y - r:.2f},{ann.x + r:.2f},{y + r:.2f}"
+                a["subject"] = f"Count: {ann.text or 'General'}"
+                a["interior-color"] = ann.color or "#FF0000"
+                el = ET.SubElement(annots, f"{{{NS}}}circle", a)
+            # 'image' no viaja en XFDF (el estándar no embebe bitmaps de forma portable)
+            if el is not None and info:
+                el.set("title", "PDF Master")
+
+        f_el = ET.SubElement(root, f"{{{NS}}}f")
+        if info:
+            f_el.set("href", os.path.basename(info.file_path))
+        try:
+            ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+            return True
+        except Exception:
+            logger.exception("export_xfdf falló (%s)", output_path)
+            return False
+
+    def import_xfdf(self, doc_id: str, file_path: str) -> Optional[List[Annotation]]:
+        import xml.etree.ElementTree as ET
+        heights = self._page_heights(doc_id)
+        if heights is None:
+            return None
+        try:
+            tree = ET.parse(file_path)
+        except Exception:
+            logger.exception("import_xfdf: XML inválido (%s)", file_path)
+            return None
+
+        def local(tag: str) -> str:
+            return tag.rsplit("}", 1)[-1]
+
+        def flip(page: int, y: float) -> float:
+            h = heights[page] if 0 <= page < len(heights) else 842.0
+            return h - y
+
+        annots_el = None
+        for child in tree.getroot():
+            if local(child.tag) == "annots":
+                annots_el = child
+                break
+        if annots_el is None:
+            return []
+
+        out: List[Annotation] = []
+        for el in annots_el:
+            tag = local(el.tag)
+            try:
+                page = int(el.get("page", "0"))
+                color = el.get("color") or "#ff0000"
+                opacity = float(el.get("opacity")) if el.get("opacity") else None
+                width = float(el.get("width")) if el.get("width") else None
+                contents = ""
+                for c in el:
+                    if local(c.tag) == "contents" and c.text:
+                        contents = c.text
+                rect = [float(v) for v in (el.get("rect") or "0,0,0,0").split(",")]
+                x0, y0f, x1, y1f = rect[0], rect[1], rect[2], rect[3]
+                x, w = min(x0, x1), abs(x1 - x0)
+                y = flip(page, max(y0f, y1f))
+                h = abs(y1f - y0f)
+                common = dict(id=str(uuid.uuid4()), page=page, color=color, opacity=opacity, lineWidth=width)
+
+                if tag in ("highlight", "underline", "strikeout"):
+                    t = {"highlight": "highlight", "underline": "underline", "strikeout": "strikethrough"}[tag]
+                    out.append(Annotation(type=t, x=x, y=y, width=w, height=h, **common))
+                elif tag == "square":
+                    out.append(Annotation(type="rect", x=x, y=y, width=w, height=h,
+                                          fillColor=el.get("interior-color"), **common))
+                elif tag == "circle":
+                    subject = el.get("subject") or ""
+                    if subject.startswith("Count:"):
+                        out.append(Annotation(type="count", x=x + w / 2, y=y + h / 2,
+                                              text=subject.split(":", 1)[1].strip(), **common))
+                    else:
+                        out.append(Annotation(type="circle", x=x, y=y, width=w, height=h,
+                                              fillColor=el.get("interior-color"), **common))
+                elif tag == "line":
+                    sx, sy = [float(v) for v in (el.get("start") or "0,0").split(",")]
+                    ex, ey = [float(v) for v in (el.get("end") or "0,0").split(",")]
+                    out.append(Annotation(type="arrow", x=sx, y=flip(page, sy),
+                                          width=ex - sx, height=flip(page, ey) - flip(page, sy), **common))
+                elif tag == "ink":
+                    pts = []
+                    for il in el:
+                        if local(il.tag) != "inklist":
+                            continue
+                        for g in il:
+                            if local(g.tag) == "gesture" and g.text:
+                                for pair in g.text.replace("\n", ";").split(";"):
+                                    pair = pair.strip()
+                                    if not pair:
+                                        continue
+                                    px, py = [float(v) for v in pair.split(",")[:2]]
+                                    pts.append({"x": px, "y": flip(page, py)})
+                    if len(pts) > 1:
+                        out.append(Annotation(type="draw", x=pts[0]["x"], y=pts[0]["y"], points=pts, **common))
+                elif tag == "polygon":
+                    pts = []
+                    for pair in (el.get("vertices") or "").split(";"):
+                        pair = pair.strip()
+                        if not pair:
+                            continue
+                        px, py = [float(v) for v in pair.split(",")[:2]]
+                        pts.append({"x": px, "y": flip(page, py)})
+                    if len(pts) >= 3:
+                        out.append(Annotation(type="measure_area", x=pts[0]["x"], y=pts[0]["y"], points=pts, **common))
+                elif tag == "text":
+                    out.append(Annotation(type="note", x=x, y=y, text=contents, **common))
+                elif tag == "freetext":
+                    out.append(Annotation(type="text", x=x, y=y, width=w, height=h, text=contents, **common))
+            except Exception:
+                logger.exception("import_xfdf: anotación <%s> ignorada", tag)
+        return out

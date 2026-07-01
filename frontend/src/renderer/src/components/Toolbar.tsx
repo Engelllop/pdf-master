@@ -61,7 +61,7 @@ export default function Toolbar() {
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
     handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
-    handleExportMeasurements,
+    handleExportMeasurements, handleExportXfdf, handleImportXfdf,
   } = usePdfActions(activeDoc, { askForm, askConfirm, toastActionError })
 
   const [searchInput, setSearchInput] = useState('')
@@ -69,6 +69,7 @@ export default function Toolbar() {
   const [replaceInput, setReplaceInput] = useState('')
   const [replaceCaseSensitive, setReplaceCaseSensitive] = useState(false)
   const [replaceAllPages, setReplaceAllPages] = useState(true)
+  const [searchAllDocs, setSearchAllDocs] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
@@ -122,6 +123,24 @@ export default function Toolbar() {
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const handleSearch = async () => {
     if (!activeDoc || !searchInput.trim()) return
+    if (searchAllDocs) {
+      // Secuencial a propósito: el motor tiene un solo worker de fitz
+      let total = 0
+      for (const d of docs) {
+        setSearchQuery(d.doc_id, searchInput)
+        try {
+          const res = await apiFetch(`/pdf/search/${d.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
+          if (res.ok) {
+            const results = await res.json()
+            setSearchResults(d.doc_id, results)
+            total += results.length
+            if (d.doc_id === activeDoc.doc_id && results.length > 0) setPage(d.doc_id, results[0].page)
+          }
+        } catch (e) { console.error(e) }
+      }
+      showToast(`${total} resultado(s) en ${docs.length} documento(s)`, total > 0 ? 'success' : 'info')
+      return
+    }
     setSearchQuery(activeDoc.doc_id, searchInput)
     try {
       const res = await apiFetch(`/pdf/search/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
@@ -283,6 +302,8 @@ export default function Toolbar() {
             <Sep />
             <TBtn icon={FileDown} label="Resumen" tip="Resumen de marcas (PDF)" onClick={handleMarkupSummary} />
             <TBtn icon={FileSpreadsheet} label="Mediciones" tip="Exportar tabla de mediciones y conteos (Excel/CSV)" onClick={handleExportMeasurements} />
+            <TBtn icon={FileType} label="XFDF" tip="Exportar anotaciones a XFDF (Acrobat/Bluebeam)" onClick={handleExportXfdf} />
+            <TBtn icon={FilePlus2} label="Importar" tip="Importar anotaciones desde XFDF" onClick={handleImportXfdf} />
           </>
         )
       case 'edit':
@@ -429,6 +450,10 @@ export default function Toolbar() {
                   <label className={`flex items-center gap-1 text-[10px] cursor-pointer ${tc('text-slate-400', 'text-gray-500')}`}>
                     <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)} className="w-3 h-3" />
                     Aa
+                  </label>
+                  <label className={`flex items-center gap-1 text-[10px] cursor-pointer ${tc('text-slate-400', 'text-gray-500')}`} title="Buscar en todos los documentos abiertos">
+                    <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)} className="w-3 h-3" />
+                    Todos los docs
                   </label>
                   <label className={`flex items-center gap-1 text-[10px] cursor-pointer ${tc('text-slate-400', 'text-gray-500')}`}>
                     <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)} className="w-3 h-3" />

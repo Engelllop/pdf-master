@@ -196,6 +196,53 @@ class TestAnnotations:
         })
         assert resp.status_code == 422
 
+    def test_embed_image_annotation(self, client, open_doc):
+        import base64 as b64
+        # PNG 1x1 rojo
+        png = b64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        data_url = "data:image/png;base64," + b64.b64encode(png).decode()
+        anns = {"annotations": [{
+            "id": "i1", "type": "image", "page": 0, "x": 30, "y": 30,
+            "width": 100, "height": 80, "imageData": data_url, "rotation": 87,
+        }]}
+        info = open_doc()
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200, resp.text
+        assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+
+    def test_xfdf_roundtrip(self, client, open_doc, tmp_path):
+        info = open_doc()
+        out = str(tmp_path / "marcas.xfdf")
+        anns = {"annotations": [
+            {"id": "h1", "type": "highlight", "page": 0, "x": 10, "y": 20, "width": 100, "height": 14, "color": "#fbbf24"},
+            {"id": "r1", "type": "rect", "page": 0, "x": 50, "y": 60, "width": 80, "height": 40, "color": "#ff0000", "fillColor": "#00ff00"},
+            {"id": "a1", "type": "arrow", "page": 0, "x": 10, "y": 100, "width": 60, "height": 30, "color": "#0000ff"},
+            {"id": "d1", "type": "draw", "page": 0, "x": 10, "y": 10, "color": "#111111",
+             "points": [{"x": 10, "y": 10}, {"x": 30, "y": 25}, {"x": 50, "y": 12}]},
+            {"id": "n1", "type": "note", "page": 0, "x": 200, "y": 200, "text": "revisar esto", "color": "#fbbf24"},
+            {"id": "c1", "type": "count", "page": 0, "x": 300, "y": 300, "text": "Luminarias", "color": "#ef4444"},
+        ]}
+        resp = client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns)
+        assert resp.status_code == 200, resp.text
+        assert os.path.getsize(out) > 0
+
+        resp = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": out})
+        assert resp.status_code == 200, resp.text
+        imported = resp.json()["annotations"]
+        types = sorted(a["type"] for a in imported)
+        assert types == sorted(["highlight", "rect", "arrow", "draw", "note", "count"])
+        # El flip vertical debe ser involutivo: la Y original se conserva
+        h = next(a for a in imported if a["type"] == "highlight")
+        assert abs(h["x"] - 10) < 0.01 and abs(h["y"] - 20) < 0.01
+        assert abs(h["width"] - 100) < 0.01 and abs(h["height"] - 14) < 0.01
+        c = next(a for a in imported if a["type"] == "count")
+        assert c["text"] == "Luminarias"
+        assert abs(c["x"] - 300) < 0.01 and abs(c["y"] - 300) < 0.01
+        n = next(a for a in imported if a["type"] == "note")
+        assert n["text"] == "revisar esto"
+
     def test_sidecar_preserves_stroke_and_rotation(self, client, open_doc):
         info = open_doc()
         anns = {"annotations": [{

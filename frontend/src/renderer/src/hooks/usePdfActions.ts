@@ -23,6 +23,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     setDocDirty, invalidatePageCache, invalidateThumbnails, setSaveStatus,
     toggleCompareMode, setCompareDoc, compareMode, compareDocId, incrementDocVersion,
     activeTool, setActiveTool, setSelectedImagePath, setSelectedImageData,
+    setAnnotations,
   } = useStoreSlice(
     'docs', 'addDoc', 'setPage', 'setZoom',
     'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
@@ -30,6 +31,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     'setDocDirty', 'invalidatePageCache', 'invalidateThumbnails', 'setSaveStatus',
     'toggleCompareMode', 'setCompareDoc', 'compareMode', 'compareDocId', 'incrementDocVersion',
     'activeTool', 'setActiveTool', 'setSelectedImagePath', 'setSelectedImageData',
+    'setAnnotations',
   )
 
   const handleExportWord = async () => {
@@ -651,6 +653,45 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     } catch (err) { toastActionError(err) }
   }
 
+  const handleExportXfdf = async () => {
+    if (!activeDoc) return
+    if (activeDoc.annotations.length === 0) {
+      showToast('No hay anotaciones que exportar', 'info')
+      return
+    }
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.xfdf'),
+      filters: [{ name: 'XFDF', extensions: ['xfdf'] }],
+    })
+    if (!outputPath) return
+    try {
+      const res = await apiFetch(`/pdf/export-xfdf/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ annotations: activeDoc.annotations }),
+      })
+      showToast(res.ok ? `${activeDoc.annotations.length} anotación(es) exportadas a XFDF` : 'Error al exportar XFDF', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
+  const handleImportXfdf = async () => {
+    if (!activeDoc) return
+    const path = await window.api.openFile([{ name: 'XFDF', extensions: ['xfdf'] }])
+    if (!path) return
+    try {
+      const res = await apiFetch(`/pdf/import-xfdf/${activeDoc.doc_id}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: path }),
+      })
+      if (!res.ok) { showToast('Error al importar XFDF', 'error'); return }
+      const data = await res.json()
+      const imported = data.annotations || []
+      if (imported.length === 0) { showToast('El XFDF no contiene anotaciones compatibles', 'info'); return }
+      setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...imported])
+      setDocDirty(activeDoc.doc_id, true)
+      showToast(`${imported.length} anotación(es) importadas`, 'success')
+    } catch (err) { toastActionError(err) }
+  }
+
   const handleImagesToPdf = async () => {
     const images = await window.api.openFiles([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tif', 'tiff'] }])
     if (!images || images.length === 0) return
@@ -691,6 +732,6 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
     handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
-    handleExportMeasurements,
+    handleExportMeasurements, handleExportXfdf, handleImportXfdf,
   }
 }

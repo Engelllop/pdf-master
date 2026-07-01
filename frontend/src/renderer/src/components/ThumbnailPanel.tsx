@@ -36,8 +36,9 @@ export default function ThumbnailPanel() {
     'bookmarks', 'removeBookmark', 'reorderPages', 'showToast', 'setDocDirty',
     'incrementDocVersion', 'viewerScroll', 'updateDocPageCount', 'goToSearchResult',
     'deleteAnnotation', 'invalidatePageCache', 'invalidateThumbnails', 'selectAnnotation',
+    'setActiveDoc',
   )
-  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult } = store
+  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult, setActiveDoc } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const { askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -460,6 +461,27 @@ export default function ThumbnailPanel() {
           ) : (
             <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Sin resultados de búsqueda</p>
           )}
+          {(() => {
+            // Resultados de la misma búsqueda en los demás documentos abiertos
+            const others = docs.filter((d) =>
+              d.doc_id !== activeDoc.doc_id && d.searchQuery && d.searchQuery === activeDoc.searchQuery && d.searchResults.length > 0)
+            if (others.length === 0) return null
+            return (
+              <>
+                <div className={`text-[10px] px-1 pt-3 pb-1 border-t mt-2 ${tc('text-slate-500 border-slate-700', 'text-gray-500 border-gray-200')}`}>
+                  En otros documentos
+                </div>
+                {others.map((d) => (
+                  <button key={d.doc_id} onClick={() => { setActiveDoc(d.doc_id); goToSearchResult(d.doc_id, 0) }}
+                    className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}
+                    title={d.file_path}>
+                    <span className={`block truncate font-medium ${tc('text-slate-300', 'text-gray-700')}`}>{d.file_name}</span>
+                    <span className={`block text-[10px] ${tc('text-slate-500', 'text-gray-500')}`}>{d.searchResults.length} resultado(s)</span>
+                  </button>
+                ))}
+              </>
+            )
+          })()}
         </div>
       )}
       {tab === 'annotations' && (
