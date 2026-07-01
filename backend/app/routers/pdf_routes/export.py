@@ -1,11 +1,36 @@
 """Exportación a otros formatos: Word, Excel, PowerPoint, TXT, HTML."""
+from typing import List
+
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from app.models.pdf import SaveResult
 from app.routers.pdf_routes._shared import _validate_output_path
 from app.services.pdf_service import pdf_service
 
 router = APIRouter()
+
+
+class MeasurementRow(BaseModel):
+    page: str = ""
+    tipo: str
+    etiqueta: str = ""
+    valor: str = ""
+    unidad: str = ""
+
+
+class ExportMeasurementsRequest(BaseModel):
+    output_path: str
+    title: str = ""
+    rows: List[MeasurementRow]
+
+
+@router.post("/export-measurements", response_model=SaveResult)
+def export_measurements(req: ExportMeasurementsRequest):
+    _validate_output_path(req.output_path, {'.csv', '.xlsx'})
+    if not pdf_service.export_measurements([r.model_dump() for r in req.rows], req.output_path, req.title):
+        raise HTTPException(status_code=400, detail="Export failed")
+    return SaveResult(success=True, path=req.output_path)
 
 
 @router.post("/export-excel/{doc_id}", response_model=SaveResult)

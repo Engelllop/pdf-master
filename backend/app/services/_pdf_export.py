@@ -150,3 +150,42 @@ class ExportMixin:
         except Exception:
             logger.exception("export_word falló (doc %s)", doc_id)
             return None
+
+    def export_measurements(self, rows: List[dict], output_path: str, title: str = "") -> bool:
+        """Tabla de mediciones/conteos a CSV o XLSX. No toca fitz (sin lock)."""
+        headers = ["Página", "Tipo", "Etiqueta", "Valor", "Unidad"]
+        try:
+            if output_path.lower().endswith(".csv"):
+                import csv
+                # utf-8-sig para que Excel detecte acentos al abrir el CSV
+                with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
+                    w = csv.writer(f, delimiter=";")
+                    if title:
+                        w.writerow([title])
+                        w.writerow([])
+                    w.writerow(headers)
+                    for r in rows:
+                        w.writerow([r.get("page"), r.get("tipo"), r.get("etiqueta"), r.get("valor"), r.get("unidad")])
+            else:
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Mediciones"
+                row_idx = 1
+                if title:
+                    ws.cell(row=row_idx, column=1, value=title)
+                    row_idx += 2
+                for col, h in enumerate(headers, start=1):
+                    ws.cell(row=row_idx, column=col, value=h)
+                for r in rows:
+                    row_idx += 1
+                    ws.cell(row=row_idx, column=1, value=r.get("page"))
+                    ws.cell(row=row_idx, column=2, value=r.get("tipo"))
+                    ws.cell(row=row_idx, column=3, value=r.get("etiqueta"))
+                    ws.cell(row=row_idx, column=4, value=r.get("valor"))
+                    ws.cell(row=row_idx, column=5, value=r.get("unidad"))
+                wb.save(output_path)
+            return True
+        except Exception:
+            logger.exception("export_measurements falló (%s)", output_path)
+            return False

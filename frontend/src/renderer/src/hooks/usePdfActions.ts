@@ -609,6 +609,48 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     } catch (err) { toastActionError(err) }
   }
 
+  const handleExportMeasurements = async () => {
+    if (!activeDoc) return
+    const anns = activeDoc.annotations
+    const measures = anns.filter((a) => a.type === 'measure_distance' || a.type === 'measure_area')
+    const counts = anns.filter((a) => a.type === 'count')
+    if (measures.length === 0 && counts.length === 0) {
+      showToast('No hay mediciones ni conteos en el documento', 'info')
+      return
+    }
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_mediciones.xlsx'),
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }, { name: 'CSV', extensions: ['csv'] }],
+    })
+    if (!outputPath) return
+    const rows = [...measures]
+      .sort((a, b) => a.page - b.page)
+      .map((a) => ({
+        page: String(a.page + 1),
+        tipo: a.type === 'measure_distance' ? 'Distancia' : 'Área',
+        etiqueta: a.measurement?.label || '',
+        valor: a.measurement ? a.measurement.value.toFixed(2) : '',
+        unidad: a.measurement?.unit || 'px',
+      }))
+    const byCategory = new Map<string, number>()
+    for (const c of counts) {
+      const cat = c.text || 'General'
+      byCategory.set(cat, (byCategory.get(cat) || 0) + 1)
+    }
+    for (const [cat, n] of byCategory) {
+      rows.push({ page: '', tipo: 'Conteo (total)', etiqueta: cat, valor: String(n), unidad: 'uds' })
+    }
+    const scale = activeDoc.measurementScale
+    const title = `${activeDoc.file_name} — ${scale ? `escala: 1 ${scale.unit} = ${scale.pixelsPerUnit.toFixed(2)} pt` : 'sin calibrar'}`
+    try {
+      const res = await apiFetch('/pdf/export-measurements', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ output_path: outputPath, title, rows }),
+      })
+      showToast(res.ok ? `Tabla exportada (${rows.length} filas)` : 'Error al exportar', res.ok ? 'success' : 'error')
+    } catch (err) { toastActionError(err) }
+  }
+
   const handleImagesToPdf = async () => {
     const images = await window.api.openFiles([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tif', 'tiff'] }])
     if (!images || images.length === 0) return
@@ -649,5 +691,6 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
     handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
+    handleExportMeasurements,
   }
 }

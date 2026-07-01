@@ -61,6 +61,7 @@ export default function Toolbar() {
     handleSplit, handleCompare, handleRotate, handleRotateAll, handleDeletePage,
     handleFit, handleInsertBlank, handleDuplicatePage, handleToolClick,
     handleExportTxt, handleExportHtml, handleRemovePassword, handleImagesToPdf,
+    handleExportMeasurements,
   } = usePdfActions(activeDoc, { askForm, askConfirm, toastActionError })
 
   const [searchInput, setSearchInput] = useState('')
@@ -281,6 +282,7 @@ export default function Toolbar() {
             )}
             <Sep />
             <TBtn icon={FileDown} label="Resumen" tip="Resumen de marcas (PDF)" onClick={handleMarkupSummary} />
+            <TBtn icon={FileSpreadsheet} label="Mediciones" tip="Exportar tabla de mediciones y conteos (Excel/CSV)" onClick={handleExportMeasurements} />
           </>
         )
       case 'edit':

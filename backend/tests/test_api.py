@@ -178,6 +178,24 @@ class TestAnnotations:
         assert resp.status_code == 200
         assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
 
+    def test_export_measurements_csv_and_xlsx(self, client, tmp_path):
+        rows = [
+            {"page": "1", "tipo": "Distancia", "etiqueta": "muro A", "valor": "12.50", "unidad": "m"},
+            {"page": "", "tipo": "Conteo (total)", "etiqueta": "Luminarias", "valor": "8", "unidad": "uds"},
+        ]
+        for ext in ("csv", "xlsx"):
+            out = str(tmp_path / f"mediciones.{ext}")
+            resp = client.post("/pdf/export-measurements", json={
+                "output_path": out, "title": "plano.pdf — escala: 1 m = 28.35 pt", "rows": rows,
+            })
+            assert resp.status_code == 200, resp.text
+            assert os.path.getsize(out) > 0
+        # extensión no permitida
+        resp = client.post("/pdf/export-measurements", json={
+            "output_path": str(tmp_path / "m.txt"), "rows": rows,
+        })
+        assert resp.status_code == 422
+
     def test_sidecar_preserves_stroke_and_rotation(self, client, open_doc):
         info = open_doc()
         anns = {"annotations": [{
