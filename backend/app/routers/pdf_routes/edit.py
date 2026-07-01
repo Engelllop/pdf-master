@@ -1,0 +1,114 @@
+"""Edición de contenido: texto, imágenes, redacción, marca de agua, metadatos."""
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+
+from app.models.pdf import (
+    HeaderFooterRequest, InsertImageRequest, InsertTextRequest, MetadataRequest,
+    RedactRequest, ReplaceTextRequest, SaveResult, WatermarkRequest,
+)
+from app.routers.pdf_routes._shared import _IMAGE_EXTS, _validate_input_file
+from app.services.pdf_service import pdf_service
+
+router = APIRouter()
+
+
+class EditTextRequest(BaseModel):
+    page_num: int
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    text: str
+    size: Optional[float] = None
+    color: str = "#000000"
+    font: Optional[str] = None
+
+
+class TransformImageRequest(BaseModel):
+    page_num: int
+    xref: int
+    old: List[float]
+    new: Optional[List[float]] = None
+    delete: bool = False
+    replace_path: Optional[str] = None
+
+
+@router.post("/header-footer/{doc_id}", response_model=SaveResult)
+def add_header_footer(doc_id: str, req: HeaderFooterRequest):
+    ok = pdf_service.add_header_footer(doc_id, req.header, req.footer, req.fontsize, req.color)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True)
+
+@router.post("/insert-text/{doc_id}", response_model=SaveResult)
+def insert_text(doc_id: str, req: InsertTextRequest):
+    ok = pdf_service.insert_text(doc_id, req.page_num, req.x, req.y, req.text, req.color, req.fontsize)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return SaveResult(success=True)
+
+@router.post("/insert-image/{doc_id}", response_model=SaveResult)
+def insert_image(doc_id: str, req: InsertImageRequest):
+    _validate_input_file(req.image_path, _IMAGE_EXTS)
+    ok = pdf_service.insert_image(doc_id, req.page_num, req.x, req.y, req.width, req.height, req.image_path)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page or image not found")
+    return SaveResult(success=True)
+
+@router.post("/watermark/{doc_id}", response_model=SaveResult)
+def add_watermark(doc_id: str, req: WatermarkRequest):
+    ok = pdf_service.add_watermark(doc_id, req.text, req.color, req.fontsize, req.angle, req.opacity)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True)
+
+@router.post("/redact/{doc_id}", response_model=SaveResult)
+def redact_area(doc_id: str, req: RedactRequest):
+    ok = pdf_service.redact_area(doc_id, req.page_num, req.x, req.y, req.width, req.height)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return SaveResult(success=True)
+
+@router.post("/replace-text/{doc_id}")
+def replace_text(doc_id: str, req: ReplaceTextRequest):
+    count = pdf_service.replace_text(doc_id, req.query, req.replace, req.page_num, req.case_sensitive, req.replace_all)
+    return {"replaced": count}
+
+@router.post("/metadata/{doc_id}", response_model=SaveResult)
+def set_metadata(doc_id: str, req: MetadataRequest):
+    ok = pdf_service.set_metadata(doc_id, req.title, req.author, req.subject, req.keywords)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True)
+
+@router.post("/edit-text/{doc_id}", response_model=SaveResult)
+def edit_text(doc_id: str, req: EditTextRequest):
+    ok = pdf_service.edit_text_span(doc_id, req.page_num, req.x0, req.y0, req.x1, req.y1, req.text, req.size, req.color, req.font)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page not found")
+    return SaveResult(success=True)
+
+@router.get("/images/{doc_id}/{page_num}")
+def list_page_images(doc_id: str, page_num: int):
+    return {"images": pdf_service.list_page_images(doc_id, page_num)}
+
+@router.post("/transform-image/{doc_id}", response_model=SaveResult)
+def transform_image(doc_id: str, req: TransformImageRequest):
+    if req.replace_path:
+        _validate_input_file(req.replace_path, _IMAGE_EXTS)
+    ok = pdf_service.transform_image(doc_id, req.page_num, req.xref, req.old, req.new, req.delete, req.replace_path)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Page or image not found")
+    return SaveResult(success=True)
+
+@router.post("/page-numbers/{doc_id}", response_model=SaveResult)
+def add_page_numbers(doc_id: str, prefix: str = Query(""), start: int = Query(1), position: str = Query("bottom")):
+    if not pdf_service.add_page_numbers(doc_id, prefix, start, position):
+        raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True)
+
+@router.post("/redact-matches/{doc_id}")
+def redact_matches(doc_id: str, query: str = Query(..., min_length=1)):
+    return {"redacted": pdf_service.redact_matches(doc_id, query)}
