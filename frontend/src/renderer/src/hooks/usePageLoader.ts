@@ -3,7 +3,7 @@ import { reopenDeadDoc } from '../lib/openDocument'
 import { useStoreSlice } from './useStoreSlice'
 import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 const MAX_RENDER_ZOOM = 4
 const MIN_RENDER_ZOOM = 0.5
 
@@ -147,13 +147,13 @@ export function usePageLoader() {
     }
 
     // Load page text for text selection overlay (sigue viniendo del backend)
-    fetch(`${API_BASE}/pdf/text/${docId}/${page}`, { signal })
+    apiFetch(`/pdf/text/${docId}/${page}`, { signal })
       .then((res) => res.ok ? res.json() : null)
       .then((data) => { if (data?.blocks) setPageText(data.blocks) })
       .catch(() => {})
 
     if (store.viewMode === 'double' && rightPage < activeDoc.page_count) {
-      fetch(`${API_BASE}/pdf/text/${docId}/${rightPage}`, { signal })
+      apiFetch(`/pdf/text/${docId}/${rightPage}`, { signal })
         .then((res) => res.ok ? res.json() : null)
         .then((data) => { if (data?.blocks) setPageTextRight(data.blocks) })
         .catch(() => {})

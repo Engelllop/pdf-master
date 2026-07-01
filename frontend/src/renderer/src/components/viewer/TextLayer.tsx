@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { type PageDims } from './annotationRender'
 
-import { API_BASE } from '../../lib/api'
+import { apiFetch } from '../../lib/api'
 
 interface SpanItem { text: string; x0: number; y0: number; x1: number; y1: number; size: number }
 
@@ -17,7 +17,7 @@ function TextLayer({ docId, page, pageData, active }: {
   const [spans, setSpans] = useState<SpanItem[]>([])
   useEffect(() => {
     const c = new AbortController()
-    fetch(`${API_BASE}/pdf/spans/${docId}/${page}`, { signal: c.signal })
+    apiFetch(`/pdf/spans/${docId}/${page}`, { signal: c.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d?.spans) setSpans(d.spans) })
       .catch(() => {})

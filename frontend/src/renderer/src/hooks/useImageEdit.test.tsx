@@ -42,7 +42,7 @@ describe('carga de imágenes de la página', () => {
     usePdfStore.setState({ activeTool: 'editimage' })
     const { result } = setup()
     await waitFor(() => expect(result.current.pageImages).toHaveLength(1))
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/pdf/images/doc-1/0'))
+    expect(fetchMock.mock.calls[0][0]).toContain('/pdf/images/doc-1/0')
   })
 })
 

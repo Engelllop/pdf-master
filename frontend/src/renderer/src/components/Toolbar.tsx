@@ -21,7 +21,7 @@ import { useState, useRef, useEffect } from 'react'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export default function Toolbar() {
   const tc = useThemeClasses()
@@ -87,7 +87,7 @@ export default function Toolbar() {
     if (!activeDoc || !searchInput.trim()) return
     if (!(await askConfirm('Redactar coincidencias', `Se tacharán permanentemente todas las ocurrencias de "${searchInput}". Esta acción no se puede deshacer.`, 'Redactar'))) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/redact-matches/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/redact-matches/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}`, { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         setDocDirty(activeDoc.doc_id, true)
@@ -103,7 +103,7 @@ export default function Toolbar() {
     if (!activeDoc) return
     if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); return }
     try {
-      const res = await fetch(`${API_BASE}/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+      const res = await apiFetch(`/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
       const data = await res.json()
       const text: string = (data.blocks ? data.blocks.map((b: any) => b.text).join(' ') : data.text) || ''
       if (!text.trim()) { showToast('No hay texto en esta página', 'info'); return }
@@ -121,7 +121,7 @@ export default function Toolbar() {
     if (!activeDoc || !searchInput.trim()) return
     setSearchQuery(activeDoc.doc_id, searchInput)
     try {
-      const res = await fetch(`${API_BASE}/pdf/search/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
+      const res = await apiFetch(`/pdf/search/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
       if (res.ok) {
         const results = await res.json()
         setSearchResults(activeDoc.doc_id, results)
@@ -136,7 +136,7 @@ export default function Toolbar() {
   const handleReplace = async () => {
     if (!activeDoc || !searchInput.trim()) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/replace-text/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/replace-text/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -169,7 +169,7 @@ export default function Toolbar() {
     if (!activeDoc || !searchInput.trim()) return
     if (!(await askConfirm('Reemplazar todo', `Se reemplazarán todas las ocurrencias de "${searchInput}" por "${replaceInput}".`, 'Reemplazar todo'))) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/replace-text/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/replace-text/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

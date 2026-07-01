@@ -4,7 +4,7 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch, apiUrl } from '../lib/api'
 
 interface PageData {
   image: string
@@ -35,12 +35,12 @@ function ComparePagePanel({
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetch(`${API_BASE}/pdf/page-info/${docId}/${page}?zoom=1.5`)
+    apiFetch(`/pdf/page-info/${docId}/${page}?zoom=1.5`)
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return
         setData({
-          image: `${API_BASE}/pdf/page-image/${docId}/${page}?zoom=1.5`,
+          image: apiUrl(`/pdf/page-image/${docId}/${page}?zoom=1.5`),
           width: d.width,
           height: d.height,
           originalWidth: d.original_width,
@@ -125,7 +125,7 @@ export default function ComparisonView() {
     if (diff) { setDiff(null); return }
     setDiffLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/pdf/compare-text/${activeDoc.doc_id}/${compareDoc.doc_id}`)
+      const res = await apiFetch(`/pdf/compare-text/${activeDoc.doc_id}/${compareDoc.doc_id}`)
       const data = await res.json()
       setDiff(data.diffs || [])
     } catch { setDiff([]) } finally { setDiffLoading(false) }

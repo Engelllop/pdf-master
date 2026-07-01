@@ -19,7 +19,7 @@ import { registerPromptHandler } from './lib/uiPrompt'
 import { openDocument } from './lib/openDocument'
 import { requestCloseDoc } from './lib/closeDocument'
 
-import { API_BASE } from './lib/api'
+import { apiFetch } from './lib/api'
 
 function App() {
   const store = useStoreSlice(
@@ -165,7 +165,7 @@ function App() {
 
     const check = () => {
       if (restarting) return
-      fetch(`${API_BASE}/pdf/health`, { method: 'GET', signal: AbortSignal.timeout(12000) })
+      apiFetch(`/pdf/health`, { method: 'GET', signal: AbortSignal.timeout(12000) })
         .then((r) => {
           if (r.ok) {
             failCount = 0

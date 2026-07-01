@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export interface FormField {
   field_name: string
@@ -19,7 +19,7 @@ export function useFormFields(docId: string | null, pageNum: number) {
       return
     }
     let cancelled = false
-    fetch(`${API_BASE}/pdf/widgets/${docId}/${pageNum}`)
+    apiFetch(`/pdf/widgets/${docId}/${pageNum}`)
       .then((res) => res.json())
       .then((data) => {
         if (!cancelled) setFields(data)
@@ -33,7 +33,7 @@ export function useFormFields(docId: string | null, pageNum: number) {
   const updateField = async (fieldName: string, value: string) => {
     if (!docId) return false
     try {
-      const res = await fetch(`${API_BASE}/pdf/widgets/${docId}/${pageNum}`, {
+      const res = await apiFetch(`/pdf/widgets/${docId}/${pageNum}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ field_name: fieldName, value }),

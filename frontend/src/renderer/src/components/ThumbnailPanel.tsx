@@ -5,7 +5,7 @@ import type { OutlineItem } from '../store/usePdfStore'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useFormModal } from './FormModal'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 function OutlineTree({ items, depth = 0, onJump, tc }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void; tc: (d: string, l: string) => string }) {
   return (
@@ -93,7 +93,7 @@ export default function ThumbnailPanel() {
         await Promise.all(
           batch.map(async (pageNum) => {
             try {
-              const res = await fetch(`${API_BASE}/pdf/thumbnail/${activeDoc.doc_id}/${pageNum}`)
+              const res = await apiFetch(`/pdf/thumbnail/${activeDoc.doc_id}/${pageNum}`)
               if (res.ok) {
                 const data = await res.json()
                 addThumbnail(activeDoc.doc_id, pageNum, data.image_base64)
@@ -148,7 +148,7 @@ export default function ThumbnailPanel() {
     if (!(await askConfirm('Eliminar páginas', `¿Eliminar ${selectedPages.size} página(s) seleccionada(s)?`, 'Eliminar'))) return
     const pages = Array.from(selectedPages).sort((a, b) => b - a)
     try {
-      const res = await fetch(`${API_BASE}/pdf/delete-pages/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/delete-pages/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages }),
@@ -176,7 +176,7 @@ export default function ThumbnailPanel() {
     if (!activeDoc || selectedPages.size === 0) return
     const pages = Array.from(selectedPages)
     try {
-      const res = await fetch(`${API_BASE}/pdf/rotate-pages/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/rotate-pages/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages, degrees }),
@@ -199,7 +199,7 @@ export default function ThumbnailPanel() {
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '_extracto.pdf') })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
+      const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages }),
@@ -228,7 +228,7 @@ export default function ThumbnailPanel() {
     if (!activeDoc || selectedPages.size === 0) return
     const page = Math.min(...Array.from(selectedPages))
     try {
-      const res = await fetch(`${API_BASE}/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${page}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${page}`, { method: 'POST' })
       if (res.ok) {
         refreshAfterStructuralChange(activeDoc.page_count + 1)
         setSelectedPages(new Set())
@@ -241,7 +241,7 @@ export default function ThumbnailPanel() {
     if (!activeDoc) return
     const index = selectedPages.size > 0 ? Math.max(...Array.from(selectedPages)) + 1 : activeDoc.page_count
     try {
-      const res = await fetch(`${API_BASE}/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
       if (res.ok) {
         refreshAfterStructuralChange(activeDoc.page_count + 1)
         setSelectedPages(new Set())
@@ -340,7 +340,7 @@ export default function ThumbnailPanel() {
                     const newOrder = Array.from({ length: activeDoc.page_count }, (_, idx) => idx)
                     const [removed] = newOrder.splice(dragIndex, 1)
                     newOrder.splice(i, 0, removed)
-                    fetch(`${API_BASE}/pdf/reorder/${activeDoc.doc_id}`, {
+                    apiFetch(`/pdf/reorder/${activeDoc.doc_id}`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ new_order: newOrder }),

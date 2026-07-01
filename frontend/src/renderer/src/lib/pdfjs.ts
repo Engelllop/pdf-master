@@ -3,7 +3,7 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
 
-import { API_BASE } from './api'
+import { apiFetch } from './api'
 
 // Caché de documentos PDF.js por `${docId}:${version}`. Una versión nueva (rotar,
 // borrar página, etc.) invalida la anterior y se destruye para liberar memoria.
@@ -24,7 +24,7 @@ export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib
   }
 
   const promise = (async () => {
-    const res = await fetch(`${API_BASE}/pdf/raw/${docId}?v=${version}`)
+    const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
     if (!res.ok) throw new Error(`raw ${res.status}`)
     const data = await res.arrayBuffer()
     return pdfjsLib.getDocument({ data }).promise

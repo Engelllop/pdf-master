@@ -24,7 +24,7 @@ import ViewerContextMenu from './viewer/ViewerContextMenu'
 import { recoverImage } from '../lib/recoverImage'
 import { Loader2 } from 'lucide-react'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export default function Viewer() {
   const tc = useThemeClasses()
@@ -157,7 +157,7 @@ export default function Viewer() {
       e.preventDefault()
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      fetch(`${API_BASE}/pdf/spans/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+      apiFetch(`/pdf/spans/${activeDoc.doc_id}/${activeDoc.currentPage}`)
         .then((r) => r.json())
         .then(({ spans }: { spans: Array<{ x0: number; y0: number; x1: number; y1: number; text: string; size: number; color: string; font: string }> }) => {
           const hit = spans.find((s) => pdfX >= s.x0 - 1 && pdfX <= s.x1 + 1 && pdfY >= s.y0 - 1 && pdfY <= s.y1 + 1)
@@ -201,7 +201,7 @@ export default function Viewer() {
       e.preventDefault()
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      fetch(`${API_BASE}/pdf/insert-text/${activeDoc.doc_id}`, {
+      apiFetch(`/pdf/insert-text/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -626,7 +626,7 @@ export default function Viewer() {
                   const span = editSpan
                   setEditSpan(null)
                   try {
-                    const res = await fetch(`${API_BASE}/pdf/edit-text/${activeDoc.doc_id}`, {
+                    const res = await apiFetch(`/pdf/edit-text/${activeDoc.doc_id}`, {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ page_num: activeDoc.currentPage, x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1, text: v, size: span.size, color: span.color, font: span.font }),
                     })
@@ -855,7 +855,7 @@ export default function Viewer() {
           }}
           onCopyText={async () => {
             try {
-              const res = await fetch(`${API_BASE}/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+              const res = await apiFetch(`/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
               if (res.ok) {
                 const data = await res.json()
                 await navigator.clipboard.writeText(data.text || '')

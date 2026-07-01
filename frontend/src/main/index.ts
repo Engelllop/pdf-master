@@ -12,6 +12,8 @@ app.commandLine.appendSwitch('enable-zero-copy')
 app.commandLine.appendSwitch('disable-software-rasterizer')
 app.commandLine.appendSwitch('max-old-space-size', '4096')
 
+const API_BASE = 'http://localhost:8745'
+
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 const fileQueue: string[] = []
@@ -373,7 +375,7 @@ app.whenReady().then(async () => {
     let tempPath: string | null = null
     let printWin: BrowserWindow | null = null
     try {
-      const res = await fetch(`http://localhost:8745/pdf/raw/${docId}`)
+      const res = await fetch(`${API_BASE}/pdf/raw/${docId}`)
       if (!res.ok) throw new Error(`raw fetch ${res.status}`)
       const buf = Buffer.from(await res.arrayBuffer())
       tempPath = join(tmpdir(), `pdfmaster-print-${Date.now()}.pdf`)
@@ -432,7 +434,7 @@ app.whenReady().then(async () => {
       // planos grandes); 'doc' adjunta el PDF completo para que Claude lo lea nativo.
       let docBlock: object | null = null
       if (docId && scope === 'page') {
-        const res = await fetch(`http://localhost:8745/pdf/page-image/${docId}/${page}?zoom=2.0`)
+        const res = await fetch(`${API_BASE}/pdf/page-image/${docId}/${page}?zoom=2.0`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())
           if (buf.length <= 28 * 1024 * 1024) {
@@ -440,7 +442,7 @@ app.whenReady().then(async () => {
           }
         }
       } else if (docId) {
-        const res = await fetch(`http://localhost:8745/pdf/raw/${docId}`)
+        const res = await fetch(`${API_BASE}/pdf/raw/${docId}`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())
           if (buf.length <= 28 * 1024 * 1024) {

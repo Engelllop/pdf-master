@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useStoreSlice } from './useStoreSlice'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export type AreaRect = { x0: number; y0: number; x1: number; y1: number }
 type PageData = { width: number; height: number; originalWidth: number; originalHeight: number } | null
@@ -29,8 +29,8 @@ export function useAreaSelect(activeDoc: ActiveDoc, pageData: PageData) {
     if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return }
     try {
       const res = tool === 'croparea'
-        ? await fetch(`${API_BASE}/pdf/crop/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, top: ry0, right: Math.max(0, pageData.originalWidth - rx1), bottom: Math.max(0, pageData.originalHeight - ry1), left: rx0 }) })
-        : await fetch(`${API_BASE}/pdf/redact/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0 }) })
+        ? await apiFetch(`/pdf/crop/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, top: ry0, right: Math.max(0, pageData.originalWidth - rx1), bottom: Math.max(0, pageData.originalHeight - ry1), left: rx0 }) })
+        : await apiFetch(`/pdf/redact/${activeDoc.doc_id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ page_num: activeDoc.currentPage, x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0 }) })
       if (res.ok) {
         store.setDocDirty(activeDoc.doc_id, true)
         store.invalidatePageCache(activeDoc.doc_id)

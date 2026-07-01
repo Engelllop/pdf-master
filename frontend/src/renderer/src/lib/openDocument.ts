@@ -1,7 +1,7 @@
 import { usePdfStore } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
 
-import { API_BASE } from './api'
+import { apiFetch } from './api'
 
 export interface OpenDocumentOptions {
   password?: string
@@ -40,7 +40,7 @@ export async function reopenDeadDoc(docId: string): Promise<string | null> {
   if (!doc || reopening.has(docId)) return null
   reopening.add(docId)
   try {
-    const res = await fetch(`${API_BASE}/pdf/open`, {
+    const res = await apiFetch(`/pdf/open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_path: doc.file_path }),
@@ -72,7 +72,7 @@ export function openDocument(filePath: string, opts: OpenDocumentOptions = {}): 
 async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Promise<string | null> {
   const { addDoc, setAnnotations, setOutline, showToast } = usePdfStore.getState()
   try {
-    const res = await fetch(`${API_BASE}/pdf/open`, {
+    const res = await apiFetch(`/pdf/open`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_path: filePath, password: opts.password }),
@@ -92,14 +92,14 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
 
     // Load persisted annotations + outline (best-effort, non-blocking failures)
     try {
-      const annRes = await fetch(`${API_BASE}/pdf/annotations/${docId}`)
+      const annRes = await apiFetch(`/pdf/annotations/${docId}`)
       if (annRes.ok) {
         const annData = await annRes.json()
         setAnnotations(docId, annData.annotations || [])
       }
     } catch {}
     try {
-      const outlineRes = await fetch(`${API_BASE}/pdf/outline/${docId}`)
+      const outlineRes = await apiFetch(`/pdf/outline/${docId}`)
       if (outlineRes.ok) {
         const outlineData = await outlineRes.json()
         setOutline(docId, outlineData || [])

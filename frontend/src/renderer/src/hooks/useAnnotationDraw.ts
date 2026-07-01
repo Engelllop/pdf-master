@@ -3,7 +3,7 @@ import { type Annotation, type PdfState } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
 import { askForm } from '../lib/uiPrompt'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 const SNAP_TOLERANCE_SCREEN_PX = 10
 
 const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area']
@@ -54,7 +54,7 @@ export function useAnnotationDraw(
     setSnapPoint(null)
     if (!isMeasureTool || !activeDoc) return
     const ctrl = new AbortController()
-    fetch(`${API_BASE}/pdf/snap-points/${activeDoc.doc_id}/${activeDoc.currentPage}`, { signal: ctrl.signal })
+    apiFetch(`/pdf/snap-points/${activeDoc.doc_id}/${activeDoc.currentPage}`, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data) snapPointsRef.current = data.points
@@ -199,7 +199,7 @@ export function useAnnotationDraw(
       const w = Math.abs(drawPreview.width || 0)
       const h = Math.abs(drawPreview.height || 0)
       try {
-        const res = await fetch(`${API_BASE}/pdf/text-clip/${activeDoc.doc_id}/${activeDoc.currentPage}`, {
+        const res = await apiFetch(`/pdf/text-clip/${activeDoc.doc_id}/${activeDoc.currentPage}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ x, y, width: w, height: h }),

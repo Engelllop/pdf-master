@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { apiFetch } from '../lib/api'
 
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
 
@@ -333,7 +334,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   closeDoc: (docId) => {
     // Notify backend to free memory
-    fetch(`http://localhost:8745/pdf/close/${docId}`, { method: 'POST' }).catch(() => {})
+    apiFetch(`/pdf/close/${docId}`, { method: 'POST' }).catch(() => {})
     set((state) => {
       const remaining = state.docs.filter((d) => d.doc_id !== docId)
       const newActiveId =

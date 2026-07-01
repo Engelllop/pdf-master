@@ -9,7 +9,7 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import { openDocument } from '../lib/openDocument'
 import { requestCloseDoc } from '../lib/closeDocument'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 export default function TopBar() {
   const {
@@ -47,14 +47,14 @@ export default function TopBar() {
     if (!activeDoc) return
     setSaveStatus('saving')
     try {
-      const embedRes = await fetch(`${API_BASE}/pdf/embed/${activeDoc.doc_id}`, {
+      const embedRes = await apiFetch(`/pdf/embed/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations: activeDoc.annotations }),
       })
       if (!embedRes.ok) throw new Error('Error al embeber anotaciones')
-      const res = await fetch(`${API_BASE}/pdf/save/${activeDoc.doc_id}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/save/${activeDoc.doc_id}`, { method: 'POST' })
       if (res.ok) {
-        await fetch(`${API_BASE}/pdf/annotations/${activeDoc.doc_id}`, {
+        await apiFetch(`/pdf/annotations/${activeDoc.doc_id}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ annotations: activeDoc.annotations }),
         })
@@ -76,7 +76,7 @@ export default function TopBar() {
     const newPath = await window.api.saveFile()
     if (!newPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/save/${activeDoc.doc_id}?output_path=${encodeURIComponent(newPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/save/${activeDoc.doc_id}?output_path=${encodeURIComponent(newPath)}`, { method: 'POST' })
       showToast(res.ok ? 'Guardado como ' + newPath.split(/[\\/]/).pop() : 'Error al guardar', res.ok ? 'success' : 'error')
     } catch (err) { toastActionError(err) }
   }
@@ -85,7 +85,7 @@ export default function TopBar() {
     const outputPath = await window.api.saveFile({ defaultPath: 'nuevo.pdf' })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/create-blank`, {
+      const res = await apiFetch(`/pdf/create-blank`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ output_path: outputPath }),
       })

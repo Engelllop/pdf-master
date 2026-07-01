@@ -2,7 +2,7 @@ import { useStoreSlice } from './useStoreSlice'
 import { type PdfDoc } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 type ActiveDoc = PdfDoc | undefined
 
@@ -35,7 +35,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleExportWord = async () => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/export-word/${activeDoc.doc_id}`)
+      const res = await apiFetch(`/pdf/export-word/${activeDoc.doc_id}`)
       if (res.ok) {
         const data = await res.json()
         const link = document.createElement('a')
@@ -60,7 +60,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!v) return
     const prefix = String(v.prefix)
     try {
-      const res = await fetch(`${API_BASE}/pdf/page-numbers/${activeDoc.doc_id}?prefix=${encodeURIComponent(prefix)}&start=1&position=${v.position}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/page-numbers/${activeDoc.doc_id}?prefix=${encodeURIComponent(prefix)}&start=1&position=${v.position}`, { method: 'POST' })
       if (res.ok) {
         setDocDirty(activeDoc.doc_id, true)
         invalidatePageCache(activeDoc.doc_id)
@@ -74,7 +74,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleMarkupSummary = async () => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/markup-summary/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/markup-summary/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations: activeDoc.annotations }),
       })
@@ -92,10 +92,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleMakeSearchable = async () => {
     if (!activeDoc) return
     try {
-      const avail = await (await fetch(`${API_BASE}/pdf/ocr-available`)).json()
+      const avail = await (await apiFetch(`/pdf/ocr-available`)).json()
       if (!avail.available) { showToast('Tesseract OCR no está instalado en el sistema', 'error'); return }
       showToast('Procesando OCR de la página...', 'info')
-      const res = await fetch(`${API_BASE}/pdf/make-searchable/${activeDoc.doc_id}?page=${activeDoc.currentPage}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}?page=${activeDoc.currentPage}`, { method: 'POST' })
       if (res.ok) {
         const d = await res.json()
         setDocDirty(activeDoc.doc_id, true)
@@ -119,12 +119,12 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const ownerPw = String(v.owner)
     setSaveStatus('saving')
     try {
-      const embedRes = await fetch(`${API_BASE}/pdf/embed/${activeDoc.doc_id}`, {
+      const embedRes = await apiFetch(`/pdf/embed/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations: activeDoc.annotations }),
       })
       if (!embedRes.ok) throw new Error('Error al embeber anotaciones')
-      const res = await fetch(`${API_BASE}/pdf/save-password/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/save-password/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_password: userPw || undefined, owner_password: ownerPw || undefined }),
       })
@@ -149,7 +149,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const text = String(v.text).trim()
     if (!text) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/watermark/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/watermark/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
       })
@@ -184,7 +184,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '.xlsx') })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/export-excel/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/export-excel/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       if (res.ok) {
         showToast('Exportado a Excel', 'success')
       } else {
@@ -200,7 +200,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '.pptx') })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/export-pptx/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/export-pptx/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       if (res.ok) {
         showToast('Exportado a PowerPoint', 'success')
       } else {
@@ -214,7 +214,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleOcr = async () => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/ocr/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+      const res = await apiFetch(`/pdf/ocr/${activeDoc.doc_id}/${activeDoc.currentPage}`)
       if (res.ok) {
         const data = await res.json()
         await askForm(`Texto OCR · página ${activeDoc.currentPage + 1}`,
@@ -230,7 +230,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleSavePageAsImage = async () => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/page-image/${activeDoc.doc_id}/${activeDoc.currentPage}?zoom=2.0`)
+      const res = await apiFetch(`/pdf/page-image/${activeDoc.doc_id}/${activeDoc.currentPage}?zoom=2.0`)
       if (res.ok) {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
@@ -258,7 +258,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     ], 'Guardar')
     if (!v) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/metadata/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/metadata/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: String(v.title) || undefined, author: String(v.author) || undefined, subject: String(v.subject) || undefined, keywords: String(v.keywords) || undefined }),
@@ -283,7 +283,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!v) return
     const header = String(v.header), footer = String(v.footer)
     try {
-      const res = await fetch(`${API_BASE}/pdf/header-footer/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/header-footer/${activeDoc.doc_id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ header: header || undefined, footer: footer || undefined }),
@@ -307,7 +307,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const sourcePath = await window.api.openFile()
     if (!sourcePath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/merge/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/merge/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_path: sourcePath }),
       })
@@ -315,7 +315,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         const data = await res.json()
         if (data.success) {
           // Reload doc info
-          const infoRes = await fetch(`${API_BASE}/pdf/open`, {
+          const infoRes = await apiFetch(`/pdf/open`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ file_path: activeDoc.file_path }),
           })
@@ -336,7 +336,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!activeDoc) return
     const outputPath = activeDoc.file_path.replace('.pdf', '_compressed.pdf')
     try {
-      const res = await fetch(`${API_BASE}/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       if (res.ok) {
         showToast('Comprimido: ' + outputPath.split(/[\\/]/).pop(), 'success')
       } else {
@@ -360,7 +360,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleBatchCompress = () => runBatch('Comprimir', async (d) => {
     const out = d.file_path.replace(/\.pdf$/i, '_compressed.pdf')
-    const res = await fetch(`${API_BASE}/pdf/compress/${d.doc_id}?output_path=${encodeURIComponent(out)}`, { method: 'POST' })
+    const res = await apiFetch(`/pdf/compress/${d.doc_id}?output_path=${encodeURIComponent(out)}`, { method: 'POST' })
     if (!res.ok) throw new Error('compress ' + d.file_name)
   })
 
@@ -370,7 +370,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const text = String(v.text).trim()
     if (!text) return
     await runBatch('Marca de agua', async (d) => {
-      const res = await fetch(`${API_BASE}/pdf/watermark/${d.doc_id}`, {
+      const res = await apiFetch(`/pdf/watermark/${d.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
       })
       if (!res.ok) throw new Error('watermark ' + d.file_name)
@@ -379,7 +379,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   }
 
   const handleBatchExportWord = () => runBatch('Exportar a Word', async (d) => {
-    const res = await fetch(`${API_BASE}/pdf/export-word/${d.doc_id}`)
+    const res = await apiFetch(`/pdf/export-word/${d.doc_id}`)
     if (!res.ok) throw new Error('word ' + d.file_name)
     const data = await res.json()
     const link = document.createElement('a')
@@ -431,7 +431,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile()
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
+      const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages }),
       })
@@ -459,7 +459,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const filePath = await window.api.openFile()
     if (!filePath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/open`, {
+      const res = await apiFetch(`/pdf/open`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: filePath }),
       })
@@ -480,7 +480,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRotate = async (degrees: number) => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/rotate/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/rotate/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ page_num: activeDoc.currentPage, degrees }),
       })
@@ -499,7 +499,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRotateAll = async (degrees: number) => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/rotate-all/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/rotate-all/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ page_num: 0, degrees }),
       })
@@ -519,7 +519,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!activeDoc) return
     if (!(await askConfirm('Eliminar página', `¿Eliminar la página ${activeDoc.currentPage + 1}?`, 'Eliminar'))) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/delete-pages/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/delete-pages/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages: [activeDoc.currentPage] }),
       })
@@ -552,7 +552,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!activeDoc) return
     const index = activeDoc.currentPage + 1
     try {
-      const res = await fetch(`${API_BASE}/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
       if (res.ok) {
         updateDocPageCount(activeDoc.doc_id, activeDoc.page_count + 1)
         setDocDirty(activeDoc.doc_id, true)
@@ -567,7 +567,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleDuplicatePage = async () => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${activeDoc.currentPage}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${activeDoc.currentPage}`, { method: 'POST' })
       if (res.ok) {
         updateDocPageCount(activeDoc.doc_id, activeDoc.page_count + 1)
         setDocDirty(activeDoc.doc_id, true)
@@ -584,7 +584,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.txt'), filters: [{ name: 'Texto', extensions: ['txt'] }] })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/export-txt/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/export-txt/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       showToast(res.ok ? 'Exportado a TXT' : 'Error al exportar', res.ok ? 'success' : 'error')
     } catch (err) { toastActionError(err) }
   }
@@ -594,7 +594,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.html'), filters: [{ name: 'HTML', extensions: ['html'] }] })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/export-html/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/export-html/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       showToast(res.ok ? 'Exportado a HTML' : 'Error al exportar', res.ok ? 'success' : 'error')
     } catch (err) { toastActionError(err) }
   }
@@ -604,7 +604,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_sin_clave.pdf') })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await apiFetch(`/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       showToast(res.ok ? 'PDF guardado sin contraseña' : 'Error al quitar contraseña', res.ok ? 'success' : 'error')
     } catch (err) { toastActionError(err) }
   }
@@ -615,7 +615,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const outputPath = await window.api.saveFile({ defaultPath: 'imagenes.pdf' })
     if (!outputPath) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/images-to-pdf`, {
+      const res = await apiFetch(`/pdf/images-to-pdf`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ images, output_path: outputPath }),
       })

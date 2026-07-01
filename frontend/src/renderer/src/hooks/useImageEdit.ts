@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from './useStoreSlice'
 
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
 type LocalRect = { l: number; t: number; w: number; h: number }
 export type PageImage = { xref: number; x0: number; y0: number; x1: number; y1: number }
@@ -26,14 +26,14 @@ export function useImageEdit(activeDoc: ActiveDoc, pageData: PageData) {
 
   useEffect(() => {
     if (!activeDoc || store.activeTool !== 'editimage' || !pageData) { setPageImages([]); setSelImg(null); setImgPreview(null); return }
-    fetch(`${API_BASE}/pdf/images/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+    apiFetch(`/pdf/images/${activeDoc.doc_id}/${activeDoc.currentPage}`)
       .then((r) => r.json()).then(({ images }) => setPageImages(images || [])).catch(() => setPageImages([]))
   }, [store.activeTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion, pageData?.width])
 
   const applyImageTransform = async (im: PageImage, body: { new?: number[]; delete?: boolean; replace_path?: string }) => {
     if (!activeDoc) return
     try {
-      const res = await fetch(`${API_BASE}/pdf/transform-image/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/transform-image/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ page_num: activeDoc.currentPage, xref: im.xref, old: [im.x0, im.y0, im.x1, im.y1], ...body }),
       })
