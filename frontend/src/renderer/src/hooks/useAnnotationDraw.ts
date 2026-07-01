@@ -29,7 +29,7 @@ export function useAnnotationDraw(
     'activeTool', 'annotationColor', 'addAnnotation', 'setActiveTool', 'showToast',
     'setMeasurementScale', 'textFontFamily', 'textFontSize',
     'annotationLineWidth', 'annotationLineStyle', 'annotationOpacity',
-    'annotationFillColor', 'annotationFillOpacity',
+    'annotationFillColor', 'annotationFillOpacity', 'countCategory',
   )
   const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
 
@@ -97,6 +97,21 @@ export function useAnnotationDraw(
 
     if (activeTool === 'note') {
       setNotePos({ x: pdf.x, y: pdf.y })
+      setDrawing(false)
+      return true
+    }
+    if (activeTool === 'count') {
+      // Cada clic coloca una marca; la categoría viaja en `text` para que el
+      // sidecar y el resumen la agrupen sin ampliar el modelo.
+      addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'count',
+        page: activeDoc.currentPage,
+        x: pdf.x,
+        y: pdf.y,
+        color: annotationColor,
+        text: store.countCategory || 'General',
+      })
       setDrawing(false)
       return true
     }

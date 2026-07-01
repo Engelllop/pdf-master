@@ -54,6 +54,11 @@ export function getAnnotationBounds(
       const s = toScreen(ann.x, ann.y)
       return { x: s.x, y: s.y, w: (ann.width || 28) * sx, h: (ann.height || 28) * sy }
     }
+    case 'count': {
+      const s = toScreen(ann.x, ann.y)
+      const r = 9 * sx
+      return { x: s.x - r, y: s.y - r * (sy / sx), w: r * 2, h: r * 2 * (sy / sx) }
+    }
     case 'image': {
       const s = toScreen(ann.x, ann.y)
       return { x: s.x, y: s.y, w: (ann.width || 200) * sx, h: (ann.height || 150) * sy }
@@ -218,6 +223,18 @@ export function renderAnnotation(
           ) : (
             <rect x={s.x} y={s.y} width={iw} height={ih} fill="none" stroke={ann.color || '#fff'} strokeWidth={2} strokeDasharray="4 2" />
           )}
+        </g>
+      )
+    }
+    case 'count': {
+      const r = 9 * sx
+      const cross = Math.max(1, r * 0.2)
+      return (
+        <g key={key} {...clickProps} opacity={ann.opacity ?? 1}>
+          <title>{`Conteo: ${ann.text || 'General'}`}</title>
+          <circle cx={s.x} cy={s.y} r={r} fill={ann.color || '#ef4444'} stroke="#fff" strokeWidth={Math.max(1, r * 0.16)} />
+          <line x1={s.x - r * 0.45} y1={s.y} x2={s.x + r * 0.45} y2={s.y} stroke="#fff" strokeWidth={cross} strokeLinecap="round" />
+          <line x1={s.x} y1={s.y - r * 0.45} x2={s.x} y2={s.y + r * 0.45} stroke="#fff" strokeWidth={cross} strokeLinecap="round" />
         </g>
       )
     }

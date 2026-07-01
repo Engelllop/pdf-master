@@ -28,7 +28,7 @@ export interface ViewerScroll {
 
 export interface Annotation {
   id: string
-  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'signature' | 'measure_distance' | 'measure_area' | 'image'
+  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'signature' | 'measure_distance' | 'measure_area' | 'image' | 'count'
   page: number
   x: number
   y: number
@@ -169,6 +169,8 @@ export interface PdfState {
   setActiveTool: (tool: string | null) => void
   setActiveRibbon: (tab: RibbonTab) => void
   setAnnotationColor: (color: string) => void
+  countCategory: string
+  setCountCategory: (category: string) => void
   setAnnotationLineWidth: (width: number) => void
   setAnnotationLineStyle: (style: LineStyle) => void
   setAnnotationOpacity: (opacity: number) => void
@@ -287,6 +289,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   activeTool: null,
   activeRibbon: 'read',
   annotationColor: '#fbbf24',
+  countCategory: 'General',
   annotationLineWidth: typeof strokePrefs.lineWidth === 'number' ? strokePrefs.lineWidth as number : 2,
   annotationLineStyle: (['solid', 'dashed', 'dotted'].includes(strokePrefs.lineStyle as string) ? strokePrefs.lineStyle : 'solid') as LineStyle,
   annotationOpacity: typeof strokePrefs.opacity === 'number' ? strokePrefs.opacity as number : 1,
@@ -538,6 +541,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   setActiveTool: (tool) => set({ activeTool: tool, selectedAnnotationId: null }),
   setActiveRibbon: (tab) => set({ activeRibbon: tab }),
   setAnnotationColor: (color) => set({ annotationColor: color }),
+  setCountCategory: (category) => set({ countCategory: category }),
   setAnnotationLineWidth: (width) => {
     const v = Math.max(0.5, Math.min(20, width))
     persistStrokePrefs({ lineWidth: v })

@@ -149,6 +149,19 @@ class AnnotationsMixin:
                 if annot:
                     annot.set_colors(stroke=color)
                     annot.update()
+            elif ann.type == 'count':
+                # Marca de conteo: círculo relleno con cruz blanca; (x, y) es el centro
+                # y `text` lleva la categoría (queda como contenido del annot al pasar
+                # por add_circle si algún visor la muestra — aquí se dibuja plano).
+                r = 9.0
+                rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
+                page.draw_oval(rect, color=(1, 1, 1), width=r * 0.16, fill=color,
+                               stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
+                shape = page.new_shape()
+                shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
+                shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
+                shape.finish(color=(1, 1, 1), width=r * 0.2, stroke_opacity=stroke_op(ann))
+                shape.commit()
         
         self._dirty[doc_id] = True
         return True

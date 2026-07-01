@@ -166,6 +166,18 @@ class TestAnnotations:
         resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
         assert resp.status_code == 200
 
+    def test_embed_count_marks(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "n1", "type": "count", "page": 0, "x": 40, "y": 40,
+             "color": "#ef4444", "text": "Luminarias"},
+            {"id": "n2", "type": "count", "page": 0, "x": 90, "y": 40,
+             "color": "#ef4444", "text": "Luminarias", "opacity": 0.8},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+        assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+
     def test_sidecar_preserves_stroke_and_rotation(self, client, open_doc):
         info = open_doc()
         anns = {"annotations": [{

@@ -59,6 +59,23 @@ describe('rect: arrastre hacia atrás (regresión v1.2.6)', () => {
   })
 })
 
+describe('count', () => {
+  it('cada clic añade una marca con la categoría activa', () => {
+    usePdfStore.setState({ activeTool: 'count', countCategory: 'Luminarias', annotationColor: '#ef4444' })
+    const { result } = setup()
+
+    act(() => { result.current.handleMouseDown({ x: 100, y: 100 }) })
+    act(() => { result.current.handleMouseDown({ x: 200, y: 150 }) })
+
+    const anns = usePdfStore.getState().docs[0].annotations
+    expect(anns).toHaveLength(2)
+    expect(anns[0]).toMatchObject({ type: 'count', x: 200, y: 200, text: 'Luminarias', color: '#ef4444' })
+    expect(anns[1]).toMatchObject({ type: 'count', x: 400, y: 300 })
+    // La herramienta sigue activa para seguir contando
+    expect(usePdfStore.getState().activeTool).toBe('count')
+  })
+})
+
 describe('circle', () => {
   it('fuerza el círculo a un cuadrado con el lado menor', async () => {
     usePdfStore.setState({ activeTool: 'circle' })

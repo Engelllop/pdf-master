@@ -10,7 +10,7 @@ import {
   Type, Image as ImageIcon, Images, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
   FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree, MoveVertical,
-  ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2,
+  ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
 } from 'lucide-react'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
@@ -31,12 +31,14 @@ export default function Toolbar() {
     showToast, setDocDirty, invalidatePageCache, invalidateThumbnails, incrementDocVersion,
     readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
     compareMode, activeRibbon, activeTool, annotationColor, setAnnotationColor,
+    countCategory, setCountCategory,
   } = useStoreSlice(
     'docs', 'activeDocId', 'setPage', 'setZoom',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
     'showToast', 'setDocDirty', 'invalidatePageCache', 'invalidateThumbnails', 'incrementDocVersion',
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
     'compareMode', 'activeRibbon', 'activeTool', 'annotationColor', 'setAnnotationColor',
+    'countCategory', 'setCountCategory',
   )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -228,6 +230,7 @@ export default function Toolbar() {
     { id: 'circle', icon: Circle, label: 'Círculo' },
     { id: 'arrow', icon: ArrowRightTool, label: 'Flecha' },
     { id: 'stamp', icon: Stamp, label: 'Sello' },
+    { id: 'count', icon: Tally5, label: 'Conteo' },
     { id: 'measure_calibrate', icon: Ruler, label: 'Calibrar' },
     { id: 'measure_distance', icon: MoveDiagonal, label: 'Distancia' },
     { id: 'measure_area', icon: LandPlot, label: 'Área' },
@@ -265,6 +268,17 @@ export default function Toolbar() {
               <TBtn key={t.id} icon={t.icon} label={t.label} tip={t.label}
                 onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
             ))}
+            {activeTool === 'count' && (
+              <>
+                <Sep />
+                <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
+                  placeholder="Categoría" title="Categoría del conteo"
+                  className="w-28 px-2 py-1 text-xs rounded border border-border bg-surface text-fg shrink-0" />
+                <span className="text-xs text-muted shrink-0 tabular-nums" title="Marcas de esta categoría en el documento">
+                  = {activeDoc.annotations.filter((a) => a.type === 'count' && (a.text || 'General') === (countCategory || 'General')).length}
+                </span>
+              </>
+            )}
             <Sep />
             <TBtn icon={FileDown} label="Resumen" tip="Resumen de marcas (PDF)" onClick={handleMarkupSummary} />
           </>
