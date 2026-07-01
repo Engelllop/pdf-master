@@ -17,7 +17,6 @@ win:
     - target: nsis
       arch:
         - x64
-  publisherName: PDF Master
   icon: build/icon.ico
 fileAssociations:
   - ext: pdf
