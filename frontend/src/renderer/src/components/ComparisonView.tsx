@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, GitCompare } from 'lucide-react'
+import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, GitCompare, Layers } from 'lucide-react'
+import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
@@ -83,6 +84,100 @@ function ComparePagePanel({
   )
 }
 
+const OVERLAY_SCALE = 2
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = reject
+    img.src = url
+  })
+}
+
+// Colorea las líneas de una página (negro sobre blanco) con 'screen':
+// screen(negro, tinte) = tinte, screen(blanco, tinte) = blanco.
+function tintPage(img: HTMLImageElement, w: number, h: number, color: string): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(img, 0, 0, w, h)
+  ctx.globalCompositeOperation = 'screen'
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, w, h)
+  return c
+}
+
+function CompareOverlayPanel({
+  docA, versionA, pageA, docB, versionB, pageB, zoom,
+}: {
+  docA: string; versionA: number; pageA: number
+  docB: string; versionB: number; pageB: number
+  zoom: number
+}) {
+  const tc = useThemeClasses()
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+  const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    setError(false)
+    ;(async () => {
+      const a = await renderPdfPage(docA, versionA, pageA, OVERLAY_SCALE)
+      const b = await renderPdfPage(docB, versionB, pageB, OVERLAY_SCALE)
+      try {
+        if (cancelled) return
+        const [imgA, imgB] = await Promise.all([loadImage(a.url), loadImage(b.url)])
+        if (cancelled || !canvasRef.current) return
+        // Ambas revisiones al mismo ancho (los planos suelen coincidir; si no, se escala B)
+        const w = imgA.width
+        const h = Math.max(imgA.height, Math.round(imgB.height * (w / imgB.width)))
+        const canvas = canvasRef.current
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')!
+        const tintedA = tintPage(imgA, w, Math.round(imgA.height * (w / imgA.width)), '#ff2222')
+        const tintedB = tintPage(imgB, w, Math.round(imgB.height * (w / imgB.width)), '#2244ff')
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, w, h)
+        ctx.drawImage(tintedA, 0, 0)
+        ctx.globalCompositeOperation = 'multiply'
+        ctx.drawImage(tintedB, 0, 0)
+        setDims({ w, h })
+      } finally {
+        revokePageUrl(a.url)
+        revokePageUrl(b.url)
+        if (!cancelled) setLoading(false)
+      }
+    })().catch(() => { if (!cancelled) { setError(true); setLoading(false) } })
+    return () => { cancelled = true }
+  }, [docA, versionA, pageA, docB, versionB, pageB])
+
+  return (
+    <div className={`flex-1 overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}>
+      <div className="min-h-full flex items-start justify-center p-4">
+        {error ? (
+          <div className={`self-center text-sm ${tc('text-slate-500', 'text-gray-500')}`}>Error al componer el overlay</div>
+        ) : (
+          <div className="relative">
+            {loading && (
+              <div className={`absolute inset-0 flex items-center justify-center text-xs ${tc('text-slate-400', 'text-gray-500')}`}>Componiendo…</div>
+            )}
+            <canvas ref={canvasRef} className="rounded shadow-lg bg-white"
+              style={dims ? { width: (dims.w / OVERLAY_SCALE) * zoom, height: (dims.h / OVERLAY_SCALE) * zoom } : undefined} />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function ComparisonView() {
   const tc = useThemeClasses()
   const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = useStoreSlice(
@@ -97,6 +192,7 @@ export default function ComparisonView() {
   const [rightPage, setRightPage] = useState(activeDoc?.currentPage || 0)
   const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
+  const [overlayMode, setOverlayMode] = useState(false)
 
   const leftScrollRef = useRef<HTMLDivElement>(null)
   const rightScrollRef = useRef<HTMLDivElement>(null)
@@ -222,6 +318,20 @@ export default function ComparisonView() {
           </button>
         </Tooltip>
 
+        <Tooltip content={overlayMode ? 'Volver a lado a lado' : 'Overlay de revisiones (actual en rojo, comparado en azul)'}>
+          <button onClick={() => setOverlayMode((v) => !v)}
+            className={`p-1.5 rounded transition-colors ${overlayMode ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+            <Layers size={16} />
+          </button>
+        </Tooltip>
+
+        {overlayMode && (
+          <span className={`text-xs flex items-center gap-2 ml-1 ${tc('text-slate-400', 'text-gray-500')}`}>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#ff2222' }} />{activeDoc.file_name}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#2244ff' }} />{compareDoc.file_name}</span>
+          </span>
+        )}
+
         <div className="flex-1" />
 
         <Tooltip content="Salir de comparación">
@@ -254,26 +364,34 @@ export default function ComparisonView() {
         </div>
       )}
 
-      {/* Paneles lado a lado */}
-      <div className="flex-1 flex overflow-hidden">
-        <ComparePagePanel
-          docId={activeDoc.doc_id}
-          page={leftPage}
+      {/* Overlay compuesto o paneles lado a lado */}
+      {overlayMode ? (
+        <CompareOverlayPanel
+          docA={activeDoc.doc_id} versionA={activeDoc.docVersion} pageA={leftPage}
+          docB={compareDoc.doc_id} versionB={compareDoc.docVersion} pageB={rightPage}
           zoom={zoom}
-          label={activeDoc.file_name}
-          scrollRef={leftScrollRef}
-          onScroll={() => syncScroll('left')}
         />
-        <div className={`w-px shrink-0 ${tc('bg-slate-700', 'bg-gray-300')}`} />
-        <ComparePagePanel
-          docId={compareDoc.doc_id}
-          page={rightPage}
-          zoom={zoom}
-          label={compareDoc.file_name}
-          scrollRef={rightScrollRef}
-          onScroll={() => syncScroll('right')}
-        />
-      </div>
+      ) : (
+        <div className="flex-1 flex overflow-hidden">
+          <ComparePagePanel
+            docId={activeDoc.doc_id}
+            page={leftPage}
+            zoom={zoom}
+            label={activeDoc.file_name}
+            scrollRef={leftScrollRef}
+            onScroll={() => syncScroll('left')}
+          />
+          <div className={`w-px shrink-0 ${tc('bg-slate-700', 'bg-gray-300')}`} />
+          <ComparePagePanel
+            docId={compareDoc.doc_id}
+            page={rightPage}
+            zoom={zoom}
+            label={compareDoc.file_name}
+            scrollRef={rightScrollRef}
+            onScroll={() => syncScroll('right')}
+          />
+        </div>
+      )}
     </div>
   )
 }
