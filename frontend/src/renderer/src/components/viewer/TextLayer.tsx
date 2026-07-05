@@ -1,28 +1,23 @@
 import { memo, useEffect, useState } from 'react'
 import { type PageDims } from './annotationRender'
-
-import { apiFetch } from '../../lib/api'
-
-interface SpanItem { text: string; x0: number; y0: number; x1: number; y1: number; size: number }
+import { getSpans, type SpanItem } from '../../lib/spans'
 
 // Invisible, selectable text layer overlaid on the page bitmap (PDF.js-style).
 // The container is pointer-events:none so empty areas fall through to the annotation
 // SVG below; individual spans capture pointer events only when no tool is active.
-function TextLayer({ docId, page, pageData, active }: {
+function TextLayer({ docId, page, version = 0, pageData, active }: {
   docId: string
   page: number
+  version?: number
   pageData: PageDims
   active: boolean
 }) {
   const [spans, setSpans] = useState<SpanItem[]>([])
   useEffect(() => {
-    const c = new AbortController()
-    apiFetch(`/pdf/spans/${docId}/${page}`, { signal: c.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d?.spans) setSpans(d.spans) })
-      .catch(() => {})
-    return () => { c.abort(); setSpans([]) }
-  }, [docId, page])
+    let alive = true
+    getSpans(docId, page, version).then((s) => { if (alive) setSpans(s) })
+    return () => { alive = false; setSpans([]) }
+  }, [docId, page, version])
   const sx = pageData.width / pageData.originalWidth
   const sy = pageData.height / pageData.originalHeight
   return (

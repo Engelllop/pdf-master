@@ -18,6 +18,7 @@ import { useFormModal } from './components/FormModal'
 import { registerPromptHandler } from './lib/uiPrompt'
 import { openDocument } from './lib/openDocument'
 import { requestCloseDoc } from './lib/closeDocument'
+import { updateRecentMeta } from './lib/recents'
 
 import { apiFetch } from './lib/api'
 
@@ -93,8 +94,23 @@ function App() {
         })),
       }
       localStorage.setItem('pdfmaster_session', JSON.stringify(session))
+      // Snapshot de la última sesión con documentos, para "Reabrir última sesión"
+      // (pdfmaster_session queda vacía al cerrar todas las pestañas).
+      if (session.docs.length > 0) localStorage.setItem('pdfmaster_session_last', JSON.stringify(session))
     } catch {}
   }, [store.docs, store.activeDocId])
+
+  // Al salir de la app, guarda la última página leída de cada doc abierto
+  // ("continuar en pág. X" en recientes; el cierre de pestaña ya lo hace).
+  useEffect(() => {
+    const onUnload = () => {
+      for (const d of usePdfStore.getState().docs) {
+        updateRecentMeta(d.file_path, { lastPage: d.currentPage, pageCount: d.page_count })
+      }
+    }
+    window.addEventListener('beforeunload', onUnload)
+    return () => window.removeEventListener('beforeunload', onUnload)
+  }, [])
 
   // Restore the previous session on startup (only if nothing was opened via file association).
   useEffect(() => {
@@ -252,6 +268,10 @@ function App() {
         case 'f':
           e.preventDefault()
           window.dispatchEvent(new CustomEvent('app:shortcut-search'))
+          break
+        case 'p':
+          e.preventDefault()
+          window.dispatchEvent(new CustomEvent('app:shortcut-print'))
           break
         case 'w':
           e.preventDefault()

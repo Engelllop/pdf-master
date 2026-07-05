@@ -17,6 +17,10 @@ const API_BASE = 'http://localhost:8745'
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 const fileQueue: string[] = []
+// 'app:open-file' se pierde si el renderer aún no montó su listener (React tarda
+// más que ready-to-show). Los archivos se encolan hasta recibir 'app:renderer-ready';
+// así "abrir con" de varios PDFs desde el Explorador abre todos, no solo el primero.
+let rendererReady = false
 // El renderer reporta si hay documentos con cambios sin guardar; al cerrar la
 // ventana se confirma antes de descartarlos (no hay autoguardado).
 let hasUnsavedChanges = false
@@ -153,13 +157,14 @@ function createWindow(): void {
     else hasUnsavedChanges = false
   })
 
+  rendererReady = false
+  mainWindow.webContents.on('did-start-loading', () => {
+    rendererReady = false
+  })
+
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
     mainWindow?.focus()
-    if (fileQueue.length > 0 && mainWindow) {
-      fileQueue.forEach((f) => mainWindow?.webContents.send('app:open-file', f))
-      fileQueue.length = 0
-    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -268,7 +273,7 @@ function parsePageRanges(input: string): Array<{ from: number; to: number }> {
 }
 
 function handleFileOpen(filePath: string) {
-  if (mainWindow) {
+  if (mainWindow && rendererReady) {
     mainWindow.webContents.send('app:open-file', filePath)
   } else {
     fileQueue.push(filePath)
@@ -309,10 +314,11 @@ app.whenReady().then(async () => {
     return filePaths[0]
   })
 
-  ipcMain.handle('dialog:openFiles', async (_event, filters?: Electron.FileFilter[]) => {
+  ipcMain.handle('dialog:openFiles', async (_event, filters?: Electron.FileFilter[], defaultPath?: string) => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
       properties: ['openFile', 'multiSelections'],
-      filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }]
+      filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }],
+      ...(defaultPath ? { defaultPath } : {})
     })
     if (canceled) return null
     return filePaths
@@ -360,12 +366,24 @@ app.whenReady().then(async () => {
     try { shell.showItemInFolder(filePath) } catch { /* ignore */ }
   })
 
+  ipcMain.handle('shell:openPath', (_event, dirPath: string) => {
+    try { shell.openPath(dirPath) } catch { /* ignore */ }
+  })
+
   ipcMain.handle('log:error', (_event, message: string) => {
     safeLog('RENDERER', String(message).slice(0, 2000))
   })
 
   ipcMain.on('app:dirty-state', (_event, dirty: boolean) => {
     hasUnsavedChanges = !!dirty
+  })
+
+  ipcMain.on('app:renderer-ready', () => {
+    rendererReady = true
+    if (mainWindow && fileQueue.length > 0) {
+      fileQueue.forEach((f) => mainWindow?.webContents.send('app:open-file', f))
+      fileQueue.length = 0
+    }
   })
 
   // Impresión real del PDF: descarga los bytes (refleja cambios sin guardar),

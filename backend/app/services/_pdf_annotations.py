@@ -13,6 +13,51 @@ from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
 logger = logging.getLogger("pdfmaster")
 
+# Fuentes reales de Windows para el texto embebido (se incrustan en el PDF, con
+# subset al final del embed): (regular, bold, italic, bold-italic). None = esa
+# variante no viene con Windows; se cae a la regular. Si nada existe → base14.
+_WINDOWS_FONTS = {
+    'arial': ('arial.ttf', 'arialbd.ttf', 'ariali.ttf', 'arialbi.ttf'),
+    'helvetica': ('arial.ttf', 'arialbd.ttf', 'ariali.ttf', 'arialbi.ttf'),
+    'calibri': ('calibri.ttf', 'calibrib.ttf', 'calibrii.ttf', 'calibriz.ttf'),
+    'segoe ui': ('segoeui.ttf', 'segoeuib.ttf', 'segoeuii.ttf', 'segoeuiz.ttf'),
+    'tahoma': ('tahoma.ttf', 'tahomabd.ttf', None, None),
+    'verdana': ('verdana.ttf', 'verdanab.ttf', 'verdanai.ttf', 'verdanaz.ttf'),
+    'trebuchet ms': ('trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf'),
+    'times new roman': ('times.ttf', 'timesbd.ttf', 'timesi.ttf', 'timesbi.ttf'),
+    'georgia': ('georgia.ttf', 'georgiab.ttf', 'georgiai.ttf', 'georgiaz.ttf'),
+    'garamond': ('gara.ttf', 'garabd.ttf', 'garait.ttf', None),
+    'courier new': ('cour.ttf', 'courbd.ttf', 'couri.ttf', 'courbi.ttf'),
+    'consolas': ('consola.ttf', 'consolab.ttf', 'consolai.ttf', 'consolaz.ttf'),
+    'impact': ('impact.ttf', None, None, None),
+    'comic sans ms': ('comic.ttf', 'comicbd.ttf', 'comici.ttf', 'comicz.ttf'),
+}
+
+# Variantes base14 como fallback (PyMuPDF: helv/hebo/heit/hebi).
+_BASE14_VARIANTS = {(False, False): 'helv', (True, False): 'hebo', (False, True): 'heit', (True, True): 'hebi'}
+
+
+def _font_args(family: Optional[str], bold: bool = False, italic: bool = False) -> dict:
+    if family:
+        variants = _WINDOWS_FONTS.get(family.strip().lower())
+        if variants:
+            idx = (1 if bold else 0) + (2 if italic else 0)
+            fname = variants[idx] or variants[0]
+            path = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts', fname)
+            if os.path.exists(path):
+                safe = 'F' + ''.join(c for c in fname.lower() if c.isalnum())
+                return {'fontname': safe, 'fontfile': path}
+    return {'fontname': _BASE14_VARIANTS[(bold, italic)]}
+
+
+def _load_font(fargs: dict) -> fitz.Font:
+    try:
+        if 'fontfile' in fargs:
+            return fitz.Font(fontfile=fargs['fontfile'])
+        return fitz.Font(fargs['fontname'])
+    except Exception:
+        return fitz.Font('helv')
+
 
 class AnnotationsMixin:
     def _get_annotations_path(self, file_path: str) -> str:
@@ -129,6 +174,70 @@ class AnnotationsMixin:
                 shape.finish(color=color, fill=color, closePath=True,
                              stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
                 shape.commit()
+            elif ann.type == 'check':
+                w, h = ann.width or 0, ann.height or 0
+                pts = [fitz.Point(ann.x + w * 0.12, ann.y + h * 0.55),
+                       fitz.Point(ann.x + w * 0.42, ann.y + h * 0.85),
+                       fitz.Point(ann.x + w * 0.88, ann.y + h * 0.15)]
+                page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
+                                   dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
+                                   lineCap=1, lineJoin=1)
+            elif ann.type == 'cross':
+                w, h = ann.width or 0, ann.height or 0
+                for (ax, ay, bx, by) in ((0.15, 0.15, 0.85, 0.85), (0.85, 0.15, 0.15, 0.85)):
+                    page.draw_line(fitz.Point(ann.x + w * ax, ann.y + h * ay),
+                                   fitz.Point(ann.x + w * bx, ann.y + h * by),
+                                   color=color, width=ann.lineWidth or 2,
+                                   dashes=dashes_for(ann), stroke_opacity=stroke_op(ann), lineCap=1)
+            elif ann.type == 'star':
+                w, h = ann.width or 0, ann.height or 0
+                cx, cy = ann.x + w / 2, ann.y + h / 2
+                pts = []
+                for i in range(10):
+                    angle = -math.pi / 2 + i * math.pi / 5
+                    f = 0.5 if i % 2 == 0 else 0.21
+                    pts.append(fitz.Point(cx + math.cos(angle) * w * f, cy + math.sin(angle) * h * f))
+                shape = page.new_shape()
+                shape.draw_polyline(pts + [pts[0]])
+                shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
+                             stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
+                             fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
+                             fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
+                shape.commit()
+            elif ann.type == 'cloud':
+                # Festones semicirculares hacia afuera por todo el perímetro del rect
+                # (mismo trazado que el render SVG del frontend).
+                w, h = ann.width or 0, ann.height or 0
+                r = max(5.0, min(abs(w), abs(h)) / 6)
+                corners = [fitz.Point(ann.x, ann.y), fitz.Point(ann.x + w, ann.y),
+                           fitz.Point(ann.x + w, ann.y + h), fitz.Point(ann.x, ann.y + h)]
+                normals = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+                shape = page.new_shape()
+                for e in range(4):
+                    p0, p1 = corners[e], corners[(e + 1) % 4]
+                    nx_, ny_ = normals[e]
+                    length = abs(p1.x - p0.x) + abs(p1.y - p0.y)
+                    n = max(2, round(length / (r * 2)))
+                    for i in range(n):
+                        a = fitz.Point(p0.x + (p1.x - p0.x) * i / n, p0.y + (p1.y - p0.y) * i / n)
+                        b = fitz.Point(p0.x + (p1.x - p0.x) * (i + 1) / n, p0.y + (p1.y - p0.y) * (i + 1) / n)
+                        ctrl = fitz.Point((a.x + b.x) / 2 + nx_ * r * 1.8, (a.y + b.y) / 2 + ny_ * r * 1.8)
+                        shape.draw_curve(a, ctrl, b)
+                shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
+                             stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
+                             fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
+                             fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
+                shape.commit()
+            elif ann.type == 'polygon':
+                if ann.points and len(ann.points) >= 3:
+                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
+                    shape = page.new_shape()
+                    shape.draw_polyline(pts + [pts[0]])
+                    shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
+                                 stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
+                                 fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
+                                 fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
+                    shape.commit()
             elif ann.type == 'draw':
                 if ann.points and len(ann.points) > 1:
                     # points llegan como dicts del JSON, no objetos (p["x"], no p.x)
@@ -141,9 +250,29 @@ class AnnotationsMixin:
                     page.draw_polyline(pts, color=(0, 0, 0), width=3)
             elif ann.type == 'text':
                 fs = ann.fontSize or 14
+                lh = ann.lineHeight or 1.3
+                fargs = _font_args(ann.fontFamily, bool(ann.bold), bool(ann.italic))
+                lines = (ann.text or '').split('\n')
+                if ann.listStyle == 'bullet':
+                    lines = [f"• {l}" for l in lines]
+                elif ann.listStyle == 'number':
+                    lines = [f"{i + 1}. {l}" for i, l in enumerate(lines)]
+                # Alineación: offset por línea contra el ancho de caja (el de la
+                # anotación, o el de la línea más larga si no hay caja explícita).
+                offsets = [0.0] * len(lines)
+                if ann.align in ('center', 'right'):
+                    font = _load_font(fargs)
+                    widths = [font.text_length(l, fontsize=fs) for l in lines]
+                    box_w = ann.width or (max(widths) if widths else 0)
+                    factor = 0.5 if ann.align == 'center' else 1.0
+                    offsets = [max(0.0, (box_w - w) * factor) for w in widths]
                 # ann.y is the text box top-left; place each line's baseline below it.
-                for i, line in enumerate((ann.text or '').split('\n')):
-                    page.insert_text((ann.x, ann.y + fs * 0.8 + i * fs * 1.3), line, fontsize=fs, color=color)
+                for i, line in enumerate(lines):
+                    pt = (ann.x + offsets[i], ann.y + fs * 0.8 + i * fs * lh)
+                    try:
+                        page.insert_text(pt, line, fontsize=fs, color=color, **fargs)
+                    except Exception:
+                        page.insert_text(pt, line, fontsize=fs, color=color)
             elif ann.type == 'note':
                 annot = page.add_text_annot(fitz.Point(ann.x, ann.y), ann.text or 'Nota')
                 if annot:
@@ -173,7 +302,14 @@ class AnnotationsMixin:
                 shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
                 shape.finish(color=(1, 1, 1), width=r * 0.2, stroke_opacity=stroke_op(ann))
                 shape.commit()
-        
+
+        # Las fuentes TTF incrustadas por insert_text(fontfile=...) se reducen al
+        # subconjunto de glifos usados (sin esto cada fuente añade cientos de KB).
+        try:
+            doc.subset_fonts()
+        except Exception:
+            pass
+
         self._dirty[doc_id] = True
         return True
 

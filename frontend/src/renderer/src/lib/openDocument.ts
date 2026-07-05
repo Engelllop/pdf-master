@@ -1,5 +1,6 @@
 import { usePdfStore } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
+import { touchRecent, updateRecentMeta } from './recents'
 
 import { apiFetch } from './api'
 
@@ -56,6 +57,33 @@ export async function reopenDeadDoc(docId: string): Promise<string | null> {
   }
 }
 
+// Miniatura de la 1ª página para el menú de recientes: reusa el thumbnail del
+// backend y lo encoge a JPEG ~5 KB para no agotar la cuota de localStorage.
+async function captureRecentThumb(filePath: string, docId: string) {
+  try {
+    const res = await apiFetch(`/pdf/thumbnail/${docId}/0`)
+    if (!res.ok) return
+    const data = await res.json()
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('thumb load'))
+      img.src = data.image_base64
+    })
+    const w = 96
+    const h = Math.max(1, Math.round((img.height / img.width) * w))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, w, h)
+    ctx.drawImage(img, 0, 0, w, h)
+    updateRecentMeta(filePath, { thumb: canvas.toDataURL('image/jpeg', 0.72) })
+  } catch {}
+}
+
 export function openDocument(filePath: string, opts: OpenDocumentOptions = {}): Promise<string | null> {
   const run = () => openDocumentImpl(filePath, opts)
   const result = openChain.then(run, run)
@@ -107,11 +135,9 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
     } catch {}
 
     if (!opts.silent) {
-      try {
-        const recents = JSON.parse(localStorage.getItem('pdfmaster_recent') || '[]') as string[]
-        const updated = [filePath, ...recents.filter((p) => p !== filePath)].slice(0, 10)
-        localStorage.setItem('pdfmaster_recent', JSON.stringify(updated))
-      } catch {}
+      touchRecent(filePath)
+      updateRecentMeta(filePath, { pageCount: data.page_count })
+      captureRecentThumb(filePath, docId)
     }
     return docId
   } catch {

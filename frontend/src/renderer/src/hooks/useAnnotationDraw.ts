@@ -4,9 +4,12 @@ import { useStoreSlice } from './useStoreSlice'
 import { askForm } from '../lib/uiPrompt'
 
 import { apiFetch } from '../lib/api'
+import { getSpans, type SpanItem } from '../lib/spans'
+import { computeLineRects, type LineRect } from '../lib/textMarkup'
 const SNAP_TOLERANCE_SCREEN_PX = 10
 
 const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area']
+const MARKUP_TOOLS = ['highlight', 'underline', 'strikethrough']
 
 export type DrawPreview = Partial<Annotation> & { type?: Annotation['type'] | 'textselect' | 'measure_calibrate' | 'measure_distance' | 'measure_area' }
 
@@ -30,6 +33,7 @@ export function useAnnotationDraw(
     'setMeasurementScale', 'textFontFamily', 'textFontSize',
     'annotationLineWidth', 'annotationLineStyle', 'annotationOpacity',
     'annotationFillColor', 'annotationFillOpacity', 'countCategory',
+    'setAnnotations', 'setDocDirty', 'textStyle',
   )
   const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
 
@@ -44,8 +48,23 @@ export function useAnnotationDraw(
   const [drawingArea, setDrawingArea] = useState(false)
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null)
   const snapPointsRef = useRef<Array<{ x: number; y: number }>>([])
+  const [markupRects, setMarkupRects] = useState<LineRect[]>([])
+  const spansRef = useRef<SpanItem[]>([])
 
   const isMeasureTool = !!activeTool && MEASURE_TOOLS.includes(activeTool)
+  const isMarkupTool = !!activeTool && MARKUP_TOOLS.includes(activeTool)
+
+  // Spans de la página para anclar el marcado al texto real (estilo Acrobat).
+  useEffect(() => {
+    spansRef.current = []
+    setMarkupRects([])
+    if (!isMarkupTool || !activeDoc) return
+    let alive = true
+    getSpans(activeDoc.doc_id, activeDoc.currentPage, activeDoc.docVersion).then((spans) => {
+      if (alive) spansRef.current = spans
+    })
+    return () => { alive = false }
+  }, [isMarkupTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion])
 
   // Carga los puntos de snap (vértices del contenido vectorial del plano) al
   // activar una herramienta de medición; se cachean en el backend por página.
@@ -121,17 +140,23 @@ export function useAnnotationDraw(
       return true
     }
 
-    if (activeTool === 'measure_area') {
+    if (activeTool === 'measure_area' || activeTool === 'polygon') {
       if (!drawingArea) {
         setDrawingArea(true)
         setAreaPoints([{ x: pdf.x, y: pdf.y }])
         setDrawPreview({
           id: crypto.randomUUID(),
-          type: 'measure_area',
+          type: activeTool,
           page: activeDoc.currentPage,
           x: pdf.x,
           y: pdf.y,
           color: annotationColor,
+          lineWidth: store.annotationLineWidth,
+          lineStyle: store.annotationLineStyle,
+          opacity: store.annotationOpacity,
+          ...(activeTool === 'polygon' && store.annotationFillColor
+            ? { fillColor: store.annotationFillColor, fillOpacity: store.annotationFillOpacity }
+            : {}),
           points: [{ x: pdf.x, y: pdf.y }],
         })
       } else {
@@ -146,7 +171,7 @@ export function useAnnotationDraw(
 
     const isSignature = activeTool === 'signature'
     const toolType = activeTool as Annotation['type']
-    const isShape = activeTool === 'rect' || activeTool === 'circle'
+    const isShape = ['rect', 'circle', 'star', 'cloud'].includes(activeTool)
     setDrawPreview({
       id: crypto.randomUUID(),
       type: isSignature ? 'signature' : toolType,
@@ -183,16 +208,20 @@ export function useAnnotationDraw(
     } else if (
       activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect' ||
       activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' ||
+      activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud' ||
       activeTool === 'measure_calibrate' || activeTool === 'measure_distance'
     ) {
       // Keep the sign of the delta so dragging up/left works; the shape is
       // normalized to a top-left origin on mouse up (and at render time).
-      setDrawPreview({
-        ...drawPreview,
-        width: pdf.x - (drawPreview.x || 0),
-        height: pdf.y - (drawPreview.y || 0),
-      })
-    } else if (activeTool === 'measure_area' && drawingArea) {
+      const width = pdf.x - (drawPreview.x || 0)
+      const height = pdf.y - (drawPreview.y || 0)
+      setDrawPreview({ ...drawPreview, width, height })
+      if (isMarkupTool) {
+        setMarkupRects(computeLineRects(spansRef.current, {
+          x: drawPreview.x || 0, y: drawPreview.y || 0, width, height,
+        }))
+      }
+    } else if ((activeTool === 'measure_area' || activeTool === 'polygon') && drawingArea) {
       setDrawPreview((prev) => {
         if (!prev) return null
         const nextPoints = [...areaPoints, { x: pdf.x, y: pdf.y }]
@@ -328,7 +357,24 @@ export function useAnnotationDraw(
           showToast('Firma guardada', 'success')
         }
       }
-    } else if ((activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle') && drawPreview.width && Math.abs(drawPreview.width) > 2) {
+    } else if (isMarkupTool && markupRects.length > 0) {
+      // Marcado anclado al texto: una anotación por línea con el rect real de la
+      // línea (el render pinta subrayado abajo / tachado al centro, y el embed
+      // usa add_*_annot con el quad correcto). Un solo paso de undo.
+      const anns = markupRects.map((l) => ({
+        ...(drawPreview as Annotation),
+        id: crypto.randomUUID(),
+        x: l.x0,
+        y: l.y0,
+        width: l.x1 - l.x0,
+        height: l.y1 - l.y0,
+      }))
+      store.setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...anns])
+      store.setDocDirty(activeDoc.doc_id, true)
+      setMarkupRects([])
+    } else if ((activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' ||
+      activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud') &&
+      drawPreview.width && Math.abs(drawPreview.width) > 2) {
       let finalPreview = { ...drawPreview }
       // Normalize x,y to top-left corner for rect/circle (user may have dragged backwards)
       const nx = Math.min(finalPreview.x || 0, (finalPreview.x || 0) + (finalPreview.width || 0))
@@ -350,6 +396,7 @@ export function useAnnotationDraw(
     setDrawing(false)
     setDrawPreview(null)
     setDrawPoints([])
+    setMarkupRects([])
   }
 
   const closeArea = () => {
@@ -360,7 +407,28 @@ export function useAnnotationDraw(
       return
     }
     if (areaPoints.length < 3) {
-      showToast('Dibuja al menos 3 puntos para medir un area', 'error')
+      showToast(activeTool === 'polygon' ? 'Dibuja al menos 3 vértices' : 'Dibuja al menos 3 puntos para medir un area', 'error')
+      setDrawingArea(false)
+      setAreaPoints([])
+      setDrawPreview(null)
+      return
+    }
+    if (activeTool === 'polygon') {
+      addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'polygon',
+        page: activeDoc.currentPage,
+        x: areaPoints[0].x,
+        y: areaPoints[0].y,
+        color: annotationColor,
+        points: areaPoints,
+        lineWidth: store.annotationLineWidth,
+        lineStyle: store.annotationLineStyle,
+        opacity: store.annotationOpacity,
+        ...(store.annotationFillColor
+          ? { fillColor: store.annotationFillColor, fillOpacity: store.annotationFillOpacity }
+          : {}),
+      })
       setDrawingArea(false)
       setAreaPoints([])
       setDrawPreview(null)
@@ -432,6 +500,11 @@ export function useAnnotationDraw(
       text: textInput || 'Texto',
       fontFamily: textFontFamily,
       fontSize: textFontSize,
+      bold: store.textStyle.bold || undefined,
+      italic: store.textStyle.italic || undefined,
+      align: store.textStyle.align !== 'left' ? store.textStyle.align : undefined,
+      lineHeight: store.textStyle.lineHeight !== 1.3 ? store.textStyle.lineHeight : undefined,
+      listStyle: store.textStyle.listStyle !== 'none' ? store.textStyle.listStyle : undefined,
     })
     setTextPos(null)
     setTextInput('')
@@ -446,6 +519,7 @@ export function useAnnotationDraw(
     setDrawingArea(false)
     setAreaPoints([])
     setSnapPoint(null)
+    setMarkupRects([])
   }
 
   return {
@@ -470,5 +544,6 @@ export function useAnnotationDraw(
     drawingArea,
     closeArea,
     snapPoint,
+    markupRects,
   }
 }

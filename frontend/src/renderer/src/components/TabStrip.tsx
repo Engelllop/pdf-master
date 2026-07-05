@@ -1,18 +1,20 @@
 import { useState, useRef, useEffect } from 'react'
-import { Loader2, ChevronsUpDown, FileText, FolderOpen, X, Trash2, Plus } from 'lucide-react'
+import { Loader2, ChevronsUpDown, FileText, FolderOpen, X, Trash2, Plus, Columns2 } from 'lucide-react'
 import Tooltip from './Tooltip'
 import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { requestCloseDoc } from '../lib/closeDocument'
 
 // Tira de pestañas de documentos + desplegable "ir a pestaña" + menú contextual.
+// Las pestañas se reordenan arrastrándolas (estilo navegador).
 export default function TabStrip() {
   const tc = useThemeClasses()
-  const { docs, activeDocId, loadingDocId, setActiveDoc, showToast } = useStoreSlice(
-    'docs', 'activeDocId', 'loadingDocId', 'setActiveDoc', 'showToast',
+  const { docs, activeDocId, loadingDocId, setActiveDoc, moveDoc, showToast, setCompareDoc, compareMode, toggleCompareMode } = useStoreSlice(
+    'docs', 'activeDocId', 'loadingDocId', 'setActiveDoc', 'moveDoc', 'showToast', 'setCompareDoc', 'compareMode', 'toggleCompareMode',
   )
   const [tabMenu, setTabMenu] = useState<{ docId: string; path: string; x: number; y: number } | null>(null)
   const [tabListOpen, setTabListOpen] = useState(false)
+  const [dragId, setDragId] = useState<string | null>(null)
   const tabStripRef = useRef<HTMLDivElement>(null)
 
   // Keep the active tab visible when switching via keyboard / tab list.
@@ -21,21 +23,35 @@ export default function TabStrip() {
     tabStripRef.current.querySelector(`[data-tab-id="${activeDocId}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeDocId])
 
+  const compareWith = (docId: string) => {
+    setCompareDoc(docId)
+    if (!compareMode) toggleCompareMode()
+  }
+
   return (
     <>
-      <div className="flex-1 flex items-center overflow-x-auto no-scrollbar" ref={tabStripRef}>
-        {docs.map((doc) => (
+      <div className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar px-1" ref={tabStripRef}>
+        {docs.map((doc, i) => (
           <div key={doc.doc_id} data-tab-id={doc.doc_id} onClick={() => setActiveDoc(doc.doc_id)}
+            draggable
+            onDragStart={(e) => { setDragId(doc.doc_id); e.dataTransfer.effectAllowed = 'move' }}
+            onDragEnd={() => setDragId(null)}
+            onDragOver={(e) => {
+              e.preventDefault()
+              if (dragId && dragId !== doc.doc_id) moveDoc(dragId, i)
+            }}
             onContextMenu={(e) => { e.preventDefault(); setTabMenu({ docId: doc.doc_id, path: doc.file_path, x: e.clientX, y: e.clientY }) }}
             title={doc.file_path}
-            className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-2 mt-1 h-[calc(100%-4px)] rounded-t-lg cursor-pointer text-[13px] min-w-fit max-w-[220px] transition-colors ${
+            className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-1.5 my-1 h-[calc(100%-8px)] rounded-md cursor-pointer text-[13px] min-w-fit max-w-[220px] transition-colors ${
+              dragId === doc.doc_id ? 'opacity-50' : ''
+            } ${
               doc.doc_id === activeDocId
-                ? 'bg-surface text-fg font-medium shadow-[0_-2px_0_var(--accent),inset_1px_0_0_var(--border),inset_-1px_0_0_var(--border)]'
-                : 'text-muted hover:bg-hover hover:text-fg'
+                ? 'bg-surface text-fg font-medium border border-border shadow-sm'
+                : 'text-muted border border-transparent hover:bg-hover hover:text-fg'
             }`}>
             {loadingDocId === doc.doc_id
               ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
-              : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : 'text-muted'}`} />}
+              : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : doc.doc_id === activeDocId ? 'text-accent' : 'text-muted'}`} />}
             <span className="truncate max-w-[150px]">{doc.file_name}</span>
             {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-400" title="Cambios sin guardar" />}
             <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }}
@@ -87,6 +103,15 @@ export default function TabStrip() {
           <div className="fixed inset-0 z-[60]" onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null) }} />
           <div className={`menu-pop fixed z-[61] min-w-[200px] py-1 rounded-md border shadow-xl text-sm ${tc('bg-slate-800 border-slate-700 text-slate-200', 'bg-white border-gray-300 text-gray-800')}`}
             style={{ left: Math.min(tabMenu.x, window.innerWidth - 220), top: Math.min(tabMenu.y, window.innerHeight - 120) }}>
+            {docs.length >= 2 && tabMenu.docId !== activeDocId && (
+              <>
+                <button onClick={() => { compareWith(tabMenu.docId); setTabMenu(null) }}
+                  className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
+                  <Columns2 size={14} className={tc('text-slate-400', 'text-gray-500')} /> Ver lado a lado con el activo
+                </button>
+                <div className={`h-px my-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
+              </>
+            )}
             <button onClick={() => { window.api.showInFolder(tabMenu.path); setTabMenu(null) }}
               className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}>
               <FolderOpen size={14} className={tc('text-slate-400', 'text-gray-500')} /> Abrir ubicación del archivo

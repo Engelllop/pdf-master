@@ -178,6 +178,74 @@ class TestAnnotations:
         assert resp.status_code == 200
         assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
 
+    def test_embed_shape_library(self, client, open_doc):
+        # Formas de la galería (check, cruz, estrella, nube, polígono) con y sin relleno.
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "s1", "type": "check", "page": 0, "x": 10, "y": 10, "width": 30, "height": 30,
+             "color": "#22c55e", "lineWidth": 3},
+            {"id": "s2", "type": "cross", "page": 0, "x": 50, "y": 10, "width": 30, "height": 30,
+             "color": "#ef4444", "lineWidth": 2, "lineStyle": "dashed"},
+            {"id": "s3", "type": "star", "page": 0, "x": 90, "y": 10, "width": 40, "height": 40,
+             "color": "#f59e0b", "fillColor": "#fde68a", "fillOpacity": 0.5},
+            {"id": "s4", "type": "cloud", "page": 0, "x": 10, "y": 60, "width": 100, "height": 50,
+             "color": "#3b82f6", "opacity": 0.9},
+            {"id": "s5", "type": "polygon", "page": 0, "x": 130, "y": 60, "fillColor": "#ddd6fe",
+             "points": [{"x": 130, "y": 60}, {"x": 180, "y": 70}, {"x": 160, "y": 110}, {"x": 125, "y": 95}]},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+        assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+
+    def test_embed_polygon_needs_three_points(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [{
+            "id": "p1", "type": "polygon", "page": 0, "x": 10, "y": 10,
+            "points": [{"x": 10, "y": 10}, {"x": 20, "y": 20}],
+        }]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200  # se ignora sin crashear
+
+    def test_embed_text_with_real_font(self, client, open_doc):
+        # fontFamily conocida (TTF de Windows) y desconocida: ambas embeben sin 500.
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "t1", "type": "text", "page": 0, "x": 40, "y": 40,
+             "text": "fuente real", "fontSize": 16, "fontFamily": "Georgia", "color": "#111111"},
+            {"id": "t2", "type": "text", "page": 0, "x": 40, "y": 80,
+             "text": "fuente inventada", "fontSize": 12, "fontFamily": "NoExiste XYZ", "color": "#111111"},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+
+    def test_embed_text_styles(self, client, open_doc):
+        # Negrita/cursiva (variantes TTF), alineación, interlineado y listas.
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "t1", "type": "text", "page": 0, "x": 40, "y": 40, "width": 200,
+             "text": "titulo\ncentrado", "fontSize": 16, "fontFamily": "Arial",
+             "bold": True, "align": "center", "lineHeight": 1.5},
+            {"id": "t2", "type": "text", "page": 0, "x": 40, "y": 120,
+             "text": "uno\ndos\ntres", "fontSize": 12, "fontFamily": "Georgia",
+             "italic": True, "listStyle": "number", "align": "right"},
+            {"id": "t3", "type": "text", "page": 0, "x": 40, "y": 200,
+             "text": "viñetas", "fontFamily": "SinVariantes 999", "bold": True,
+             "italic": True, "listStyle": "bullet"},
+        ]}
+        resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
+        assert resp.status_code == 200
+
+    def test_annotation_sidecar_keeps_text_styles(self, client, open_doc):
+        # Los estilos deben sobrevivir el round-trip por el sidecar (modelo pydantic).
+        info = open_doc()
+        ann = {"id": "t1", "type": "text", "page": 0, "x": 1, "y": 2, "text": "x",
+               "bold": True, "italic": True, "align": "center", "lineHeight": 2.0, "listStyle": "bullet"}
+        resp = client.post(f"/pdf/annotations/{info['doc_id']}", json={"annotations": [ann]})
+        assert resp.status_code == 200
+        loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
+        for k in ("bold", "italic", "align", "lineHeight", "listStyle"):
+            assert loaded[k] == ann[k]
+
     def test_export_measurements_csv_and_xlsx(self, client, tmp_path):
         rows = [
             {"page": "1", "tipo": "Distancia", "etiqueta": "muro A", "valor": "12.50", "unidad": "m"},

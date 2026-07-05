@@ -19,12 +19,14 @@ export function useFileDrop() {
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault(); e.stopPropagation()
     setIsDraggingFile(false)
-    const files = Array.from(e.dataTransfer.files)
-    const pdf = files.find((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
-    if (!pdf) return
-    const filePath = window.api.getFilePath(pdf)
-    if (!filePath) return
-    await openDocument(filePath)
+    const pdfs = Array.from(e.dataTransfer.files)
+      .filter((f) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'))
+    let lastId: string | null = null
+    for (const pdf of pdfs) {
+      const filePath = window.api.getFilePath(pdf)
+      if (filePath) lastId = (await openDocument(filePath, { activate: false })) ?? lastId
+    }
+    if (lastId) usePdfStore.getState().setActiveDoc(lastId)
   }, [])
 
   // Listen for files opened from main process (file association / second instance).
@@ -47,6 +49,7 @@ export function useFileDrop() {
       }, 350)
     }
     window.api.onOpenFile(handler)
+    window.api.rendererReady()
     return () => {
       if (activateTimer) clearTimeout(activateTimer)
       window.api.removeOpenFileListener()

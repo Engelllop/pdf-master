@@ -33,7 +33,11 @@ export function getAnnotationBounds(
   switch (ann.type) {
     case 'highlight':
     case 'rect':
-    case 'circle': {
+    case 'circle':
+    case 'check':
+    case 'cross':
+    case 'star':
+    case 'cloud': {
       const s = toScreen(ann.x, ann.y)
       return { x: s.x, y: s.y, w: (ann.width || 0) * sx, h: (ann.height || 0) * sy }
     }
@@ -68,7 +72,8 @@ export function getAnnotationBounds(
       const s2 = toScreen(ann.x + (ann.width || 0), ann.y + (ann.height || 0))
       return { x: Math.min(s1.x, s2.x), y: Math.min(s1.y, s2.y), w: Math.abs(s2.x - s1.x), h: Math.abs(s2.y - s1.y) }
     }
-    case 'draw': {
+    case 'draw':
+    case 'polygon': {
       if (!ann.points || ann.points.length === 0) return null
       const pts = ann.points.map((p) => toScreen(p.x, p.y))
       const xs = pts.map((p) => p.x)
@@ -78,6 +83,35 @@ export function getAnnotationBounds(
     default:
       return null
   }
+}
+
+// Estrella de 5 puntas inscrita en el bbox (radios escalados por eje para llenarlo).
+function starPath(x: number, y: number, w: number, h: number): string {
+  const cx = x + w / 2
+  const cy = y + h / 2
+  const pts: string[] = []
+  for (let i = 0; i < 10; i++) {
+    const angle = -Math.PI / 2 + (i * Math.PI) / 5
+    const f = i % 2 === 0 ? 0.5 : 0.21
+    pts.push(`${cx + Math.cos(angle) * w * f},${cy + Math.sin(angle) * h * f}`)
+  }
+  return `M ${pts.join(' L ')} Z`
+}
+
+// Nube: rect con festones semicirculares hacia afuera en todo el perímetro.
+function cloudPath(x: number, y: number, w: number, h: number): string {
+  const r = Math.max(5, Math.min(w, h) / 6)
+  const seg = (len: number) => Math.max(2, Math.round(len / (r * 2)))
+  let d = `M ${x} ${y}`
+  const nTop = seg(w)
+  for (let i = 1; i <= nTop; i++) d += ` A ${w / nTop / 2} ${r} 0 0 1 ${x + (w / nTop) * i} ${y}`
+  const nRight = seg(h)
+  for (let i = 1; i <= nRight; i++) d += ` A ${h / nRight / 2} ${r} 0 0 1 ${x + w} ${y + (h / nRight) * i}`
+  const nBottom = seg(w)
+  for (let i = 1; i <= nBottom; i++) d += ` A ${w / nBottom / 2} ${r} 0 0 1 ${x + w - (w / nBottom) * i} ${y + h}`
+  const nLeft = seg(h)
+  for (let i = 1; i <= nLeft; i++) d += ` A ${h / nLeft / 2} ${r} 0 0 1 ${x} ${y + h - (h / nLeft) * i}`
+  return d + ' Z'
 }
 
 export interface RenderAnnotationOptions {
@@ -136,6 +170,61 @@ export function renderAnnotation(
           width={Math.abs(w)} height={Math.abs(h)}
           fill={ann.fillColor || 'none'} fillOpacity={ann.fillColor ? (ann.fillOpacity ?? 0.3) : undefined}
           stroke={ann.color || '#fff'} rx={2} {...stroke} {...clickProps} />
+      )
+    }
+    case 'check': {
+      const w = (ann.width || 0) * sx
+      const h = (ann.height || 0) * sy
+      const nx = w < 0 ? s.x + w : s.x
+      const ny = h < 0 ? s.y + h : s.y
+      const aw = Math.abs(w)
+      const ah = Math.abs(h)
+      return (
+        <path key={key} d={`M ${nx + aw * 0.12} ${ny + ah * 0.55} L ${nx + aw * 0.42} ${ny + ah * 0.85} L ${nx + aw * 0.88} ${ny + ah * 0.15}`}
+          fill="none" stroke={ann.color || '#22c55e'} {...stroke} strokeLinecap="round" strokeLinejoin="round" {...clickProps} />
+      )
+    }
+    case 'cross': {
+      const w = (ann.width || 0) * sx
+      const h = (ann.height || 0) * sy
+      const nx = w < 0 ? s.x + w : s.x
+      const ny = h < 0 ? s.y + h : s.y
+      const aw = Math.abs(w)
+      const ah = Math.abs(h)
+      return (
+        <path key={key} d={`M ${nx + aw * 0.15} ${ny + ah * 0.15} L ${nx + aw * 0.85} ${ny + ah * 0.85} M ${nx + aw * 0.85} ${ny + ah * 0.15} L ${nx + aw * 0.15} ${ny + ah * 0.85}`}
+          fill="none" stroke={ann.color || '#ef4444'} {...stroke} strokeLinecap="round" {...clickProps} />
+      )
+    }
+    case 'star': {
+      const w = (ann.width || 0) * sx
+      const h = (ann.height || 0) * sy
+      const nx = w < 0 ? s.x + w : s.x
+      const ny = h < 0 ? s.y + h : s.y
+      return (
+        <path key={key} d={starPath(nx, ny, Math.abs(w), Math.abs(h))}
+          fill={ann.fillColor || 'none'} fillOpacity={ann.fillColor ? (ann.fillOpacity ?? 0.3) : undefined}
+          stroke={ann.color || '#f59e0b'} strokeLinejoin="round" {...stroke} {...clickProps} />
+      )
+    }
+    case 'cloud': {
+      const w = (ann.width || 0) * sx
+      const h = (ann.height || 0) * sy
+      const nx = w < 0 ? s.x + w : s.x
+      const ny = h < 0 ? s.y + h : s.y
+      return (
+        <path key={key} d={cloudPath(nx, ny, Math.abs(w), Math.abs(h))}
+          fill={ann.fillColor || 'none'} fillOpacity={ann.fillColor ? (ann.fillOpacity ?? 0.3) : undefined}
+          stroke={ann.color || '#3b82f6'} strokeLinejoin="round" {...stroke} {...clickProps} />
+      )
+    }
+    case 'polygon': {
+      if (!ann.points || ann.points.length < 3) return null
+      const pts = ann.points.map((p) => toScreen(p.x, p.y))
+      return (
+        <path key={key} d={`M ${pts.map((p) => `${p.x} ${p.y}`).join(' L ')} Z`}
+          fill={ann.fillColor || 'none'} fillOpacity={ann.fillColor ? (ann.fillOpacity ?? 0.3) : undefined}
+          stroke={ann.color || '#8b5cf6'} strokeLinejoin="round" {...stroke} {...clickProps} />
       )
     }
     case 'circle': {
@@ -198,14 +287,25 @@ export function renderAnnotation(
       // fontSize is stored in PDF points; the SVG lives in bitmap-px space, so the
       // on-screen size scales with zoom exactly like the page (and matches the editor).
       const displayFontSize = fontSize * sx
-      const textWidth = ann.width ? ann.width * sx : Math.max(120 * sx, (ann.text?.length || 4) * displayFontSize * 0.6)
-      const textHeight = ann.height ? ann.height * sy : Math.max(30 * sy, displayFontSize * 1.4)
+      const lh = ann.lineHeight || 1.3
+      const rawLines = (ann.text || '').split('\n')
+      const textLines = ann.listStyle === 'bullet' ? rawLines.map((l) => `• ${l}`)
+        : ann.listStyle === 'number' ? rawLines.map((l, i) => `${i + 1}. ${l}`)
+        : rawLines
+      const longestLine = textLines.reduce((m, l) => Math.max(m, l.length), 4)
+      const textWidth = ann.width ? ann.width * sx : Math.max(120 * sx, (longestLine + 1) * displayFontSize * 0.6)
+      const textHeight = ann.height ? ann.height * sy : Math.max(30 * sy, textLines.length * displayFontSize * lh * 1.05)
       return (
         <foreignObject key={key} x={s.x} y={s.y} width={textWidth} height={textHeight}
           {...clickProps}
           onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(); if (onTextDoubleClick) onTextDoubleClick(ann) }}>
-          <div className="leading-tight select-none" style={{ color: ann.color || '#fff', wordWrap: 'break-word', fontFamily, fontSize: displayFontSize, opacity: ann.opacity ?? 1 }}>
-            {ann.text}
+          <div className="select-none" style={{
+            color: ann.color || '#fff', wordWrap: 'break-word', whiteSpace: 'pre-wrap', lineHeight: lh,
+            fontFamily, fontSize: displayFontSize, opacity: ann.opacity ?? 1,
+            fontWeight: ann.bold ? 700 : 400, fontStyle: ann.italic ? 'italic' : 'normal',
+            textAlign: ann.align || 'left',
+          }}>
+            {textLines.join('\n')}
           </div>
         </foreignObject>
       )

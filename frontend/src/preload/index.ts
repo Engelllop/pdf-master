@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 const api = {
   openFile: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFile', filters),
-  openFiles: (filters?: Electron.FileFilter[]) => ipcRenderer.invoke('dialog:openFiles', filters),
+  openFiles: (filters?: Electron.FileFilter[], defaultPath?: string) => ipcRenderer.invoke('dialog:openFiles', filters, defaultPath),
   saveFile: (options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => ipcRenderer.invoke('dialog:saveFile', options),
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
   setTitleOverlay: (opts: { color: string; symbolColor: string }) => ipcRenderer.invoke('window:set-overlay', opts),
@@ -10,6 +10,7 @@ const api = {
   newWindow: () => ipcRenderer.invoke('window:new'),
   logError: (message: string) => ipcRenderer.invoke('log:error', message),
   showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path),
+  openFolder: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number }) => ipcRenderer.invoke('pdf:print', docId, opts),
@@ -31,6 +32,7 @@ const api = {
     return () => ipcRenderer.removeListener('ai:error', h)
   },
   setDirtyState: (dirty: boolean) => ipcRenderer.send('app:dirty-state', dirty),
+  rendererReady: () => ipcRenderer.send('app:renderer-ready'),
   onOpenFile: (callback: (path: string) => void) => {
     ipcRenderer.on('app:open-file', (_event, path) => callback(path))
   },

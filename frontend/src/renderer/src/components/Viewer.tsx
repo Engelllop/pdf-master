@@ -17,6 +17,8 @@ import { useThemeClasses } from '../hooks/useThemeClasses'
 import DetailTile from './DetailTile'
 import TextLayer from './viewer/TextLayer'
 import SelectionOverlay from './viewer/SelectionOverlay'
+import FloatingSelectionBar from './viewer/FloatingSelectionBar'
+import TextBoxEditor from './viewer/TextBoxEditor'
 import FormFieldsLayer from './viewer/FormFieldsLayer'
 import { renderAnnotation, strokePropsFor, getAnnotationBounds } from './viewer/annotationRender'
 import ViewerEmptyState from './viewer/ViewerEmptyState'
@@ -31,12 +33,13 @@ export default function Viewer() {
   const store = useStoreSlice(
     'docs', 'activeDocId', 'activeTool', 'annotationColor', 'annotationLineWidth',
     'selectedAnnotationId', 'selectedImageData', 'selectedStamp', 'stampColor',
-    'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode',
+    'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode', 'activeRibbon',
     'setViewerSize', 'selectAnnotation', 'deleteAnnotation', 'addBookmark',
     'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
     'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'setDocDirty',
     'setSelectedImageData', 'setSelectedImagePath', 'setViewerScroll', 'showToast',
-    'updateAnnotation',
+    'updateAnnotation', 'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
+    'textStyle', 'setTextStyle',
   )
   const {
     docs, activeDocId,
@@ -59,9 +62,17 @@ export default function Viewer() {
   // Pan & zoom
   const { isPanning, startPan, handleWheel } = usePanZoom(containerRef, activeDoc, pageData)
 
+  // Posición de vista por doc+página: al volver a una pestaña (o a una página ya
+  // vista) se restaura el encuadre en vez de saltar a la esquina superior izquierda.
+  const scrollMemRef = useRef(new Map<string, { left: number; top: number }>())
+  const lastViewKeyRef = useRef<string | null>(null)
+
   const handleScroll = () => {
     const c = containerRef.current
     if (!c) return
+    if (activeDoc && lastViewKeyRef.current === `${activeDoc.doc_id}:${activeDoc.currentPage}`) {
+      scrollMemRef.current.set(lastViewKeyRef.current, { left: c.scrollLeft, top: c.scrollTop })
+    }
     store.setViewerScroll({
       left: c.scrollLeft,
       top: c.scrollTop,
@@ -72,6 +83,21 @@ export default function Viewer() {
     })
   }
 
+  useEffect(() => {
+    if (!activeDoc || !pageData) return
+    const key = `${activeDoc.doc_id}:${activeDoc.currentPage}`
+    if (lastViewKeyRef.current === key) return
+    lastViewKeyRef.current = key
+    const saved = scrollMemRef.current.get(key)
+    if (!saved) return
+    requestAnimationFrame(() => {
+      const c = containerRef.current
+      if (!c || lastViewKeyRef.current !== key) return
+      c.scrollLeft = saved.left
+      c.scrollTop = saved.top
+    })
+  }, [activeDoc?.doc_id, activeDoc?.currentPage, pageData])
+
   // Annotation drawing
   const {
     drawPreview, drawPoints,
@@ -79,7 +105,7 @@ export default function Viewer() {
     textInput, setTextInput, textPos, setTextPos,
     handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp,
     saveNote, saveText, cancelDraw,
-    drawingArea, closeArea, snapPoint,
+    drawingArea, closeArea, snapPoint, markupRects,
   } = useAnnotationDraw(activeDoc, pageData)
 
   // Coordinate helpers
@@ -121,19 +147,23 @@ export default function Viewer() {
   // Form fields
   const { fields: formFields, updateField: updateFormField } = useFormFields(activeDoc?.doc_id || null, activeDoc?.currentPage || 0)
 
-  // ResizeObserver
+  // ResizeObserver: containerRef cambia de elemento al alternar estado vacío ↔
+  // documento, así que hay que re-observar en ese cambio (si no, el observer queda
+  // sobre el div desmontado y viewerWidth/Height se quedan congelados → el fit
+  // inicial se calculaba con las medidas por defecto y el zoom salía mal).
+  const hasDoc = !!activeDoc
   useEffect(() => {
     if (!containerRef.current) return
     const el = containerRef.current
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect
-        setViewerSize(width, height)
+        if (width > 0 && height > 0) setViewerSize(width, height)
       }
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [setViewerSize])
+  }, [setViewerSize, hasDoc])
 
   // Edición in-situ de texto existente (herramienta 'edittext')
   const [editSpan, setEditSpan] = useState<{ x0: number; y0: number; x1: number; y1: number; size: number; color: string; font: string; value: string } | null>(null)
@@ -440,25 +470,46 @@ export default function Viewer() {
               <FormFieldsLayer fields={formFields} pageData={pageData} onChange={updateFormField} />
 
               {/* Selectable text layer */}
-              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} pageData={pageData} active={!store.activeTool} />
+              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} version={activeDoc.docVersion} pageData={pageData} active={!store.activeTool} />
 
               {/* Annotation SVG Layer */}
 
               <svg ref={svgRef} width={pageData.width} height={pageData.height}
                 className="absolute top-0 left-0"
-                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: isPanning ? 'grabbing' : store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
+                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: isPanning ? 'grabbing' : ['highlight', 'underline', 'strikethrough'].includes(store.activeTool || '') ? 'text' : store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
                 onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
                 onDoubleClick={() => { if (drawingArea) closeArea() }}>
-                {/* Existing annotations */}
-                {annotations.map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
+                {/* Modo edición: contorno punteado sobre cada bloque de texto editable */}
+                {store.activeRibbon === 'edit' && pageText.map((b, i) => {
+                  if (!b.text) return null
+                  const bx = pageData.width / pageData.originalWidth
+                  const by = pageData.height / pageData.originalHeight
+                  return (
+                    <rect key={`edit-outline-${i}`} x={b.x * bx - 2} y={b.y * by - 2}
+                      width={b.width * bx + 4} height={b.height * by + 4}
+                      fill="none" stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" rx={2}
+                      pointerEvents="none" opacity={0.8} />
+                  )
+                })}
+
+                {/* Existing annotations (la que se está editando se oculta: la dibuja el editor) */}
+                {annotations.filter((a) => a.id !== editingTextAnn).map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
                   onSelect: () => selectAnnotation(activeDoc.doc_id, ann.id),
                   onNoteClick: openNotePopup,
                   onTextDoubleClick: startEditText,
                   textDefaults,
                 }))}
 
-                {/* Preview while drawing */}
-                {drawPreview && (drawPreview as any).type !== 'textselect' && renderAnnotation(drawPreview as Annotation, pageData, toScreenCoords, { isPreview: true, textDefaults })}
+                {/* Preview while drawing (el marcado de texto muestra su preview por línea) */}
+                {drawPreview && (drawPreview as any).type !== 'textselect' && markupRects.length === 0 &&
+                  renderAnnotation(drawPreview as Annotation, pageData, toScreenCoords, { isPreview: true, textDefaults })}
+                {drawPreview && markupRects.map((l, i) =>
+                  renderAnnotation({
+                    ...(drawPreview as Annotation),
+                    id: `markup-preview-${i}`,
+                    x: l.x0, y: l.y0, width: l.x1 - l.x0, height: l.y1 - l.y0,
+                  }, pageData, toScreenCoords, { isPreview: true, textDefaults })
+                )}
 
                 {/* Imán de snap para mediciones */}
                 {snapPoint && (() => {
@@ -495,7 +546,7 @@ export default function Viewer() {
                     return `${i === 0 ? 'M' : 'L'} ${sp.x} ${sp.y}`
                   }).join(' ')} fill="none" stroke="#000000" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
                 )}
-                {drawPreview?.type === 'measure_area' && drawPreview.points && drawPreview.points.length > 1 && (
+                {(drawPreview?.type === 'measure_area' || drawPreview?.type === 'polygon') && drawPreview.points && drawPreview.points.length > 1 && (
                   <>
                     <path d={drawPreview.points.map((p, i) => {
                       const sp = toScreenCoords(p.x, p.y)
@@ -572,33 +623,6 @@ export default function Viewer() {
                   </div>
                 </div>
               )}
-
-              {/* In-place transparent text editor (new text). Matches the rendered
-                  size/font exactly: lives in the same scaled layer and uses fontSize
-                  in PDF points * bitmapScale. Enter/blur saves, Esc cancels. */}
-              {textPos && (() => {
-                const s = toScreenCoords(textPos.x, textPos.y)
-                const sx2 = pageData.width / pageData.originalWidth
-                const fpx = (store.textFontSize || 14) * sx2
-                return (
-                  <textarea autoFocus
-                    className="absolute z-30 bg-transparent outline-none resize-none overflow-hidden leading-tight"
-                    style={{
-                      left: s.x, top: s.y, fontSize: fpx, fontFamily: store.textFontFamily,
-                      color: store.annotationColor,
-                      width: Math.max(fpx * 6, (textInput.length + 2) * fpx * 0.58),
-                      height: (textInput.split('\n').length) * fpx * 1.3 + fpx * 0.3,
-                      border: '1px dashed rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
-                    }}
-                    placeholder="Escribe…" value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveText() }
-                      else if (e.key === 'Escape') { e.preventDefault(); setTextPos(null); setTextInput('') }
-                    }}
-                    onBlur={() => { if (textInput.trim()) saveText(); else { setTextPos(null); setTextInput('') } }} />
-                )
-              })()}
 
               {/* Acciones de la imagen seleccionada */}
               {store.activeTool === 'editimage' && selImg != null && pageImages[selImg] && (() => {
@@ -690,32 +714,51 @@ export default function Viewer() {
               })()}
 
               {/* In-place transparent text editor (edit existing) */}
-              {editingTextAnn && pageData && activeDoc && (() => {
-                const ann = annotations.find((a) => a.id === editingTextAnn)
-                if (!ann) return null
-                const s = toScreenCoords(ann.x, ann.y)
-                const sx2 = pageData.width / pageData.originalWidth
-                const efs = (ann.fontSize || store.textFontSize || 14) * sx2
-                return (
-                  <textarea autoFocus
-                    className="absolute z-30 bg-transparent outline-none resize-none overflow-hidden leading-tight"
-                    style={{
-                      left: s.x, top: s.y, fontSize: efs,
-                      fontFamily: ann.fontFamily || store.textFontFamily || 'Arial',
-                      color: ann.color || '#fff',
-                      width: Math.max(efs * 6, (editTextValue.length + 2) * efs * 0.58),
-                      height: (editTextValue.split('\n').length) * efs * 1.3 + efs * 0.3,
-                      border: '1px dashed rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
-                    }}
-                    value={editTextValue} onChange={(e) => setEditTextValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitEditText() }
-                      else if (e.key === 'Escape') { e.preventDefault(); setEditingTextAnn(null); setEditTextValue('') }
-                    }}
-                    onBlur={() => commitEditText()} />
-                )
-              })()}
             </div>
+
+            {/* Barra contextual de la anotación seleccionada (no escala con el zoom) */}
+            {selectedAnnLeft && !editingTextAnn && !textPos && (
+              <FloatingSelectionBar ann={selectedAnnLeft} docId={activeDoc.doc_id}
+                pageData={pageData} toScreen={toScreenCoords} scale={scale} wrapperWidth={displayWidth} />
+            )}
+
+            {/* Editor de texto nuevo (estilo Acrobat, con mini-toolbar) */}
+            {textPos && (() => {
+              const s = toScreenCoords(textPos.x, textPos.y)
+              return (
+                <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
+                  value={textInput} onChange={setTextInput}
+                  onCommit={() => { if (textInput.trim()) saveText(); else { setTextPos(null); setTextInput('') } }}
+                  onCancel={() => { setTextPos(null); setTextInput('') }}
+                  fontFamily={store.textFontFamily} fontSize={store.textFontSize} color={store.annotationColor}
+                  style={store.textStyle}
+                  onFontFamily={store.setTextFontFamily} onFontSize={store.setTextFontSize} onColor={store.setAnnotationColor}
+                  onStyle={store.setTextStyle} />
+              )
+            })()}
+
+            {/* Editor de texto existente (doble clic sobre la anotación) */}
+            {editingTextAnn && (() => {
+              const ann = annotations.find((a) => a.id === editingTextAnn)
+              if (!ann) return null
+              const s = toScreenCoords(ann.x, ann.y)
+              return (
+                <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
+                  value={editTextValue} onChange={setEditTextValue}
+                  onCommit={commitEditText}
+                  onCancel={() => { setEditingTextAnn(null); setEditTextValue('') }}
+                  onDelete={() => { deleteAnnotation(activeDoc.doc_id, ann.id); setEditingTextAnn(null); setEditTextValue('') }}
+                  fontFamily={ann.fontFamily || store.textFontFamily} fontSize={ann.fontSize || store.textFontSize} color={ann.color || store.annotationColor}
+                  style={{
+                    bold: !!ann.bold, italic: !!ann.italic, align: ann.align || 'left',
+                    lineHeight: ann.lineHeight || 1.3, listStyle: ann.listStyle || 'none',
+                  }}
+                  onFontFamily={(f) => store.updateAnnotation(activeDoc.doc_id, ann.id, { fontFamily: f })}
+                  onFontSize={(v) => store.updateAnnotation(activeDoc.doc_id, ann.id, { fontSize: v })}
+                  onColor={(c) => store.updateAnnotation(activeDoc.doc_id, ann.id, { color: c })}
+                  onStyle={(s) => store.updateAnnotation(activeDoc.doc_id, ann.id, s)} />
+              )
+            })()}
             {/* Text selection overlay */}
             {pageText.length > 0 && (
               <div className="absolute top-0 left-0" style={{ width: displayWidth, height: displayHeight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>
@@ -796,6 +839,10 @@ export default function Viewer() {
                 )}
               </svg>
             </div>
+            {selectedAnnRight && (
+              <FloatingSelectionBar ann={selectedAnnRight} docId={activeDoc.doc_id}
+                pageData={pageDataRight} toScreen={toScreenCoordsRight} scale={scaleRight} wrapperWidth={displayWidthRight} />
+            )}
             {/* Text selection overlay for right page */}
             {pageTextRight.length > 0 && (
               <div className="absolute top-0 left-0" style={{ width: displayWidthRight, height: displayHeightRight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>

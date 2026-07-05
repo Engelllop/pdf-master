@@ -11,6 +11,7 @@ import {
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
   FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree, MoveVertical,
   ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
+  Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Shapes,
 } from 'lucide-react'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
@@ -72,6 +73,7 @@ export default function Toolbar() {
   const [searchAllDocs, setSearchAllDocs] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
+  const [shapesMenuOpen, setShapesMenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
@@ -86,6 +88,18 @@ export default function Toolbar() {
     window.addEventListener('app:shortcut-search', onSearch)
     return () => window.removeEventListener('app:shortcut-search', onSearch)
   }, [])
+
+  // Imprimir y combinar disparados desde el menú Archivo / acciones rápidas de la cinta.
+  useEffect(() => {
+    const onPrint = () => { if (activeDoc) setShowPrint(true) }
+    const onMerge = () => { if (activeDoc) handleMerge() }
+    window.addEventListener('app:shortcut-print', onPrint)
+    window.addEventListener('app:shortcut-merge', onMerge)
+    return () => {
+      window.removeEventListener('app:shortcut-print', onPrint)
+      window.removeEventListener('app:shortcut-merge', onMerge)
+    }
+  }, [activeDoc, handleMerge])
 
   const handleRedactMatches = async () => {
     if (!activeDoc || !searchInput.trim()) return
@@ -246,15 +260,25 @@ export default function Toolbar() {
     { id: 'draw', icon: PenTool, label: 'Dibujar' },
     { id: 'signature', icon: Signature, label: 'Firma' },
     { id: 'text', icon: Type, label: 'Texto' },
-    { id: 'rect', icon: Square, label: 'Rect.' },
-    { id: 'circle', icon: Circle, label: 'Círculo' },
-    { id: 'arrow', icon: ArrowRightTool, label: 'Flecha' },
     { id: 'stamp', icon: Stamp, label: 'Sello' },
     { id: 'count', icon: Tally5, label: 'Conteo' },
     { id: 'measure_calibrate', icon: Ruler, label: 'Calibrar' },
     { id: 'measure_distance', icon: MoveDiagonal, label: 'Distancia' },
     { id: 'measure_area', icon: LandPlot, label: 'Área' },
   ]
+
+  // Galería de formas (estilo Acrobat): las básicas + las nuevas configurables.
+  const SHAPE_TOOLS: Array<{ id: string; icon: any; label: string }> = [
+    { id: 'rect', icon: Square, label: 'Rectángulo' },
+    { id: 'circle', icon: Circle, label: 'Círculo' },
+    { id: 'arrow', icon: ArrowRightTool, label: 'Flecha' },
+    { id: 'check', icon: CheckIcon, label: 'Check' },
+    { id: 'cross', icon: X, label: 'Cruz' },
+    { id: 'star', icon: Star, label: 'Estrella' },
+    { id: 'cloud', icon: CloudIcon, label: 'Nube (revisión)' },
+    { id: 'polygon', icon: Hexagon, label: 'Polígono (clic por vértice, doble clic cierra)' },
+  ]
+  const activeShape = SHAPE_TOOLS.find((t) => t.id === activeTool)
 
   const renderRibbon = () => {
     if (!activeDoc) return null
@@ -288,6 +312,26 @@ export default function Toolbar() {
               <TBtn key={t.id} icon={t.icon} label={t.label} tip={t.label}
                 onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
             ))}
+            <div className="relative">
+              <TBtn icon={activeShape?.icon || Shapes} label={activeShape ? activeShape.label.split(' ')[0] : 'Formas'}
+                tip="Galería de formas" onClick={() => setShapesMenuOpen((o) => !o)}
+                active={!!activeShape || shapesMenuOpen} />
+              {shapesMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => setShapesMenuOpen(false)} />
+                  <div className="menu-pop absolute top-full left-1/2 -translate-x-1/2 z-[61] mt-1 p-2 grid grid-cols-4 gap-1 w-52 border border-border rounded-lg shadow-xl bg-panel">
+                    {SHAPE_TOOLS.map((t) => (
+                      <button key={t.id} title={t.label}
+                        onClick={() => { handleToolClick(t.id); setShapesMenuOpen(false) }}
+                        className={`flex flex-col items-center gap-1 p-2 rounded-md text-[9px] transition-colors ${activeTool === t.id ? 'bg-hover text-accent' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+                        <t.icon size={18} strokeWidth={1.75} />
+                        {t.label.split(' ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             {activeTool === 'count' && (
               <>
                 <Sep />

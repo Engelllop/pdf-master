@@ -67,6 +67,11 @@ class Annotation(BaseModel):
     measurement: Optional[MeasurementData] = None
     rotation: Optional[float] = None
     imageData: Optional[str] = None
+    bold: Optional[bool] = None
+    italic: Optional[bool] = None
+    align: Optional[str] = None
+    lineHeight: Optional[float] = None
+    listStyle: Optional[str] = None
 
 class AnnotationList(BaseModel):
     annotations: List[Annotation]

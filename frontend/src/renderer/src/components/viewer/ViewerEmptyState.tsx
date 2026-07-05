@@ -1,5 +1,6 @@
 import { useThemeClasses } from '../../hooks/useThemeClasses'
 import { openDocument } from '../../lib/openDocument'
+import { loadRecents } from '../../lib/recents'
 
 /** Pantalla de bienvenida del visor cuando no hay documento abierto: zona de
  * arrastre + lista de archivos recientes. */
@@ -9,10 +10,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
   onDrop: (e: React.DragEvent) => void
 }) {
   const tc = useThemeClasses()
-  const recentFiles = (() => {
-    try { return JSON.parse(localStorage.getItem('pdfmaster_recent') || '[]') as string[] }
-    catch { return [] }
-  })()
+  const recentFiles = loadRecents().slice(0, 8).map((e) => e.path)
 
   return (
     <div ref={containerRef} className={`flex-1 flex flex-col items-center justify-center overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}

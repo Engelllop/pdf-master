@@ -1,10 +1,12 @@
 import { type Annotation, type LineStyle } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { X } from 'lucide-react'
+import { X, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import { FONT_OPTIONS } from '../lib/fonts'
 
 const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
-const STROKE_TYPES = ['rect', 'circle', 'arrow', 'draw', 'signature', 'underline', 'strikethrough', 'highlight', 'measure_distance', 'measure_area']
-const STROKE_TOOLS = ['draw', 'rect', 'circle', 'arrow', 'underline', 'strikethrough', 'highlight', 'signature', 'measure_calibrate', 'measure_distance', 'measure_area']
+const SHAPE_IDS = ['check', 'cross', 'star', 'cloud', 'polygon']
+const STROKE_TYPES = ['rect', 'circle', 'arrow', 'draw', 'signature', 'underline', 'strikethrough', 'highlight', 'measure_distance', 'measure_area', ...SHAPE_IDS]
+const STROKE_TOOLS = ['draw', 'rect', 'circle', 'arrow', 'underline', 'strikethrough', 'highlight', 'signature', 'measure_calibrate', 'measure_distance', 'measure_area', ...SHAPE_IDS]
 const COLOR_TOOLS = [...STROKE_TOOLS, 'note', 'text']
 const LINE_STYLES: Array<{ id: LineStyle; label: string; dash?: string }> = [
   { id: 'solid', label: 'Sólida' },
@@ -19,7 +21,7 @@ export default function PropertiesBar() {
     'annotationColor', 'setAnnotationColor', 'annotationLineWidth', 'setAnnotationLineWidth',
     'annotationLineStyle', 'setAnnotationLineStyle', 'annotationOpacity', 'setAnnotationOpacity',
     'annotationFillColor', 'setAnnotationFillColor', 'annotationFillOpacity', 'setAnnotationFillOpacity',
-    'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize',
+    'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize', 'textStyle', 'setTextStyle',
     'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'updateAnnotation',
   )
   const { activeTool, activeDocId, docs } = store
@@ -31,7 +33,8 @@ export default function PropertiesBar() {
   const showStroke = strokeSel !== null || (!!activeTool && STROKE_TOOLS.includes(activeTool))
   const showColor = isTextCtx || showStroke || activeTool === 'note' || (!!activeTool && COLOR_TOOLS.includes(activeTool)) || (!!selAnn && selAnn.type !== 'image')
   const isStamp = activeTool === 'stamp'
-  const fillCapable = strokeSel ? (strokeSel.type === 'rect' || strokeSel.type === 'circle') : (activeTool === 'rect' || activeTool === 'circle')
+  const FILLABLE = ['rect', 'circle', 'star', 'cloud', 'polygon']
+  const fillCapable = strokeSel ? FILLABLE.includes(strokeSel.type) : (!!activeTool && FILLABLE.includes(activeTool))
   const rotAnn = selAnn && ROTATABLE.includes(selAnn.type) ? selAnn : null
 
   // Nada relevante que mostrar → no ocupar espacio.
@@ -80,14 +83,51 @@ export default function PropertiesBar() {
           <Sep />
           <div className="flex items-center gap-2">
             <Label>Fuente</Label>
-            <select value={store.textFontFamily} onChange={(e) => store.setTextFontFamily(e.target.value)}
+            <select value={selAnn?.type === 'text' ? (selAnn.fontFamily || store.textFontFamily) : store.textFontFamily}
+              onChange={(e) => { store.setTextFontFamily(e.target.value); if (selAnn?.type === 'text') applyToSel({ fontFamily: e.target.value }) }}
               className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
-              {['Arial', 'Times New Roman', 'Courier New', 'Georgia', 'Verdana', 'Helvetica'].map((f) => <option key={f} value={f}>{f}</option>)}
+              {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
             </select>
-            <input type="number" min={4} max={72} value={store.textFontSize}
-              onChange={(e) => store.setTextFontSize(parseInt(e.target.value) || 14)}
+            <input type="number" min={4} max={72}
+              value={selAnn?.type === 'text' ? (selAnn.fontSize || store.textFontSize) : store.textFontSize}
+              onChange={(e) => { const v = parseInt(e.target.value) || 14; store.setTextFontSize(v); if (selAnn?.type === 'text') applyToSel({ fontSize: v }) }}
               className="w-14 border border-border rounded px-2 py-1 text-xs text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" />
             <Label>px</Label>
+            {(() => {
+              const isTextSel = selAnn?.type === 'text'
+              const sv = {
+                bold: isTextSel ? !!selAnn.bold : store.textStyle.bold,
+                italic: isTextSel ? !!selAnn.italic : store.textStyle.italic,
+                align: isTextSel ? (selAnn.align || 'left') : store.textStyle.align,
+                lineHeight: isTextSel ? (selAnn.lineHeight || 1.3) : store.textStyle.lineHeight,
+                listStyle: isTextSel ? (selAnn.listStyle || 'none') : store.textStyle.listStyle,
+              }
+              const setStyle = (u: Partial<typeof sv>) => {
+                store.setTextStyle(u)
+                if (isTextSel) applyToSel(u)
+              }
+              const tBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+              return (
+                <>
+                  <button title="Negrita" className={tBtn(sv.bold)} onClick={() => setStyle({ bold: !sv.bold })}><Bold size={13} /></button>
+                  <button title="Cursiva" className={tBtn(sv.italic)} onClick={() => setStyle({ italic: !sv.italic })}><Italic size={13} /></button>
+                  {(['left', 'center', 'right'] as const).map((a) => {
+                    const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
+                    return <button key={a} title={`Alinear ${a}`} className={tBtn(sv.align === a)} onClick={() => setStyle({ align: a })}><Icon size={13} /></button>
+                  })}
+                  <select title="Interlineado" value={sv.lineHeight} onChange={(e) => setStyle({ lineHeight: parseFloat(e.target.value) })}
+                    className="border border-border rounded px-1 py-1 text-xs bg-panel text-fg focus:outline-none">
+                    {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
+                  </select>
+                  <select title="Lista" value={sv.listStyle} onChange={(e) => setStyle({ listStyle: e.target.value as typeof sv.listStyle })}
+                    className="border border-border rounded px-1 py-1 text-xs bg-panel text-fg focus:outline-none">
+                    <option value="none">Sin lista</option>
+                    <option value="bullet">• Viñetas</option>
+                    <option value="number">1. Numerada</option>
+                  </select>
+                </>
+              )
+            })()}
           </div>
         </>
       )}

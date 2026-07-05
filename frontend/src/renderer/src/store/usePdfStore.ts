@@ -28,7 +28,7 @@ export interface ViewerScroll {
 
 export interface Annotation {
   id: string
-  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'signature' | 'measure_distance' | 'measure_area' | 'image' | 'count'
+  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'signature' | 'measure_distance' | 'measure_area' | 'image' | 'count' | 'check' | 'cross' | 'star' | 'cloud' | 'polygon'
   page: number
   x: number
   y: number
@@ -47,6 +47,19 @@ export interface Annotation {
   fontSize?: number
   imageData?: string
   rotation?: number
+  bold?: boolean
+  italic?: boolean
+  align?: 'left' | 'center' | 'right'
+  lineHeight?: number
+  listStyle?: 'none' | 'bullet' | 'number'
+}
+
+export interface TextStyle {
+  bold: boolean
+  italic: boolean
+  align: 'left' | 'center' | 'right'
+  lineHeight: number
+  listStyle: 'none' | 'bullet' | 'number'
 }
 
 export interface OutlineItem {
@@ -148,6 +161,7 @@ export interface PdfState {
     page_sizes: PageSize[]
   }, activate?: boolean) => string
   closeDoc: (docId: string) => void
+  moveDoc: (docId: string, toIndex: number) => void
   remapDocId: (oldId: string, newId: string) => void
   setActiveDoc: (docId: string) => void
   setPage: (docId: string, page: number) => void
@@ -201,6 +215,8 @@ export interface PdfState {
   incrementDocVersion: (docId: string) => void
   setTextFontFamily: (family: string) => void
   setTextFontSize: (size: number) => void
+  textStyle: TextStyle
+  setTextStyle: (s: Partial<TextStyle>) => void
   undo: () => void
   redo: () => void
 
@@ -253,9 +269,14 @@ function persistScale(filePath: string, scale: MeasurementScale | null) {
   }
 }
 
-function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0]): PdfDoc {
+// vw/vh = tamaño real del visor (mismos márgenes que computeFitZoom fit-page),
+// para que el zoom inicial ya sea el ajuste correcto aunque el doc se abra en
+// segundo plano y el recálculo del efecto no llegue a dispararse.
+function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0], vw: number, vh: number): PdfDoc {
   const sizes = info.page_sizes || []
-  const fitZoom = sizes.length > 0 ? (800 - 64) / sizes[0].width : 1
+  const fitZoom = sizes.length > 0
+    ? Math.min((vw - 48) / sizes[0].width, (vh - 40) / sizes[0].height)
+    : 1
   return {
     ...info,
     page_sizes: sizes,
@@ -315,6 +336,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   continuousMode: false,
   textFontFamily: 'Arial',
   textFontSize: 14,
+  textStyle: { bold: false, italic: false, align: 'left', lineHeight: 1.3, listStyle: 'none' },
   bookmarks: (() => {
     try { return JSON.parse(localStorage.getItem('pdfmaster_bookmarks') || '[]') }
     catch { return [] }
@@ -325,7 +347,8 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   setDocLoading: (docId) => set({ loadingDocId: docId }),
   addDoc: (info, activate = true) => {
-    const doc = createDocFromInfo(info)
+    const { viewerWidth, viewerHeight } = get()
+    const doc = createDocFromInfo(info, viewerWidth || 800, viewerHeight || 600)
     set((state) => ({
       docs: [...state.docs, doc],
       // Bulk opens (e.g. 60+ plans at once) add background tabs; only activate when
@@ -354,6 +377,18 @@ export const usePdfStore = create<PdfState>((set, get) => ({
         undoStack: state.undoStack.filter((c) => c.docId !== docId),
         redoStack: state.redoStack.filter((c) => c.docId !== docId),
       }
+    })
+  },
+
+  moveDoc: (docId, toIndex) => {
+    set((state) => {
+      const from = state.docs.findIndex((d) => d.doc_id === docId)
+      const to = Math.max(0, Math.min(state.docs.length - 1, toIndex))
+      if (from === -1 || from === to) return state
+      const docs = [...state.docs]
+      const [doc] = docs.splice(from, 1)
+      docs.splice(to, 0, doc)
+      return { docs }
     })
   },
 
@@ -728,6 +763,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   setTextFontFamily: (family) => set({ textFontFamily: family }),
   setTextFontSize: (size) => set({ textFontSize: Math.max(4, Math.min(72, size)) }),
+  setTextStyle: (s) => set((state) => ({ textStyle: { ...state.textStyle, ...s } })),
   setSelectedImagePath: (path) => set({ selectedImagePath: path }),
   setSelectedImageData: (data) => set({ selectedImageData: data }),
 
