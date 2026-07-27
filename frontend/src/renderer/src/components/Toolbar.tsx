@@ -35,7 +35,7 @@ export default function Toolbar() {
     readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
     compareMode, activeRibbon, activeTool, annotationColor, setAnnotationColor,
     countCategory, setCountCategory, countSymbol, setCountSymbol,
-    stickyTools, setStickyTools, setActiveRibbon,
+    stickyTools, setStickyTools, setActiveRibbon, compareZoom, setCompareZoom,
   } = useStoreSlice(
     'docs', 'activeDocId', 'setPage', 'setZoom',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
@@ -43,7 +43,7 @@ export default function Toolbar() {
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
     'compareMode', 'activeRibbon', 'activeTool', 'annotationColor', 'setAnnotationColor',
     'countCategory', 'setCountCategory', 'countSymbol', 'setCountSymbol',
-    'stickyTools', 'setStickyTools', 'setActiveRibbon',
+    'stickyTools', 'setStickyTools', 'setActiveRibbon', 'compareZoom', 'setCompareZoom',
   )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -403,16 +403,25 @@ export default function Toolbar() {
       case 'read':
         return (
           <>
-            <TBtn icon={ZoomOut} label="Alejar" tip="Alejar" onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
-            <span className="font-mono text-xs text-fg w-10 text-center tabular-nums">{Math.round(activeDoc.zoom * 100)}%</span>
-            <TBtn icon={ZoomIn} label="Acercar" tip="Acercar" onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} />
+            {/* Comparando, estos botones mueven el zoom de la comparación: si siguieran
+                tocando el zoom del visor oculto parecerían rotos (pasó en pruebas). */}
+            <TBtn icon={ZoomOut} label="Alejar" tip="Alejar"
+              onClick={() => compareMode ? setCompareZoom(compareZoom - 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
+            <span className="font-mono text-xs text-fg w-10 text-center tabular-nums">
+              {Math.round((compareMode ? compareZoom : activeDoc.zoom) * 100)}%
+            </span>
+            <TBtn icon={ZoomIn} label="Acercar" tip="Acercar"
+              onClick={() => compareMode ? setCompareZoom(compareZoom + 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} />
             <Sep />
-            <TBtn icon={Maximize2} label="Ajustar página" tip="Ajustar página" onClick={() => handleFit('fit-page')} active={activeDoc.fitMode === 'fit-page'} />
-            <TBtn icon={MoveVertical} label="Ajustar ancho" tip="Ajustar al ancho" onClick={() => handleFit('fit-width')} active={activeDoc.fitMode === 'fit-width'} />
+            <TBtn icon={Maximize2} label="Ajustar página"
+              tip={compareMode ? 'Ajustar las láminas al panel' : 'Ajustar página'}
+              onClick={() => compareMode ? setCompareZoom(1) : handleFit('fit-page')}
+              active={compareMode ? Math.abs(compareZoom - 1) < 0.001 : activeDoc.fitMode === 'fit-page'} />
+            <TBtn icon={MoveVertical} label="Ajustar ancho" tip="Ajustar al ancho" onClick={() => handleFit('fit-width')} active={activeDoc.fitMode === 'fit-width'} disabled={compareMode} />
             <Sep />
-            <TBtn icon={ScrollText} label="Continuo" tip={continuousMode ? 'Vista de página única' : 'Scroll continuo'} onClick={() => toggleContinuousMode()} active={continuousMode} />
-            <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} />
-            <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} />
+            <TBtn icon={ScrollText} label="Continuo" tip={continuousMode ? 'Vista de página única' : 'Scroll continuo'} onClick={() => toggleContinuousMode()} active={continuousMode} disabled={compareMode} />
+            <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
+            <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
             <TBtn icon={GitCompare} label="Comparar" tip="Comparar PDFs" onClick={handleCompare} active={compareMode} />
             <Sep />
             <TBtn icon={isSpeaking ? VolumeX : Volume2} label="Leer" tip={isSpeaking ? 'Detener' : 'Leer en voz alta'} onClick={handleReadAloud} active={isSpeaking} />

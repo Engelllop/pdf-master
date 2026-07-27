@@ -5,48 +5,63 @@ import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
 const GAP = 16
 const BUFFER_PX = 1200
-const MAX_WIDTH = 1000
 
 // Read-only continuous scroll of the whole document with windowed virtualization:
 // only pages near the viewport are rendered; the rest are sized placeholders so the
 // scrollbar stays correct. Shares the page bitmap cache with the single-page viewer.
 export default function ContinuousView() {
-  const store = useStoreSlice('docs', 'activeDocId', 'setPage')
+  const store = useStoreSlice(
+    'docs', 'activeDocId', 'setPage', 'setZoom', 'setViewerSize', 'computeFitZoom',
+    'viewerWidth', 'viewerHeight',
+  )
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [width, setWidth] = useState(MAX_WIDTH)
   const [range, setRange] = useState({ start: 0, end: 4 })
   const [loaded, setLoaded] = useState<Record<number, string>>({})
 
-  // Track container width
+  // El zoom es el mismo de la cinta/barra flotante (px por punto): antes esta vista
+  // lo ignoraba y ajustaba al ancho del panel, así que los botones no hacían nada.
+  const zoom = activeDoc?.zoom ?? 1
+
+  // Tamaño del panel → el store lo usa para calcular los modos de ajuste
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
-    const measure = () => setWidth(Math.min(MAX_WIDTH, Math.max(200, el.clientWidth - 32)))
+    const measure = () => store.setViewerSize(el.clientWidth, el.clientHeight)
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
   }, [activeDoc?.doc_id])
 
+  // Con un modo de ajuste activo, reajustar al cambiar de tamaño o de página
+  useEffect(() => {
+    if (!activeDoc || activeDoc.fitMode === 'custom') return
+    const z = store.computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, activeDoc.fitMode, store.viewerWidth, store.viewerHeight)
+    if (Math.abs(z - activeDoc.zoom) > 0.001) store.setZoom(activeDoc.doc_id, z, false)
+  }, [store.viewerWidth, store.viewerHeight, activeDoc?.fitMode, activeDoc?.doc_id, activeDoc?.currentPage])
+
   const pageCount = activeDoc?.page_count ?? 0
 
-  // Page heights / cumulative offsets at the current display width
-  const { heights, offsets, total } = useMemo(() => {
+  // Anchos/altos y desplazamientos acumulados al zoom actual
+  const { widths, heights, offsets, total, maxWidth } = useMemo(() => {
+    const w: number[] = []
     const h: number[] = []
     const o: number[] = []
     let acc = 0
+    let mx = 0
     for (let i = 0; i < pageCount; i++) {
       const ps = activeDoc?.page_sizes[i]
-      const pw = ps?.width || 612
-      const ph = ps?.height || 792
-      const ph_i = width * (ph / pw)
+      const pw = (ps?.width || 612) * zoom
+      const ph = (ps?.height || 792) * zoom
       o.push(acc)
-      h.push(ph_i)
-      acc += ph_i + GAP
+      w.push(pw)
+      h.push(ph)
+      mx = Math.max(mx, pw)
+      acc += ph + GAP
     }
-    return { heights: h, offsets: o, total: Math.max(0, acc - GAP) }
-  }, [pageCount, width, activeDoc?.doc_id, activeDoc?.docVersion])
+    return { widths: w, heights: h, offsets: o, total: Math.max(0, acc - GAP), maxWidth: mx }
+  }, [pageCount, zoom, activeDoc?.doc_id, activeDoc?.docVersion])
 
   // Página cuyo cambio nació aquí (scroll o clic): el efecto de auto-scroll la
   // ignora para no pelear con el scroll del usuario.
@@ -82,7 +97,7 @@ export default function ContinuousView() {
     if (!el) return
     el.addEventListener('scroll', recomputeRange, { passive: true })
     return () => el.removeEventListener('scroll', recomputeRange)
-  }, [pageCount, width, total])
+  }, [pageCount, zoom, total])
 
   // Scroll to the active page when it is changed from elsewhere (thumbnails, search…)
   useEffect(() => {
@@ -95,8 +110,17 @@ export default function ContinuousView() {
     el.scrollTo({ top: offsets[activeDoc.currentPage] ?? 0, behavior: 'auto' })
   }, [activeDoc?.currentPage, activeDoc?.doc_id])
 
-  // Render the visible window locally with PDF.js (sin round-trip a Python).
   const requestedRef = useRef<Set<number>>(new Set())
+
+  // Reset bitmaps (y revoca los blobs) cuando cambia el documento o su layout.
+  // Va ANTES del efecto de render: React ejecuta los cuerpos en orden de
+  // declaración, así el render arranca ya con el set limpio.
+  useEffect(() => {
+    requestedRef.current = new Set()
+    setLoaded((prev) => { Object.values(prev).forEach(revokePageUrl); return {} })
+  }, [activeDoc?.doc_id, activeDoc?.docVersion, zoom])
+
+  // Render the visible window locally with PDF.js (sin round-trip a Python).
   useEffect(() => {
     if (!activeDoc) return
     const d = window.devicePixelRatio || 1
@@ -106,27 +130,29 @@ export default function ContinuousView() {
       if (!requestedRef.current.has(i)) { requestedRef.current.add(i); toRender.push(i) }
     }
     if (toRender.length === 0) return
+    // Las páginas que quedan sin dibujar al cancelar el efecto (cambio de rango
+    // mientras se renderizaba) tienen que salir del set: si no, se marcan como
+    // "pedidas" para siempre y se quedan en gris — pasaba al volver de comparar.
+    const pending = new Set(toRender)
     ;(async () => {
       for (const i of toRender) {
         if (cancelled) return
         const ps = activeDoc.page_sizes[i]
         const pw = ps?.width || 612
-        const rz = Math.min(3, Math.max(1, (width / pw) * d))
+        const rz = Math.min(3, Math.max(0.5, ((widths[i] || pw) / pw) * d))
         try {
           const r = await renderPdfPage(activeDoc.doc_id, activeDoc.docVersion, i, rz)
           if (cancelled) { revokePageUrl(r.url); return }
+          pending.delete(i)
           setLoaded((prev) => prev[i] ? (revokePageUrl(r.url), prev) : { ...prev, [i]: r.url })
-        } catch { requestedRef.current.delete(i) }
+        } catch { pending.delete(i); requestedRef.current.delete(i) }
       }
     })()
-    return () => { cancelled = true }
-  }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, width])
-
-  // Reset bitmaps (y revoca los blobs) cuando cambia el documento o su layout
-  useEffect(() => {
-    requestedRef.current = new Set()
-    setLoaded((prev) => { Object.values(prev).forEach(revokePageUrl); return {} })
-  }, [activeDoc?.doc_id, activeDoc?.docVersion, width])
+    return () => {
+      cancelled = true
+      pending.forEach((i) => requestedRef.current.delete(i))
+    }
+  }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, zoom])
 
   if (!activeDoc) {
     return <div className="flex-1 flex items-center justify-center bg-surface text-muted">Abre un PDF</div>
@@ -142,15 +168,16 @@ export default function ContinuousView() {
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto bg-surface">
-      <div style={{ height: topSpacer }} />
-      <div className="flex flex-col items-center" style={{ gap: GAP }}>
+      <div style={{ width: Math.max(maxWidth, 0), minWidth: '100%' }}>
+        <div style={{ height: topSpacer }} />
+        <div className="flex flex-col items-center" style={{ gap: GAP }}>
         {pages.map((i) => (
           <div
             key={i}
             data-page={i}
             onClick={() => { internalPageRef.current = i; store.setPage(activeDoc.doc_id, i) }}
             className="relative shadow-lg bg-white"
-            style={{ width, height: heights[i] }}
+            style={{ width: widths[i], height: heights[i] }}
           >
             {loaded[i] ? (
               <img src={loaded[i]} alt={`Página ${i + 1}`} className="w-full h-full block rounded-sm" draggable={false} />
@@ -162,8 +189,9 @@ export default function ContinuousView() {
             <div className="absolute bottom-1 right-2 text-[10px] px-1 rounded bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
           </div>
         ))}
+        </div>
+        <div style={{ height: bottomSpacer }} />
       </div>
-      <div style={{ height: bottomSpacer }} />
     </div>
   )
 }

@@ -4,55 +4,74 @@ import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
 
-import { apiFetch, apiUrl } from '../lib/api'
+import { apiFetch } from '../lib/api'
 
-interface PageData {
-  image: string
-  width: number
-  height: number
-  originalWidth: number
-  originalHeight: number
-}
-
+// Cada panel ajusta SU documento al hueco disponible: los dos planos se ven al mismo
+// tamaño aparente aunque las láminas midan distinto (antes el zoom multiplicaba los
+// puntos de cada PDF, así que una lámina grande salía gigante y estirada).
 function ComparePagePanel({
   docId,
+  version,
   page,
+  pageSize,
   zoom,
   label,
   scrollRef,
   onScroll,
 }: {
   docId: string
+  version: number
   page: number
+  pageSize?: { width: number; height: number }
   zoom: number
   label: string
   scrollRef: React.RefObject<HTMLDivElement | null>
   onScroll: () => void
 }) {
-  const [data, setData] = useState<PageData | null>(null)
+  const [url, setUrl] = useState<string | null>(null)
+  const urlRef = useRef<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+  const [avail, setAvail] = useState({ w: 0, h: 0 })
 
   useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const measure = () => setAvail({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [scrollRef])
+
+  const pw = pageSize?.width || 612
+  const ph = pageSize?.height || 792
+  const fit = avail.w > 0 && avail.h > 0 ? Math.min((avail.w - 32) / pw, (avail.h - 32) / ph) : 0
+  const dispW = Math.max(1, pw * fit * zoom)
+  const dispH = Math.max(1, ph * fit * zoom)
+
+  // Escala de rasterizado en pasos de 0.25 para no re-renderizar en cada clic de zoom
+  const dpr = window.devicePixelRatio || 1
+  const renderScale = fit > 0
+    ? Math.min(4, Math.max(0.5, Math.ceil(((dispW / pw) * dpr) / 0.25) * 0.25))
+    : 0
+
+  useEffect(() => {
+    if (renderScale <= 0) return
     let cancelled = false
     setLoading(true)
-    apiFetch(`/pdf/page-info/${docId}/${page}?zoom=1.5`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return
-        setData({
-          image: apiUrl(`/pdf/page-image/${docId}/${page}?zoom=1.5`),
-          width: d.width,
-          height: d.height,
-          originalWidth: d.original_width,
-          originalHeight: d.original_height,
-        })
+    setError(false)
+    renderPdfPage(docId, version, page, renderScale)
+      .then((r) => {
+        if (cancelled) { revokePageUrl(r.url); return }
+        setUrl((prev) => { revokePageUrl(prev ?? undefined); urlRef.current = r.url; return r.url })
       })
-      .catch(() => setData(null))
+      .catch(() => { if (!cancelled) setError(true) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [docId, page])
+  }, [docId, version, page, renderScale])
 
-  const scale = data ? zoom / (data.width / data.originalWidth) : 1
+  useEffect(() => () => { revokePageUrl(urlRef.current ?? undefined) }, [])
 
   return (
     <div className={`flex-1 flex flex-col min-w-0 bg-surface`}>
@@ -62,19 +81,19 @@ function ComparePagePanel({
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto">
         <div className="min-h-full flex items-start justify-center p-4">
-          {data ? (
-            <img
-              src={data.image}
-              alt={`Página ${page + 1}`}
-              className="rounded shadow-lg bg-white"
-              style={{
-                width: data.width * scale,
-                height: data.height * scale,
-              }}
-              draggable={false}
-            />
+          {error ? (
+            <div className={`self-center text-sm text-muted`}>Error al cargar página</div>
           ) : (
-            <div className={`self-center text-sm text-muted`}>{loading ? '' : 'Error al cargar página'}</div>
+            <div className="rounded shadow-lg bg-white" style={{ width: dispW, height: dispH }}>
+              {url && (
+                <img
+                  src={url}
+                  alt={`Página ${page + 1}`}
+                  className="w-full h-full block rounded"
+                  draggable={false}
+                />
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -117,9 +136,21 @@ function CompareOverlayPanel({
   zoom: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const hostRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  const [avail, setAvail] = useState({ w: 0, h: 0 })
+
+  useEffect(() => {
+    const el = hostRef.current
+    if (!el) return
+    const measure = () => setAvail({ w: el.clientWidth, h: el.clientHeight })
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -156,8 +187,13 @@ function CompareOverlayPanel({
     return () => { cancelled = true }
   }, [docA, versionA, pageA, docB, versionB, pageB])
 
+  // Mismo criterio que los paneles lado a lado: zoom 1 = la lámina cabe entera
+  const fit = dims && avail.w > 0
+    ? Math.min((avail.w - 32) / (dims.w / OVERLAY_SCALE), (avail.h - 32) / (dims.h / OVERLAY_SCALE))
+    : 0
+
   return (
-    <div className={`flex-1 overflow-auto bg-surface`}>
+    <div ref={hostRef} className={`flex-1 overflow-auto bg-surface`}>
       <div className="min-h-full flex items-start justify-center p-4">
         {error ? (
           <div className={`self-center text-sm text-muted`}>Error al componer el overlay</div>
@@ -167,7 +203,9 @@ function CompareOverlayPanel({
               <div className={`absolute inset-0 flex items-center justify-center text-xs text-muted`}>Componiendo…</div>
             )}
             <canvas ref={canvasRef} className="rounded shadow-lg bg-white"
-              style={dims ? { width: (dims.w / OVERLAY_SCALE) * zoom, height: (dims.h / OVERLAY_SCALE) * zoom } : undefined} />
+              style={dims && fit > 0
+                ? { width: (dims.w / OVERLAY_SCALE) * fit * zoom, height: (dims.h / OVERLAY_SCALE) * fit * zoom }
+                : undefined} />
           </div>
         )}
       </div>
@@ -176,14 +214,16 @@ function CompareOverlayPanel({
 }
 
 export default function ComparisonView() {
-  const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = useStoreSlice(
+  const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync, compareZoom, setCompareZoom } = useStoreSlice(
     'docs', 'activeDocId', 'compareDocId', 'compareSync', 'clearCompare', 'setCompareSync',
+    'compareZoom', 'setCompareZoom',
   )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const compareDoc = docs.find((d) => d.doc_id === compareDocId)
 
-  const [zoom, setZoom] = useState(1.0)
+  // Un solo zoom: el mismo valor que mueven los botones de la cinta mientras se compara
+  const zoom = compareZoom
   const [leftPage, setLeftPage] = useState(activeDoc?.currentPage || 0)
   const [rightPage, setRightPage] = useState(activeDoc?.currentPage || 0)
   const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
@@ -245,9 +285,9 @@ export default function ComparisonView() {
     }
   }, [compareSync, activeDoc?.page_count, compareDoc?.page_count])
 
-  const handleZoomIn = () => setZoom((z) => Math.min(5, z + 0.2))
-  const handleZoomOut = () => setZoom((z) => Math.max(0.3, z - 0.2))
-  const handleFit = () => setZoom(1.5)
+  const handleZoomIn = () => setCompareZoom(zoom + 0.2)
+  const handleZoomOut = () => setCompareZoom(zoom - 0.2)
+  const handleFit = () => setCompareZoom(1)
 
   if (!activeDoc || !compareDoc) {
     return (
@@ -291,8 +331,8 @@ export default function ComparisonView() {
             <ZoomIn size={16} />
           </button>
         </Tooltip>
-        <Tooltip content="Ajustar">
-          <button onClick={handleFit} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+        <Tooltip content="Ajustar la lámina al panel">
+          <button onClick={handleFit} className={`p-1.5 rounded transition-colors ${Math.abs(zoom - 1) < 0.001 ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <Maximize2 size={16} />
           </button>
         </Tooltip>
@@ -371,7 +411,9 @@ export default function ComparisonView() {
         <div className="flex-1 flex overflow-hidden">
           <ComparePagePanel
             docId={activeDoc.doc_id}
+            version={activeDoc.docVersion}
             page={leftPage}
+            pageSize={activeDoc.page_sizes[leftPage]}
             zoom={zoom}
             label={activeDoc.file_name}
             scrollRef={leftScrollRef}
@@ -380,7 +422,9 @@ export default function ComparisonView() {
           <div className={`w-px shrink-0 bg-border`} />
           <ComparePagePanel
             docId={compareDoc.doc_id}
+            version={compareDoc.docVersion}
             page={rightPage}
+            pageSize={compareDoc.page_sizes[rightPage]}
             zoom={zoom}
             label={compareDoc.file_name}
             scrollRef={rightScrollRef}

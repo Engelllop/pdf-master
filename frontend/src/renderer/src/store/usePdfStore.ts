@@ -179,6 +179,7 @@ export interface PdfState {
   compareMode: boolean
   compareDocId: string | null
   compareSync: boolean
+  compareZoom: number
   selectedImagePath: string | null
   selectedImageData: string | null
   viewerScroll: ViewerScroll
@@ -304,6 +305,7 @@ export interface PdfState {
   toggleCompareMode: () => void
   clearCompare: () => void
   setCompareSync: (sync: boolean) => void
+  setCompareZoom: (zoom: number) => void
   setSelectedImagePath: (path: string | null) => void
   setSelectedImageData: (data: string | null) => void
   reorderPages: (docId: string, newOrder: number[]) => void
@@ -462,6 +464,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   compareMode: false,
   compareDocId: null,
   compareSync: true,
+  compareZoom: 1,
   selectedImagePath: null,
   selectedImageData: null,
   viewerScroll: { left: 0, top: 0, clientWidth: 0, clientHeight: 0, scrollWidth: 0, scrollHeight: 0 },
@@ -725,7 +728,13 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     }))
   },
 
-  setActiveTool: (tool) => set({ activeTool: tool, selectedAnnotationId: null }),
+  // El scroll continuo es de solo lectura: elegir una herramienta ahí dejaba la app
+  // "muerta" (ni marcar ni seleccionar). Se vuelve a la vista de página, que sí marca.
+  setActiveTool: (tool) => set((state) => ({
+    activeTool: tool,
+    selectedAnnotationId: null,
+    ...(tool && state.continuousMode ? { continuousMode: false } : {}),
+  })),
   setStickyTools: (sticky) => {
     set({ stickyTools: sticky })
     try { localStorage.setItem(STICKY_KEY, sticky ? '1' : '0') } catch {}
@@ -1227,8 +1236,9 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
   },
 
-  setCompareDoc: (docId) => set({ compareDocId: docId }),
-  toggleCompareMode: () => set((state) => ({ compareMode: !state.compareMode })),
-  clearCompare: () => set({ compareMode: false, compareDocId: null }),
+  setCompareDoc: (docId) => set({ compareDocId: docId, compareZoom: 1 }),
+  toggleCompareMode: () => set((state) => ({ compareMode: !state.compareMode, compareZoom: 1 })),
+  clearCompare: () => set({ compareMode: false, compareDocId: null, compareZoom: 1 }),
   setCompareSync: (sync) => set({ compareSync: sync }),
+  setCompareZoom: (zoom) => set({ compareZoom: Math.max(0.1, Math.min(8, zoom)) }),
 }))

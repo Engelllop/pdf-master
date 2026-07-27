@@ -34,7 +34,7 @@ function App() {
     'theme', 'readingMode', 'compareMode', 'presentationMode', 'continuousMode',
     'docs', 'activeDocId', 'toggleReadingMode', 'setActiveDoc', 'nextPage', 'prevPage',
     'setPage', 'toggleSidebar', 'setZoom', 'setFitMode',
-    'activeTool', 'setActiveTool', 'setActiveRibbon',
+    'activeTool', 'setActiveTool', 'setActiveRibbon', 'compareZoom', 'setCompareZoom',
   )
   const { theme, readingMode, compareMode, presentationMode, continuousMode } = store
   const [backendOk, setBackendOk] = useState(true)
@@ -353,6 +353,7 @@ function App() {
         case '=':
         case '+':
           e.preventDefault()
+          if (compareMode) { store.setCompareZoom(store.compareZoom + 0.2); break }
           {
             const doc = store.docs.find((d) => d.doc_id === store.activeDocId)
             if (doc) store.setZoom(doc.doc_id, doc.zoom + 0.15)
@@ -360,6 +361,7 @@ function App() {
           break
         case '-':
           e.preventDefault()
+          if (compareMode) { store.setCompareZoom(store.compareZoom - 0.2); break }
           {
             const doc = store.docs.find((d) => d.doc_id === store.activeDocId)
             if (doc) store.setZoom(doc.doc_id, doc.zoom - 0.15)

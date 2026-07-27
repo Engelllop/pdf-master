@@ -407,6 +407,39 @@ describe('herramienta pegajosa', () => {
     usePdfStore.getState().setStickyTools(true)
     expect(localStorage.getItem('pdfmaster_sticky_tools')).toBe('1')
   })
+
+  it('elegir herramienta sale del scroll continuo (ahí no se puede marcar)', () => {
+    usePdfStore.setState({ continuousMode: true })
+    usePdfStore.getState().setActiveTool('highlight')
+    expect(usePdfStore.getState().continuousMode).toBe(false)
+  })
+
+  it('soltar la herramienta no reactiva el scroll continuo', () => {
+    usePdfStore.setState({ continuousMode: true })
+    usePdfStore.getState().setActiveTool(null)
+    expect(usePdfStore.getState().continuousMode).toBe(true)
+  })
+})
+
+describe('zoom de comparación', () => {
+  it('es un solo valor compartido y se acota', () => {
+    usePdfStore.getState().setCompareZoom(2)
+    expect(usePdfStore.getState().compareZoom).toBe(2)
+    usePdfStore.getState().setCompareZoom(50)
+    expect(usePdfStore.getState().compareZoom).toBe(8)
+    usePdfStore.getState().setCompareZoom(0)
+    expect(usePdfStore.getState().compareZoom).toBe(0.1)
+  })
+
+  it('vuelve al ajuste al entrar y al salir de comparación', () => {
+    usePdfStore.getState().setCompareZoom(3)
+    usePdfStore.getState().clearCompare()
+    expect(usePdfStore.getState().compareZoom).toBe(1)
+    expect(usePdfStore.getState().compareMode).toBe(false)
+    usePdfStore.getState().setCompareZoom(3)
+    usePdfStore.getState().setCompareDoc('doc-b')
+    expect(usePdfStore.getState().compareZoom).toBe(1)
+  })
 })
 
 describe('metadatos de revisión', () => {
