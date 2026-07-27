@@ -1,6 +1,6 @@
 {
   "name": "pdf-master",
-  "version": "1.12.5",
+  "version": "1.12.6",
   "description": "PDF Master - Editor Profesional de PDFs",
   "main": "./out/main/index.js",
   "author": "PDF Master Team",

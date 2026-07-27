@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '../lib/api'
+import { usePdfStore } from '../store/usePdfStore'
 
 export interface FormField {
   field_name: string
@@ -40,6 +41,13 @@ export function useFormFields(docId: string | null, pageNum: number) {
       })
       if (res.ok) {
         setFields((prev) => prev.map((f) => (f.field_name === fieldName ? { ...f, value } : f)))
+        // Rellenar un campo modifica el PDF: sin marcarlo sucio la app dejaba salir
+        // sin avisar y el dato se perdía. Se re-renderiza para verlo ya escrito.
+        const store = usePdfStore.getState()
+        store.setDocDirty(docId, true)
+        store.invalidatePageCache(docId)
+        store.invalidateThumbnails(docId)
+        store.incrementDocVersion(docId)
         return true
       }
     } catch { /* ignore */ }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  X, RotateCw, RotateCcw, Trash2, Copy, FilePlus2, Scissors, CheckSquare, Square,
+  X, RotateCw, RotateCcw, Trash2, Copy, FilePlus2, Scissors, CheckSquare, Square, ArrowLeft,
 } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
@@ -25,6 +25,14 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
   const [dragOver, setDragOver] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const versionRef = useRef(0)
+
+  // Esc cierra. Estaba en el onKeyDown del contenedor, que solo dispara si el foco
+  // está dentro: al abrirse nadie tenía el foco y no había forma de salir con teclado.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose() } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
 
   const pageCount = doc?.page_count ?? 0
 
@@ -184,9 +192,13 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
   const action = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[12px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
 
   return (
-    <div className="fixed inset-0 z-[93] flex flex-col bg-surface" role="dialog" aria-modal="true" aria-label="Organizar páginas"
-      onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-panel shrink-0">
+    <div className="fixed inset-0 z-[93] flex flex-col bg-surface" role="dialog" aria-modal="true" aria-label="Organizar páginas">
+      {/* pr-36: los botones de la ventana (minimizar/cerrar) flotan sobre esta barra
+          y tapaban "Eliminar" y la ✕. flex-wrap evita que se corten si no cabe. */}
+      <div className="flex flex-wrap items-center gap-2 px-4 pl-4 pr-36 py-2.5 border-b border-border bg-panel shrink-0">
+        <button onClick={onClose} className={`${action} text-fg hover:bg-hover border border-border`} title="Volver (Esc)">
+          <ArrowLeft size={13} /> Volver
+        </button>
         <h2 className="text-sm font-semibold text-fg">Organizar páginas</h2>
         <span className="text-[11px] text-muted truncate max-w-[280px]" title={doc.file_path}>{doc.file_name}</span>
         <span className="text-[11px] text-muted tabular-nums">· {pageCount} pág.</span>

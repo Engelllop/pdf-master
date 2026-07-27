@@ -1,7 +1,33 @@
+import { useEffect, useState } from 'react'
 import { type FormField } from '../../hooks/useFormFields'
 import { type PageDims } from './annotationRender'
 
 // Widgets de formulario del PDF (inputs/checkbox/select) superpuestos al bitmap.
+// Los de texto escriben en estado local y se confirman al salir del campo o con
+// Enter: guardar en cada tecla mandaba un POST por pulsación al motor (1 worker) y
+// el campo, al ser controlado por la respuesta, se comía letras y parecía bloqueado.
+function TextWidget({ field, style, onCommit }: {
+  field: FormField
+  style: React.CSSProperties
+  onCommit: (value: string) => void
+}) {
+  const [draft, setDraft] = useState(field.value)
+  useEffect(() => { setDraft(field.value) }, [field.value])
+  return (
+    <input type="text" value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { if (draft !== field.value) onCommit(draft) }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
+        else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
+      }}
+      className="bg-blue-500/10 hover:bg-blue-500/20 focus:bg-white text-black text-xs border border-blue-400/70 focus:border-blue-500 rounded px-1 outline-none transition-colors"
+      style={style}
+      title={field.field_name}
+    />
+  )
+}
+
 export default function FormFieldsLayer({ fields, pageData, onChange }: {
   fields: FormField[]
   pageData: PageDims
@@ -49,13 +75,8 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
           )
         }
         return (
-          <input key={field.field_name} type="text"
-            value={field.value}
-            onChange={(e) => onChange(field.field_name, e.target.value)}
-            className="bg-white/90 text-black text-xs border border-blue-400 rounded px-1"
-            style={style}
-            title={field.field_name}
-          />
+          <TextWidget key={field.field_name} field={field} style={style}
+            onCommit={(v) => onChange(field.field_name, v)} />
         )
       })}
     </div>

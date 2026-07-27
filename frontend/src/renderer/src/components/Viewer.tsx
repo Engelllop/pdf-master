@@ -489,6 +489,7 @@ export default function Viewer() {
   // Sticky note popup
   const [notePopup, setNotePopup] = useState<{ annId: string } | null>(null)
   const [stampGhost, setStampGhost] = useState<{ x: number; y: number } | null>(null)
+  const [formHintOff, setFormHintOff] = useState(false)
 
   const startEditText = (ann: Annotation) => {
     setEditingTextAnn(ann.id)
@@ -848,6 +849,16 @@ export default function Viewer() {
                   onClose={() => setNotePopup(null)} />
               )
             })()}
+
+            {/* Los campos rellenables no se distinguían del fondo: aviso de que los hay */}
+            {formFields.length > 0 && !formHintOff && (
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full border border-blue-500/50 bg-panel/95 shadow-token text-xs text-fg">
+                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                Formulario: {formFields.length} campo(s) rellenable(s) en esta página
+                <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
+                  className="p-1 rounded-full text-muted hover:text-fg hover:bg-hover transition-colors">✕</button>
+              </div>
+            )}
 
             {/* Barra contextual de la anotación seleccionada (no escala con el zoom) */}
             {selectedAnnLeft && store.selectedAnnotationIds.length <= 1 && !editingTextAnn && !textPos && (
