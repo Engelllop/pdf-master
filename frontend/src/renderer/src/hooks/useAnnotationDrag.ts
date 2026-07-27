@@ -100,49 +100,69 @@ export function useAnnotationDrag(
       const dx = deltaX * scaleX
       const dy = deltaY * scaleY
 
+      // Un cuadro de texto encogido a 10 pt deja de mostrar nada y parece que
+      // "desaparecio": el minimo depende del cuerpo de la letra.
+      const fs = ann.fontSize || 14
+      const MIN = (ann.type === 'text' || ann.type === 'callout') ? fs * 2.5 : 10
+
       switch (resizingAnn.corner) {
         case 'se':
-          newW = Math.max(10, resizingAnn.startW + dx)
-          newH = Math.max(10, resizingAnn.startH + dy)
+          newW = Math.max(MIN, resizingAnn.startW + dx)
+          newH = Math.max(MIN, resizingAnn.startH + dy)
           break
         case 'nw':
-          newW = Math.max(10, resizingAnn.startW - dx)
-          newH = Math.max(10, resizingAnn.startH - dy)
+          newW = Math.max(MIN, resizingAnn.startW - dx)
+          newH = Math.max(MIN, resizingAnn.startH - dy)
           newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
           newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
           break
         case 'ne':
-          newW = Math.max(10, resizingAnn.startW + dx)
-          newH = Math.max(10, resizingAnn.startH - dy)
+          newW = Math.max(MIN, resizingAnn.startW + dx)
+          newH = Math.max(MIN, resizingAnn.startH - dy)
           newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
           break
         case 'sw':
-          newW = Math.max(10, resizingAnn.startW - dx)
-          newH = Math.max(10, resizingAnn.startH + dy)
+          newW = Math.max(MIN, resizingAnn.startW - dx)
+          newH = Math.max(MIN, resizingAnn.startH + dy)
           newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
           break
         case 'n':
-          newH = Math.max(10, resizingAnn.startH - dy)
+          newH = Math.max(MIN, resizingAnn.startH - dy)
           newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
           break
         case 's':
-          newH = Math.max(10, resizingAnn.startH + dy)
+          newH = Math.max(MIN, resizingAnn.startH + dy)
           break
         case 'e':
-          newW = Math.max(10, resizingAnn.startW + dx)
+          newW = Math.max(MIN, resizingAnn.startW + dx)
           break
         case 'w':
-          newW = Math.max(10, resizingAnn.startW - dx)
+          newW = Math.max(MIN, resizingAnn.startW - dx)
           newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
           break
       }
 
+      const isCorner = resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne' ||
+        resizingAnn.corner === 'sw' || resizingAnn.corner === 'se'
+
       // For circle, enforce perfect circle
-      if (ann.type === 'circle') {
+      if (ann.type === 'circle' && isCorner) {
         const size = Math.min(newW, newH)
-        if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne' || resizingAnn.corner === 'sw' || resizingAnn.corner === 'se') {
-          newW = size
-          newH = size
+        newW = size
+        newH = size
+      }
+
+      // Las esquinas de una imagen mantienen su proporción (los lados siguen libres):
+      // arrastrar la esquina la deformaba y no había vuelta atrás.
+      if (ann.type === 'image' && isCorner && resizingAnn.startW > 0 && resizingAnn.startH > 0) {
+        const ratio = resizingAnn.startH / resizingAnn.startW
+        if (newW * ratio > newH) newW = newH / ratio
+        else newH = newW * ratio
+        if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'sw') {
+          newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
+        }
+        if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne') {
+          newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
         }
       }
 

@@ -128,6 +128,7 @@ class WatermarkRequest(BaseModel):
     fontsize: float = 48.0
     angle: int = 45
     opacity: float = 0.3
+    tiled: bool = True
 
 class CreateBlankRequest(BaseModel):
     output_path: str

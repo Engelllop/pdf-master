@@ -98,6 +98,20 @@ class TestDocumentOps:
         assert resp.status_code == 200
         assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
 
+    def test_watermark_is_tiled_across_the_page(self, client, open_doc):
+        """La marca de agua se repite por toda la pagina; con tiled=False vuelve a
+        ser una sola linea centrada (la de antes)."""
+        info = open_doc(pages=1)
+        body = {"text": "CONFIDENCIAL", "fontsize": 30, "opacity": 0.2}
+        assert client.post(f"/pdf/watermark/{info['doc_id']}", json=body).status_code == 200
+        tiled = client.get(f"/pdf/text/{info['doc_id']}/0").json()["text"].count("CONFIDENCIAL")
+        assert tiled > 3
+
+        info2 = open_doc(pages=1)
+        assert client.post(f"/pdf/watermark/{info2['doc_id']}", json={**body, "tiled": False}).status_code == 200
+        single = client.get(f"/pdf/text/{info2['doc_id']}/0").json()["text"].count("CONFIDENCIAL")
+        assert single == 1
+
     def test_crop_reduces_page_size(self, client, open_doc):
         info = open_doc(pages=1)
         resp = client.post(f"/pdf/crop/{info['doc_id']}", json={

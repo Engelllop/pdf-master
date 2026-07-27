@@ -2,7 +2,7 @@ import { usePdfStore } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
 import { touchRecent, updateRecentMeta } from './recents'
 
-import { apiFetch } from './api'
+import { apiFetch, setDeadDocReopener } from './api'
 
 export interface OpenDocumentOptions {
   password?: string
@@ -56,6 +56,10 @@ export async function reopenDeadDoc(docId: string): Promise<string | null> {
     reopening.delete(docId)
   }
 }
+
+// Con esto, cualquier llamada que reciba 404 por un doc_id muerto se repara sola
+// (antes solo se recuperaban el render de página y las imágenes).
+setDeadDocReopener(reopenDeadDoc)
 
 // Miniatura de la 1ª página para el menú de recientes: reusa el thumbnail del
 // backend y lo encoge a JPEG ~5 KB para no agotar la cuota de localStorage.

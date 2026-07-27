@@ -20,6 +20,7 @@ import { registerCommands } from '../lib/commands'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
 import PropertiesBar from './PropertiesBar'
+import RotatePreview from './RotatePreview'
 import { useFormModal } from './FormModal'
 import { usePdfActions } from '../hooks/usePdfActions'
 import { useState, useRef, useEffect } from 'react'
@@ -492,9 +493,15 @@ export default function Toolbar() {
       case 'page':
         return (
           <>
-            <TBtn icon={RotateCcw} label="Rotar izq." tip="Rotar página a la izquierda" onClick={() => handleRotate(-90)} />
-            <TBtn icon={RotateCw} label="Rotar der." tip="Rotar página a la derecha" onClick={() => handleRotate(90)} />
-            <TBtn icon={RefreshCw} label="Rotar todo" tip="Rotar todo el documento" onClick={() => handleRotateAll(90)} />
+            <RotatePreview degrees={-90}>
+              <TBtn icon={RotateCcw} label="Rotar izq." tip="Rotar página a la izquierda" onClick={() => handleRotate(-90)} />
+            </RotatePreview>
+            <RotatePreview degrees={90}>
+              <TBtn icon={RotateCw} label="Rotar der." tip="Rotar página a la derecha" onClick={() => handleRotate(90)} />
+            </RotatePreview>
+            <RotatePreview degrees={90} all>
+              <TBtn icon={RefreshCw} label="Rotar todo" tip="Rotar todo el documento" onClick={() => handleRotateAll(90)} />
+            </RotatePreview>
             <Sep />
             <TBtn icon={FilePlus} label="Insertar" tip="Insertar página en blanco" onClick={handleInsertBlank} />
             <TBtn icon={Copy} label="Duplicar" tip="Duplicar página" onClick={handleDuplicatePage} />

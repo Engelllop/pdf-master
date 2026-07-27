@@ -24,6 +24,8 @@ let rendererReady = false
 // El renderer reporta si hay documentos con cambios sin guardar; al cerrar la
 // ventana se confirma antes de descartarlos (no hay autoguardado).
 let hasUnsavedChanges = false
+/** Ventanas que ya confirmaron la salida en el aviso propio de la app. */
+const forceClosing = new Set<number>()
 
 // Safe logging to file (avoids EPIPE when no console is attached)
 const logDir = join(app.getPath('userData'), 'logs')
@@ -151,19 +153,12 @@ function createWindow(): void {
   win.setAlwaysOnTop(true, 'screen-saver')
   win.setAlwaysOnTop(false)
 
+  // El aviso de cambios sin guardar lo pinta la propia app (con opción de guardar):
+  // el cuadro nativo de Windows desentonaba y solo ofrecía perder el trabajo.
   win.on('close', (e) => {
-    if (!hasUnsavedChanges || win.isDestroyed()) return
-    const choice = dialog.showMessageBoxSync(win, {
-      type: 'warning',
-      title: 'Cambios sin guardar',
-      message: 'Hay documentos con cambios sin guardar.',
-      detail: 'Si sales ahora, los cambios se perderán. Usa Guardar antes de salir si quieres conservarlos.',
-      buttons: ['Salir sin guardar', 'Cancelar'],
-      defaultId: 1,
-      cancelId: 1,
-    })
-    if (choice === 1) e.preventDefault()
-    else hasUnsavedChanges = false
+    if (!hasUnsavedChanges || win.isDestroyed() || forceClosing.has(win.id)) return
+    e.preventDefault()
+    win.webContents.send('app:confirm-close')
   })
 
   rendererReady = false
@@ -398,6 +393,14 @@ app.whenReady().then(async () => {
 
   ipcMain.on('app:dirty-state', (_event, dirty: boolean) => {
     hasUnsavedChanges = !!dirty
+  })
+
+  ipcMain.on('app:force-close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    forceClosing.add(win.id)
+    hasUnsavedChanges = false
+    win.close()
   })
 
   ipcMain.on('app:renderer-ready', () => {

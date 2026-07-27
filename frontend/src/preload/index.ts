@@ -43,6 +43,12 @@ const api = {
   removeOpenFileListener: () => {
     ipcRenderer.removeAllListeners('app:open-file')
   },
+  /** El main pide confirmación al cerrar con cambios sin guardar (aviso propio). */
+  onConfirmClose: (callback: () => void): (() => void) => {
+    ipcRenderer.on('app:confirm-close', () => callback())
+    return () => { ipcRenderer.removeAllListeners('app:confirm-close') }
+  },
+  forceClose: () => ipcRenderer.send('app:force-close'),
 }
 
 if (process.contextIsolated) {

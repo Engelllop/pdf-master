@@ -210,6 +210,11 @@ export default function Viewer() {
     if (!activeDoc || !pageData) return
     const pt = getSvgPoint(e)
 
+    // Con un editor de texto abierto, el clic en la página solo lo cierra: el blur
+    // del textarea guarda. Antes ese mismo clic colocaba OTRO cuadro encima y lo
+    // escrito se perdía. Sin preventDefault a propósito — es lo que dispara el blur.
+    if (editingTextAnn || textPos || editSpan) return
+
     // Editar texto existente: busca el span bajo el cursor y abre el editor in-place
     if (store.activeTool === 'edittext') {
       e.preventDefault()
@@ -236,18 +241,28 @@ export default function Viewer() {
       }
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      store.addAnnotation(activeDoc.doc_id, {
-        id: crypto.randomUUID(),
-        type: 'image',
-        page: activeDoc.currentPage,
-        x: pdfX,
-        y: pdfY,
-        width: 200,
-        height: 150,
-        imageData: store.selectedImageData,
-      })
-      store.setDocDirty(activeDoc.doc_id, true)
-      store.showToast('Imagen colocada. Arrastra para mover, esquinas para redimensionar.', 'success')
+      const data = store.selectedImageData
+      const docId = activeDoc.doc_id
+      const page = activeDoc.currentPage
+      const maxW = Math.min(320, pageData.originalWidth - pdfX - 8)
+      const maxH = Math.min(320, pageData.originalHeight - pdfY - 8)
+      // El tamaño salía fijo 200x150: una captura apaisada entraba deformada y luego
+      // no había forma de recuperar su proporción. Se toma la del archivo.
+      const img = new Image()
+      img.onload = () => {
+        const ratio = img.naturalHeight / img.naturalWidth || 0.75
+        let w = Math.max(24, maxW)
+        let h = w * ratio
+        if (h > maxH) { h = Math.max(24, maxH); w = h / ratio }
+        store.addAnnotation(docId, {
+          id: crypto.randomUUID(), type: 'image', page, x: pdfX, y: pdfY,
+          width: w, height: h, imageData: data,
+        })
+        store.setDocDirty(docId, true)
+        store.showToast('Imagen colocada. Arrastra para mover, esquinas para redimensionar.', 'success')
+      }
+      img.onerror = () => store.showToast('No se pudo leer la imagen', 'error')
+      img.src = data
       store.setActiveTool(null)
       store.setSelectedImagePath(null)
       store.setSelectedImageData(null)

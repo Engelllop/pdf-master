@@ -15,21 +15,54 @@ logger = logging.getLogger("pdfmaster")
 
 
 class EditMixin:
-    def add_watermark(self, doc_id: str, text: str, color: str = "#888888", fontsize: float = 48, angle: int = 45, opacity: float = 0.3) -> bool:
+    # Tope de repeticiones por página: con una fuente pequeña en un plano grande la
+    # rejilla se dispara y el motor (1 worker, PyMuPDF) se queda colgado.
+    MAX_WATERMARK_TILES = 400
+
+    def add_watermark(self, doc_id: str, text: str, color: str = "#888888", fontsize: float = 48,
+                      angle: int = 45, opacity: float = 0.3, tiled: bool = True) -> bool:
         doc = self._acquire(doc_id)
         if not doc:
             return False
         rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0.5, 0.5, 0.5)
+        text_width = fitz.get_text_length(text, fontsize=fontsize)
         for i in range(len(doc)):
             page = doc.load_page(i)
             rect = page.rect
             # insert_text(rotate=...) solo acepta múltiplos de 90; el diagonal de 45°
-            # se hace con morph (rotación alrededor del centro de la página).
-            text_width = fitz.get_text_length(text, fontsize=fontsize)
-            pivot = fitz.Point(rect.width / 2, rect.height / 2)
-            insert = fitz.Point(pivot.x - text_width / 2, pivot.y + fontsize / 4)
-            page.insert_text(insert, text, fontsize=fontsize, color=rgb,
-                             fill_opacity=opacity, morph=(pivot, fitz.Matrix(angle)), overlay=True)
+            # se hace con morph (rotación alrededor del punto de anclaje).
+            if not tiled:
+                pivot = fitz.Point(rect.width / 2, rect.height / 2)
+                insert = fitz.Point(pivot.x - text_width / 2, pivot.y + fontsize / 4)
+                page.insert_text(insert, text, fontsize=fontsize, color=rgb,
+                                 fill_opacity=opacity, morph=(pivot, fitz.Matrix(angle)), overlay=True)
+                continue
+
+            # Mosaico al tresbolillo cubriendo TODA la página (la marca de agua de
+            # una sola línea al centro se perdía en un plano grande).
+            step_x = max(text_width + fontsize * 2.0, fontsize)
+            step_y = max(fontsize * 3.2, 1.0)
+            # Margen: al girar 45° las filas se salen, así se cubren las esquinas.
+            margin = max(rect.width, rect.height) * 0.5
+            cols = int((rect.width + 2 * margin) / step_x) + 1
+            rows = int((rect.height + 2 * margin) / step_y) + 1
+            if cols * rows > self.MAX_WATERMARK_TILES:
+                factor = ((cols * rows) / self.MAX_WATERMARK_TILES) ** 0.5
+                step_x *= factor
+                step_y *= factor
+            drawn = 0
+            row = 0
+            y = rect.y0 - margin
+            while y < rect.y1 + margin and drawn < self.MAX_WATERMARK_TILES:
+                x = rect.x0 - margin + (step_x / 2 if row % 2 else 0)
+                while x < rect.x1 + margin and drawn < self.MAX_WATERMARK_TILES:
+                    pivot = fitz.Point(x + text_width / 2, y)
+                    page.insert_text(fitz.Point(x, y), text, fontsize=fontsize, color=rgb,
+                                     fill_opacity=opacity, morph=(pivot, fitz.Matrix(angle)), overlay=True)
+                    drawn += 1
+                    x += step_x
+                y += step_y
+                row += 1
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
         return True

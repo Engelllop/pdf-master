@@ -26,6 +26,7 @@ import ProgressBar from './components/ProgressBar'
 import CommandPalette from './components/CommandPalette'
 import StampSignatureManager from './components/StampSignatureManager'
 import PageOrganizer from './components/PageOrganizer'
+import ExitDialog from './components/ExitDialog'
 
 import { apiFetch } from './lib/api'
 
@@ -414,6 +415,7 @@ function App() {
         {!readingMode && aiOpen && <AIPanel onClose={() => setAiOpen(false)} />}
       </div>
       <Toasts />
+      <ExitDialog />
       {formModal}
       {presentationMode && <PresentationView />}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}

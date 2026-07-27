@@ -59,7 +59,7 @@ def insert_image(doc_id: str, req: InsertImageRequest):
 
 @router.post("/watermark/{doc_id}", response_model=SaveResult)
 def add_watermark(doc_id: str, req: WatermarkRequest):
-    ok = pdf_service.add_watermark(doc_id, req.text, req.color, req.fontsize, req.angle, req.opacity)
+    ok = pdf_service.add_watermark(doc_id, req.text, req.color, req.fontsize, req.angle, req.opacity, req.tiled)
     if not ok:
         raise HTTPException(status_code=404, detail="Document not found")
     return SaveResult(success=True)

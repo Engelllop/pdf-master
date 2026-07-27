@@ -15,13 +15,14 @@ import { loadLastSession, reopenLastSession, type SessionSnapshot } from '../lib
 import { formatWhen } from '../lib/format'
 import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
+import { saveDocument } from '../lib/saveDocument'
 
 // Menú "Archivo": acciones a la izquierda + recientes con miniatura, búsqueda y
 // carpetas frecuentes a la derecha. Se abre desde su propio botón o desde el logo
 // del TopBar (evento 'app:file-menu'). También registra el handler global de Ctrl+S.
 export default function FileMenu() {
-  const { docs, activeDocId, addDoc, showToast, setDocDirty, setSaveStatus } = useStoreSlice(
-    'docs', 'activeDocId', 'addDoc', 'showToast', 'setDocDirty', 'setSaveStatus',
+  const { docs, activeDocId, addDoc, showToast, setSaveStatus } = useStoreSlice(
+    'docs', 'activeDocId', 'addDoc', 'showToast', 'setSaveStatus',
   )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const [open, setOpen] = useState(false)
@@ -106,19 +107,7 @@ export default function FileMenu() {
     }
     setSaveStatus('saving')
     try {
-      const embedRes = await apiFetch(`/pdf/embed/${doc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ annotations: doc.annotations }),
-      })
-      if (!embedRes.ok) throw new Error('Error al embeber anotaciones')
-      const backup = usePdfStore.getState().backupOnSave
-      const res = await apiFetch(`/pdf/save/${doc.doc_id}${backup ? '?backup=true' : ''}`, { method: 'POST' })
-      if (res.ok) {
-        await apiFetch(`/pdf/annotations/${doc.doc_id}`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ annotations: doc.annotations }),
-        })
-        setDocDirty(doc.doc_id, false)
+      if (await saveDocument(doc.doc_id)) {
         setSaveStatus('saved')
         showToast('Guardado con anotaciones en PDF', 'success')
       } else {
