@@ -5,7 +5,6 @@ import { type TextStyle } from '../../store/usePdfStore'
 const BAR_H = 34
 
 const ALIGN_ICONS = { left: AlignLeft, center: AlignCenter, right: AlignRight } as const
-const ALIGN_NEXT = { left: 'center', center: 'right', right: 'left' } as const
 const LIST_NEXT = { none: 'bullet', bullet: 'number', number: 'none' } as const
 
 // Editor de texto in-situ estilo Acrobat: caja transparente con el texto renderizado
@@ -42,13 +41,14 @@ export default function TextBoxEditor({
   const boxW = Math.max(fpx * 7, (longest + 2) * fpx * 0.58 * (style.bold ? 1.06 : 1))
   const boxH = lines.length * fpx * style.lineHeight + fpx * 0.4
 
-  const barW = 470
+  // Ancho solo para no salirse del papel: la barra se ajusta a su contenido (antes
+  // era fijo de 470 px y dejaba un hueco vacío antes de los botones de la derecha).
+  const barW = onDelete ? 420 : 390
   const barLeft = Math.max(4, Math.min(x, wrapperWidth - barW - 4))
   const barTop = y - BAR_H - 8 > 4 ? y - BAR_H - 8 : y + boxH + 8
 
   const btn = 'p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors'
   const toggleBtn = (active: boolean) => `p-1 rounded transition-colors ${active ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
-  const AlignIcon = ALIGN_ICONS[style.align]
   const ListIcon = style.listStyle === 'number' ? ListOrdered : List
 
   return (
@@ -56,7 +56,7 @@ export default function TextBoxEditor({
     // foco del textarea a la toolbar (select de fuente, botones) no debe confirmar.
     <div onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) onCommit() }}>
       <div className="absolute z-40 flex items-center gap-0.5 px-1.5 rounded-lg border border-border bg-panel shadow-xl select-none"
-        style={{ left: barLeft, top: barTop, height: BAR_H, width: barW }}>
+        style={{ left: barLeft, top: barTop, height: BAR_H, width: 'max-content', maxWidth: wrapperWidth - 8 }}>
         <select value={fontFamily} onChange={(e) => onFontFamily(e.target.value)}
           className="border border-border rounded px-1 py-0.5 text-[11px] bg-panel text-fg focus:outline-none w-24 shrink-0">
           {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
@@ -71,8 +71,14 @@ export default function TextBoxEditor({
           onClick={() => onStyle({ bold: !style.bold })}><Bold size={13} /></button>
         <button title="Cursiva (Ctrl+I)" className={toggleBtn(style.italic)}
           onClick={() => onStyle({ italic: !style.italic })}><Italic size={13} /></button>
-        <button title={`Alineación: ${style.align}`} className={toggleBtn(style.align !== 'left')}
-          onClick={() => onStyle({ align: ALIGN_NEXT[style.align] })}><AlignIcon size={13} /></button>
+        {/* Las tres alineaciones a la vista: el botón que rotaba obligaba a adivinar */}
+        {(['left', 'center', 'right'] as const).map((a) => {
+          const Icon = ALIGN_ICONS[a]
+          return (
+            <button key={a} title={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
+              className={toggleBtn(style.align === a)} onClick={() => onStyle({ align: a })}><Icon size={13} /></button>
+          )
+        })}
         <button title={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           className={toggleBtn(style.listStyle !== 'none')}
           onClick={() => onStyle({ listStyle: LIST_NEXT[style.listStyle] })}><ListIcon size={13} /></button>
@@ -87,7 +93,7 @@ export default function TextBoxEditor({
           <input type="color" value={color} onChange={(e) => onColor(e.target.value)}
             className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
         </label>
-        <div className="flex-1" />
+        <div className="w-px h-4 mx-0.5 bg-border" />
         {onDelete && (
           <button title="Eliminar texto" className={`${btn} hover:text-red-400`} onClick={onDelete}><Trash2 size={14} /></button>
         )}

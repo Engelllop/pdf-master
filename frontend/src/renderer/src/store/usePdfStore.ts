@@ -185,6 +185,7 @@ export interface PdfState {
   viewerScroll: ViewerScroll
   selectedStamp: string
   stampColor: string
+  stampSize: number
   loadingDocId: string | null
 
   progress: ProgressState | null
@@ -312,6 +313,7 @@ export interface PdfState {
   setViewerScroll: (scroll: ViewerScroll) => void
   setSelectedStamp: (stamp: string) => void
   setStampColor: (color: string) => void
+  setStampSize: (size: number) => void
 }
 
 const SCALES_KEY = 'pdfmaster_scales'
@@ -470,6 +472,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   viewerScroll: { left: 0, top: 0, clientWidth: 0, clientHeight: 0, scrollWidth: 0, scrollHeight: 0 },
   selectedStamp: 'APROBADO',
   stampColor: '#22c55e',
+  stampSize: 24,
   themePreference: loadThemePreference(),
   theme: (() => {
     const pref = loadThemePreference()
@@ -988,6 +991,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   setViewerScroll: (scroll) => set({ viewerScroll: scroll }),
   setSelectedStamp: (stamp) => set({ selectedStamp: stamp }),
   setStampColor: (color) => set({ stampColor: color }),
+  setStampSize: (size) => set({ stampSize: Math.max(6, Math.min(96, size)) }),
 
   reorderPages: (docId, newOrder) => {
     set((state) => {

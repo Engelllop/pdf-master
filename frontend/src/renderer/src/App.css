@@ -111,3 +111,10 @@ a:focus-visible,
 .toast-pop {
   animation: toast-in 150ms ease-out;
 }
+
+/* Capa de texto seleccionable: las letras van transparentes sobre el bitmap de la
+   página. Al seleccionar, el navegador las repinta con el color de selección y se
+   veían DOBLES (su tipografía no es la del PDF). Pintando solo el fondo queda el
+   resaltado limpio sobre el texto real. */
+.pdf-text-layer span::selection { color: transparent; background: rgba(59, 130, 246, 0.35); }
+.pdf-text-layer span::-moz-selection { color: transparent; background: rgba(59, 130, 246, 0.35); }

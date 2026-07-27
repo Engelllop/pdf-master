@@ -45,7 +45,7 @@ export default function PropertiesBar() {
     'annotationLineStyle', 'setAnnotationLineStyle', 'annotationOpacity', 'setAnnotationOpacity',
     'annotationFillColor', 'setAnnotationFillColor', 'annotationFillOpacity', 'setAnnotationFillOpacity',
     'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize', 'textStyle', 'setTextStyle',
-    'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'updateAnnotation',
+    'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'stampSize', 'setStampSize', 'updateAnnotation',
     'annotationAuthor', 'setActiveTool',
   )
   const { activeTool, activeDocId, docs } = store
@@ -238,11 +238,21 @@ export default function PropertiesBar() {
       {isStamp && (
         <Group>
           <Label>Sello</Label>
-            <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
-              className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
+          <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
+            className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
+          {/* Vista previa: el mismo estilo con el que va a caer el sello */}
+          <span className="px-2 py-0.5 rounded border border-dashed border-border max-w-[200px] truncate leading-none"
+            title="Así se va a ver"
+            style={{ color: store.stampColor, fontStyle: 'italic', fontWeight: 700, fontSize: Math.min(20, Math.max(10, store.stampSize * 0.6)) }}>
+            {store.selectedStamp}
+          </span>
+          <Label>Tamaño</Label>
+          <input type="range" min={8} max={72} step={2} value={store.stampSize}
+            onChange={(e) => store.setStampSize(parseInt(e.target.value))} className="w-20" aria-label="Tamaño del sello" />
+          <span className="text-[11px] text-muted w-6 tabular-nums">{store.stampSize}</span>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-stamps'))}
             className="px-2 py-1 text-[11px] rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
             Gestionar…

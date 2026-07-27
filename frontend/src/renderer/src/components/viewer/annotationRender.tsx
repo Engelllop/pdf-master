@@ -128,6 +128,8 @@ export interface RenderAnnotationOptions {
   onNoteClick?: (ann: Annotation, screen: { x: number; y: number }) => void
   onTextDoubleClick?: (ann: Annotation) => void
   textDefaults?: { fontSize: number; fontFamily: string }
+  /** id de marca de conteo → número correlativo (lo calcula el Viewer con `countNumbers`) */
+  countNumbers?: Map<string, number>
 }
 
 export function renderAnnotation(
@@ -145,6 +147,25 @@ export function renderAnnotation(
   const clickProps = (!isPreview && onSelect)
     ? { onClick: (e: React.MouseEvent) => { e.stopPropagation(); onSelect(e) }, style: { cursor: 'pointer' } }
     : {}
+
+  // La calibración solo existe como preview (no llega a ser una anotación), así que
+  // no está en el union de tipos. Sin este render se arrastraba a ciegas y el
+  // diálogo aparecía de la nada al soltar.
+  if ((ann.type as string) === 'measure_calibrate') {
+    const cx2 = s.x + ((ann.width || 0) * sx)
+    const cy2 = s.y + ((ann.height || 0) * sy)
+    const lbl = `${Math.hypot(ann.width || 0, ann.height || 0).toFixed(1)} px`
+    return (
+      <g key={key} pointerEvents="none">
+        <line x1={s.x} y1={s.y} x2={cx2} y2={cy2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" />
+        <circle cx={s.x} cy={s.y} r={4} fill="#f59e0b" />
+        <circle cx={cx2} cy={cy2} r={4} fill="#f59e0b" />
+        <rect x={(s.x + cx2) / 2 - lbl.length * 4 - 6} y={(s.y + cy2) / 2 - 26} width={lbl.length * 8 + 12} height={20} rx={4}
+          fill="rgba(15,23,42,0.9)" stroke="#f59e0b" strokeWidth={1} />
+        <text x={(s.x + cx2) / 2} y={(s.y + cy2) / 2 - 11} textAnchor="middle" fill="#fff" fontSize="13" fontFamily="sans-serif">{lbl}</text>
+      </g>
+    )
+  }
 
   switch (ann.type) {
     case 'highlight': {
@@ -401,11 +422,17 @@ export function renderAnnotation(
         : symbol === 'star'
         ? <path d={starPath(s.x - r, s.y - r, r * 2, r * 2)} fill={color} stroke="#fff" strokeWidth={sw} strokeLinejoin="round" />
         : <circle cx={s.x} cy={s.y} r={r} fill={symbol === 'cross' ? 'none' : color} stroke={symbol === 'cross' ? color : '#fff'} strokeWidth={sw} />
+      // El número correlativo va dentro de la marca: contar sin verlo obligaba a
+      // recontar los puntos a ojo. Sin número (marca suelta) se dibuja la cruz.
+      const num = opts.countNumbers?.get(ann.id)
       return (
         <g key={key} {...clickProps} opacity={ann.opacity ?? 1}>
-          <title>{`Conteo: ${ann.text || 'General'}`}</title>
+          <title>{`Conteo ${num ? `#${num} ` : ''}— ${ann.text || 'General'}${ann.replies?.[0]?.text ? `: ${ann.replies[0].text}` : ''}`}</title>
           {shape}
-          {(symbol === 'circle' || symbol === 'cross') && (
+          {num ? (
+            <text x={s.x} y={s.y + r * 0.36} textAnchor="middle" fontSize={r * 1.05} fontWeight="700"
+              fontFamily="sans-serif" fill={symbol === 'cross' ? color : '#111827'} pointerEvents="none">{num}</text>
+          ) : (symbol === 'circle' || symbol === 'cross') && (
             <>
               <line x1={s.x - r * 0.45} y1={s.y} x2={s.x + r * 0.45} y2={s.y}
                 stroke={symbol === 'cross' ? color : '#fff'} strokeWidth={inner} strokeLinecap="round" />
@@ -457,7 +484,20 @@ export function renderAnnotation(
       )
     }
     case 'measure_area': {
-      if (!ann.points || ann.points.length < 3) return null
+      if (!ann.points || ann.points.length < 2) return null
+      // Mientras se marcan los vértices todavía no hay polígono: se dibuja la
+      // polilínea abierta para ver por dónde va (antes no se veía nada hasta el 3er clic).
+      if (ann.points.length < 3) {
+        const open = ann.points.map((p) => toScreen(p.x, p.y))
+        return (
+          <g key={key} opacity={stroke.opacity} pointerEvents="none">
+            <path d={open.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}
+              fill="none" stroke={ann.color || '#22d3ee'} strokeWidth={stroke.strokeWidth}
+              strokeDasharray={`${stroke.strokeWidth * 2} ${stroke.strokeWidth}`} />
+            {open.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />)}
+          </g>
+        )
+      }
       const pts = ann.points.map((p) => toScreen(p.x, p.y))
       const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + ' Z'
       const label = ann.measurement?.label || ''

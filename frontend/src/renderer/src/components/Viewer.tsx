@@ -1,4 +1,4 @@
-import { useRef, useCallback, useState, useEffect } from 'react'
+import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
 import { type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { usePageLoader } from '../hooks/usePageLoader'
@@ -16,6 +16,7 @@ import { useFormFields } from '../hooks/useFormFields'
 import DetailTile from './DetailTile'
 import TextLayer from './viewer/TextLayer'
 import NoteBubble from './viewer/NoteBubble'
+import { countNumbers } from '../lib/counts'
 import SelectionOverlay from './viewer/SelectionOverlay'
 import FloatingSelectionBar from './viewer/FloatingSelectionBar'
 import MultiSelectionBar from './viewer/MultiSelectionBar'
@@ -34,7 +35,7 @@ export default function Viewer() {
   const store = useStoreSlice(
     'docs', 'activeDocId', 'activeTool', 'annotationColor', 'annotationLineWidth',
     'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotations', 'toggleAnnotationSelection',
-    'selectedImageData', 'selectedStamp', 'stampColor',
+    'selectedImageData', 'selectedStamp', 'stampColor', 'stampSize',
     'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode', 'activeRibbon',
     'setViewerSize', 'selectAnnotation', 'deleteAnnotation', 'addBookmark',
     'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
@@ -253,34 +254,27 @@ export default function Viewer() {
       return
     }
 
-    // Stamp tool
+    // Stamp tool — es una anotación de texto en cursiva, no tinta quemada en el PDF:
+    // así se puede mover, recolorear, deshacer y borrar (antes iba directo al archivo).
     if (store.activeTool === 'stamp') {
       e.preventDefault()
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      apiFetch(`/pdf/insert-text/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          page_num: activeDoc.currentPage,
-          x: pdfX,
-          y: pdfY,
-          text: store.selectedStamp,
-          color: store.stampColor,
-          fontsize: 24,
-        }),
-      }).then((res) => {
-        if (res.ok) {
-          store.setDocDirty(activeDoc.doc_id, true)
-          store.invalidatePageCache(activeDoc.doc_id)
-          store.invalidateThumbnails(activeDoc.doc_id)
-          store.incrementDocVersion(activeDoc.doc_id)
-          store.showToast('Sello insertado', 'success')
-        } else {
-          store.showToast('Error al insertar sello', 'error')
-        }
-        store.releaseTool()
+      const size = store.stampSize
+      store.addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'text',
+        page: activeDoc.currentPage,
+        // El fantasma se dibuja centrado en el cursor: la marca cae donde se vio
+        x: pdfX - (store.selectedStamp.length * size * 0.28),
+        y: pdfY - size * 0.5,
+        color: store.stampColor,
+        text: store.selectedStamp,
+        fontSize: size,
+        italic: true,
+        bold: true,
       })
+      store.releaseTool()
       return
     }
 
@@ -360,6 +354,8 @@ export default function Viewer() {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) return
     const pt = getSvgPoint(e)
+    // Fantasma del sello: se ve qué se va a colocar y dónde antes de soltar el clic
+    if (store.activeTool === 'stamp') setStampGhost(pt)
     if (marqueeStartRef.current) {
       const s = marqueeStartRef.current
       setMarquee({ x0: s.x, y0: s.y, x1: pt.x, y1: pt.y })
@@ -477,6 +473,7 @@ export default function Viewer() {
 
   // Sticky note popup
   const [notePopup, setNotePopup] = useState<{ annId: string } | null>(null)
+  const [stampGhost, setStampGhost] = useState<{ x: number; y: number } | null>(null)
 
   const startEditText = (ann: Annotation) => {
     setEditingTextAnn(ann.id)
@@ -507,6 +504,8 @@ export default function Viewer() {
   const annotationsRight = activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []
 
   const textDefaults = { fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }
+  // La numeración es por categoría y de todo el documento, no de la página
+  const countNums = useMemo(() => countNumbers(activeDoc?.annotations || []), [activeDoc?.annotations])
   const openNotePopup = (ann: Annotation) => setNotePopup({ annId: ann.id })
 
   // Una nota recién colocada abre su globo para escribir de una
@@ -607,6 +606,7 @@ export default function Viewer() {
                   onNoteClick: openNotePopup,
                   onTextDoubleClick: startEditText,
                   textDefaults,
+                  countNumbers: countNums,
                 }))}
 
                 {/* Preview while drawing (el marcado de texto muestra su preview por línea) */}
@@ -618,6 +618,19 @@ export default function Viewer() {
                     id: `markup-preview-${i}`,
                     x: l.x0, y: l.y0, width: l.x1 - l.x0, height: l.y1 - l.y0,
                   }, pageData, toScreenCoords, { isPreview: true, textDefaults })
+                )}
+
+                {/* Fantasma del sello siguiendo al cursor (cursiva y translúcido;
+                    al hacer clic cae con el color sólido) */}
+                {store.activeTool === 'stamp' && stampGhost && pageData && (
+                  <g pointerEvents="none" opacity={0.45}>
+                    <text x={stampGhost.x} y={stampGhost.y} textAnchor="middle" dominantBaseline="middle"
+                      fontFamily="Helvetica, Arial, sans-serif" fontStyle="italic" fontWeight="700"
+                      fontSize={store.stampSize * (pageData.width / pageData.originalWidth)}
+                      fill={store.stampColor} stroke="#fff" strokeWidth={1} paintOrder="stroke">
+                      {store.selectedStamp}
+                    </text>
+                  </g>
                 )}
 
                 {/* Imán de snap para mediciones */}

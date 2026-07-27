@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2 } from 'lucide-react'
+import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2, Tally5 } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
 import { useFormModal } from './FormModal'
 import ReviewPanel from './ReviewPanel'
+import CountPanel from './CountPanel'
 
 import { apiFetch } from '../lib/api'
 
@@ -41,7 +42,7 @@ export default function ThumbnailPanel() {
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const { askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [tab, setTab] = useState<'pages' | 'outline' | 'bookmarks' | 'annotations' | 'search'>('pages')
+  const [tab, setTab] = useState<'pages' | 'outline' | 'bookmarks' | 'annotations' | 'counts' | 'search'>('pages')
 
   // Jump to the search results tab automatically when a new search produces matches.
   useEffect(() => {
@@ -257,10 +258,11 @@ export default function ThumbnailPanel() {
     { id: 'outline', icon: BookOpen, title: 'Esquema' },
     { id: 'bookmarks', icon: Bookmark, title: 'Marcadores' },
     { id: 'annotations', icon: MessageSquare, title: 'Anotaciones' },
+    { id: 'counts', icon: Tally5, title: 'Conteo' },
     { id: 'search', icon: Search, title: 'Búsqueda' },
   ]
   const sectionTitle: Record<typeof tab, string> = {
-    pages: 'Páginas', outline: 'Esquema', bookmarks: 'Marcadores', annotations: 'Anotaciones', search: 'Búsqueda',
+    pages: 'Páginas', outline: 'Esquema', bookmarks: 'Marcadores', annotations: 'Anotaciones', counts: 'Conteo', search: 'Búsqueda',
   }
   const onRail = (id: typeof tab) => {
     if (sidebarOpen && tab === id) { toggleSidebar(); return }
@@ -312,7 +314,7 @@ export default function ThumbnailPanel() {
       {formModal}
       {sidebarOpen && (
       // El panel de revisión necesita más ancho que las miniaturas (filtros + hilos).
-      <div className={`${tab === 'annotations' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
+      <div className={`${tab === 'annotations' || tab === 'counts' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
         <span className={`text-xs font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
         <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
@@ -485,6 +487,7 @@ export default function ThumbnailPanel() {
         </div>
       )}
       {tab === 'annotations' && <ReviewPanel activeDoc={activeDoc} />}
+      {tab === 'counts' && <CountPanel activeDoc={activeDoc} />}
       </div>
       )}
     </div>

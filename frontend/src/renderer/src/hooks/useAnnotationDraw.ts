@@ -262,6 +262,13 @@ export function useAnnotationDraw(
   }
 
   const handleMouseUp = async () => {
+    // Polígono / área / perímetro se construyen a CLICS: el soltar el botón del
+    // primer clic no debe borrar el preview (era por qué "la primera raya
+    // desaparecía" y no se veía dónde se estaba marcando).
+    if (drawingArea) {
+      setDrawing(false)
+      return
+    }
     if (!drawing || !drawPreview || !activeDoc) {
       setDrawing(false)
       return

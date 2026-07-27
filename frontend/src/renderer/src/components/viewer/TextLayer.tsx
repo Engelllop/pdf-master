@@ -41,7 +41,7 @@ function TextLayer({ docId, page, version = 0, pageData, active }: {
   }, [spans, sx, sy])
 
   return (
-    <div ref={containerRef} className="absolute top-0 left-0" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text' }}>
+    <div ref={containerRef} className="absolute top-0 left-0 pdf-text-layer" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text' }}>
       {spans.map((s, i) => {
         const h = (s.y1 - s.y0) * sy
         return (
