@@ -1,16 +1,17 @@
-import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText, ChevronDown } from 'lucide-react'
+import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText, ChevronDown, Pointer } from 'lucide-react'
 import { useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { toolLabel } from '../lib/tools'
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
 export default function StatusBar() {
   const {
-    docs, activeDocId, saveStatus, activeTool,
+    docs, activeDocId, saveStatus, activeTool, stickyTools,
     setZoom, setPage, setFitMode, computeFitZoom, viewerWidth, viewerHeight,
     continuousMode, toggleContinuousMode,
   } = useStoreSlice(
-    'docs', 'activeDocId', 'saveStatus', 'activeTool',
+    'docs', 'activeDocId', 'saveStatus', 'activeTool', 'stickyTools',
     'setZoom', 'setPage', 'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
     'continuousMode', 'toggleContinuousMode',
   )
@@ -48,7 +49,7 @@ export default function StatusBar() {
       {dims && <span className="text-muted">{dims}</span>}
 
       {activeDoc && scale && (
-        <span className="flex items-center gap-1 text-emerald-500" title="Escala de medición calibrada">
+        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="Escala de medición calibrada">
           <Ruler size={12} /> 1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
         </span>
       )}
@@ -58,13 +59,21 @@ export default function StatusBar() {
         </span>
       )}
 
+      {activeDoc && activeTool && (
+        <span className="flex items-center gap-1.5 text-accent" title="Herramienta activa">
+          <Pointer size={12} /> {toolLabel(activeTool)}
+          {stickyTools && <span className="text-muted">(fija)</span>}
+          <kbd className="px-1 py-px rounded border border-border text-[10px] text-muted">Esc</kbd>
+        </span>
+      )}
+
       <div className="flex-1" />
 
       {saveStatus === 'saving' && (
         <span className="flex items-center gap-1 text-accent"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
       )}
       {saveStatus === 'saved' && (
-        <span className="flex items-center gap-1 text-emerald-500"><CheckCircle2 size={12} /> Guardado</span>
+        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={12} /> Guardado</span>
       )}
 
       {activeDoc && (

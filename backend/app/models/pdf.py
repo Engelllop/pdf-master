@@ -46,6 +46,12 @@ class MeasurementData(BaseModel):
     unit: str
     label: str
 
+class Reply(BaseModel):
+    id: str
+    author: Optional[str] = None
+    text: str
+    at: float
+
 class Annotation(BaseModel):
     id: str
     type: str
@@ -72,6 +78,14 @@ class Annotation(BaseModel):
     align: Optional[str] = None
     lineHeight: Optional[float] = None
     listStyle: Optional[str] = None
+    symbol: Optional[str] = None
+    # Metadatos de revisión (v1.12): quién marcó, cuándo, si está resuelta y el hilo
+    # de respuestas. Opcionales para no romper sidecars antiguos.
+    author: Optional[str] = None
+    createdAt: Optional[float] = None
+    modifiedAt: Optional[float] = None
+    status: Optional[str] = None
+    replies: Optional[List[Reply]] = None
 
 class AnnotationList(BaseModel):
     annotations: List[Annotation]

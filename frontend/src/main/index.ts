@@ -1,10 +1,10 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlink } from 'fs'
-import { tmpdir } from 'os'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlink, unlinkSync } from 'fs'
+import { tmpdir, userInfo } from 'os'
 
 // GPU & performance flags
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -124,7 +124,7 @@ function stopBackend() {
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     width: 1400,
     height: 900,
     show: true,
@@ -138,13 +138,22 @@ function createWindow(): void {
     }
   })
 
-  mainWindow.maximize()
-  mainWindow.setAlwaysOnTop(true, 'screen-saver')
-  mainWindow.setAlwaysOnTop(false)
+  // mainWindow apunta siempre a la ventana enfocada: con "Nueva ventana" abiertas,
+  // los diálogos y el "abrir con" del Explorador van a la que el usuario está usando
+  // (antes quedaba clavado en la última creada aunque estuviera cerrada).
+  mainWindow = win
+  win.on('focus', () => { mainWindow = win })
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = BrowserWindow.getAllWindows()[0] || null
+  })
 
-  mainWindow.on('close', (e) => {
-    if (!hasUnsavedChanges || !mainWindow) return
-    const choice = dialog.showMessageBoxSync(mainWindow, {
+  win.maximize()
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setAlwaysOnTop(false)
+
+  win.on('close', (e) => {
+    if (!hasUnsavedChanges || win.isDestroyed()) return
+    const choice = dialog.showMessageBoxSync(win, {
       type: 'warning',
       title: 'Cambios sin guardar',
       message: 'Hay documentos con cambios sin guardar.',
@@ -158,41 +167,43 @@ function createWindow(): void {
   })
 
   rendererReady = false
-  mainWindow.webContents.on('did-start-loading', () => {
+  win.webContents.on('did-start-loading', () => {
     rendererReady = false
   })
 
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
-    mainWindow?.focus()
+  win.on('ready-to-show', () => {
+    win.show()
+    win.focus()
   })
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  win.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   // Forward renderer console + failed loads to the log file for diagnostics.
-  mainWindow.webContents.on('console-message', (_e, level, message) => {
+  win.webContents.on('console-message', (_e, level, message) => {
     if (level >= 2 || message.includes('PAGEIMG')) safeLog('RENDERER', message)
   })
-  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
     safeLog('LOAD-FAIL', `${code} ${desc} ${url}`)
   })
 
-  // Prevent drag-and-drop navigation to local files; handle PDF drops via IPC
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  // El renderer es una SPA: cualquier navegación real (drop de un archivo, link
+  // roto, etc.) la reemplazaría por completo. Se bloquea siempre; los drops de PDF
+  // se reenvían por IPC.
+  win.webContents.on('will-navigate', (event, url) => {
+    event.preventDefault()
     if (url.startsWith('file://') && url.toLowerCase().endsWith('.pdf')) {
-      event.preventDefault()
       const filePath = decodeURI(url.replace('file:///', '').replace(/\//g, '\\'))
       handleFileOpen(filePath)
     }
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 }
 
@@ -333,14 +344,25 @@ app.whenReady().then(async () => {
     return filePath
   })
 
-  ipcMain.handle('window:set-overlay', (_event, opts: { color: string; symbolColor: string }) => {
-    try { mainWindow?.setTitleBarOverlay({ ...opts, height: 40 }) } catch { /* ignore */ }
+  // Por-sender: cada ventana ajusta su propio overlay/fullscreen (no el de la última creada).
+  ipcMain.handle('window:set-overlay', (event, opts: { color: string; symbolColor: string }) => {
+    try { BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({ ...opts, height: 40 }) } catch { /* ignore */ }
   })
 
-  ipcMain.handle('window:toggleFullscreen', () => {
-    if (mainWindow) {
-      mainWindow.setFullScreen(!mainWindow.isFullScreen())
-    }
+  // Nombre de usuario del sistema: autor por defecto de las marcas de revisión.
+  ipcMain.handle('os:username', () => {
+    try { return userInfo().username } catch { return '' }
+  })
+
+  // Escalado de la interfaz (ajuste del usuario): igual que el zoom del navegador,
+  // por ventana. Con planos en 4K la UI a 100 % se queda diminuta.
+  ipcMain.handle('window:set-ui-zoom', (event, factor: number) => {
+    try { event.sender.setZoomFactor(Math.max(0.75, Math.min(1.5, factor))) } catch { /* ignore */ }
+  })
+
+  ipcMain.handle('window:toggleFullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.setFullScreen(!win.isFullScreen())
   })
 
   ipcMain.handle('backend:restart', async () => {
@@ -432,14 +454,48 @@ app.whenReady().then(async () => {
     }
   })
 
+  // API key de Anthropic: cifrada con safeStorage (DPAPI en Windows) en userData,
+  // nunca en localStorage del renderer. El renderer solo sabe si hay clave o no.
+  const aiKeyFile = join(app.getPath('userData'), 'ai-key.bin')
+  const readAiKey = (): string | null => {
+    try {
+      if (!existsSync(aiKeyFile)) return null
+      const raw = readFileSync(aiKeyFile)
+      return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(raw) : raw.toString('utf-8')
+    } catch (err) {
+      safeLog('ERROR', `[AI] No se pudo leer la API key: ${err}`)
+      return null
+    }
+  }
+
+  ipcMain.handle('ai:set-key', (_event, key: string | null) => {
+    try {
+      if (!key) {
+        if (existsSync(aiKeyFile)) unlinkSync(aiKeyFile)
+        return { success: true }
+      }
+      const data = safeStorage.isEncryptionAvailable()
+        ? safeStorage.encryptString(key)
+        : Buffer.from(key, 'utf-8')
+      writeFileSync(aiKeyFile, data)
+      return { success: true }
+    } catch (err) {
+      safeLog('ERROR', `[AI] No se pudo guardar la API key: ${err}`)
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle('ai:has-key', () => readAiKey() !== null)
+
   // Asistente IA: streaming directo a la API de Claude (claude-opus-4-8).
   // Adjunta el PDF como bloque "document" base64 para que Claude lea el documento
   // nativamente. Se hace en el main (no en el backend Python) para no tocar el
   // motor PyMuPDF ni recompilar el exe, y para mantener la API key fuera del renderer.
   // AbortControllers vivos por requestId, para que el renderer pueda detener la generación.
   const aiControllers = new Map<string, AbortController>()
-  ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => {
-    const { requestId, docId, apiKey, messages, scope = 'doc', page = 0 } = payload
+  ipcMain.on('ai:chat', async (event, payload: { requestId: string; docId: string | null; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => {
+    const { requestId, docId, messages, scope = 'doc', page = 0 } = payload
+    const apiKey = readAiKey()
     const send = (channel: string, data: object) => {
       if (!event.sender.isDestroyed()) event.sender.send(channel, { requestId, ...data })
     }

@@ -118,6 +118,50 @@ class TestAnnotations:
         loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()
         assert loaded["annotations"][0]["id"] == "a1"
 
+    def test_save_with_backup_keeps_a_copy(self, client, open_doc):
+        info = open_doc()
+        original = open(info["file_path"], "rb").read()
+        client.post(f"/pdf/rotate/{info['doc_id']}", json={"page_num": 0, "degrees": 90})
+        assert client.post(f"/pdf/save/{info['doc_id']}?backup=true").status_code == 200
+        bak = info["file_path"] + ".bak"
+        assert os.path.exists(bak)
+        assert open(bak, "rb").read() == original
+
+    def test_save_without_backup_creates_no_bak(self, client, open_doc):
+        info = open_doc()
+        client.post(f"/pdf/rotate/{info['doc_id']}", json={"page_num": 0, "degrees": 90})
+        assert client.post(f"/pdf/save/{info['doc_id']}").status_code == 200
+        assert not os.path.exists(info["file_path"] + ".bak")
+
+    def test_review_metadata_survives_roundtrip(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [{
+            "id": "a1", "type": "rect", "page": 0,
+            "x": 10, "y": 20, "width": 100, "height": 50, "color": "#ff0000",
+            "author": "Engell", "createdAt": 1785000000000, "status": "resolved",
+            "replies": [{"id": "r1", "author": "Otro", "text": "Revisar cota", "at": 1785000100000}],
+        }]}
+        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 200
+        loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
+        assert loaded["author"] == "Engell"
+        assert loaded["status"] == "resolved"
+        assert loaded["createdAt"] == 1785000000000
+        assert loaded["replies"][0]["text"] == "Revisar cota"
+
+    def test_xfdf_includes_author_and_date(self, client, open_doc, tmp_path):
+        info = open_doc()
+        out = str(tmp_path / "marcas.xfdf")
+        anns = {"annotations": [{
+            "id": "a1", "type": "highlight", "page": 0,
+            "x": 10, "y": 20, "width": 100, "height": 50, "color": "#ff0000",
+            "author": "Engell", "createdAt": 1785000000000,
+        }]}
+        res = client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns)
+        assert res.status_code == 200
+        content = open(out, encoding="utf-8").read()
+        assert 'title="Engell"' in content
+        assert 'date="D:' in content
+
     def test_corrupt_sidecar_returns_empty(self, client, open_doc):
         info = open_doc()
         with open(info["file_path"] + ".pdfmaster.json", "w") as f:
@@ -134,6 +178,57 @@ class TestAnnotations:
         }]}
         resp = client.post(f"/pdf/embed/{info['doc_id']}", json=anns)
         assert resp.status_code == 200
+
+    def test_embed_line_and_callout(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "l1", "type": "line", "page": 0, "x": 20, "y": 20, "width": 120, "height": 60,
+             "color": "#ff0000", "lineWidth": 2, "lineStyle": "dashed"},
+            {"id": "cal1", "type": "callout", "page": 0, "x": 200, "y": 200, "width": 160, "height": 48,
+             "color": "#ef4444", "text": "Revisar esta cota", "fontSize": 12,
+             "points": [{"x": 100, "y": 300}]},
+        ]}
+        assert client.post(f"/pdf/embed/{info['doc_id']}", json=anns).status_code == 200
+
+    def test_xfdf_line_and_callout(self, client, open_doc, tmp_path):
+        info = open_doc()
+        out = str(tmp_path / "formas.xfdf")
+        anns = {"annotations": [
+            {"id": "l1", "type": "line", "page": 0, "x": 20, "y": 20, "width": 120, "height": 60, "color": "#ff0000"},
+            {"id": "cal1", "type": "callout", "page": 0, "x": 200, "y": 200, "width": 160, "height": 48,
+             "color": "#ef4444", "text": "Nota", "points": [{"x": 100, "y": 300}]},
+        ]}
+        assert client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns).status_code == 200
+        content = open(out, encoding="utf-8").read()
+        assert "<line" in content
+        assert "freetext" in content and "FreeTextCallout" in content
+
+    def test_embed_perimeter_and_count_symbols(self, client, open_doc):
+        info = open_doc()
+        anns = {"annotations": [
+            {"id": "p1", "type": "measure_perimeter", "page": 0, "x": 10, "y": 10,
+             "color": "#22d3ee", "lineWidth": 2,
+             "points": [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 70}],
+             "measurement": {"value": 3.5, "unit": "m", "label": "3.50 m"}},
+        ] + [
+            {"id": f"c-{s}", "type": "count", "page": 0, "x": 50 + i * 20, "y": 200,
+             "color": "#ef4444", "text": "Luminarias", "symbol": s}
+            for i, s in enumerate(["circle", "square", "triangle", "diamond", "cross", "star"])
+        ]}
+        assert client.post(f"/pdf/embed/{info['doc_id']}", json=anns).status_code == 200
+
+    def test_xfdf_perimeter_uses_points_bbox(self, client, open_doc, tmp_path):
+        info = open_doc()
+        out = str(tmp_path / "perim.xfdf")
+        anns = {"annotations": [{
+            "id": "p1", "type": "measure_perimeter", "page": 0, "x": 10, "y": 10, "color": "#22d3ee",
+            "points": [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 70}],
+            "measurement": {"value": 3.5, "unit": "m", "label": "3.50 m"},
+        }]}
+        assert client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns).status_code == 200
+        content = open(out, encoding="utf-8").read()
+        assert "<polyline" in content
+        assert 'rect="10.00' in content  # bbox de los vértices, no 0,0
 
     def test_embed_with_stroke_style_opacity_fill(self, client, open_doc):
         info = open_doc()

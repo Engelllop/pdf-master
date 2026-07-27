@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Sparkles, X, Send, KeyRound, Loader2, Eraser, Square } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 
-const KEY_STORAGE = 'pdfmaster_anthropic_key'
+const LEGACY_KEY_STORAGE = 'pdfmaster_anthropic_key'
 
 interface Msg { role: 'user' | 'assistant'; text: string }
 
@@ -10,9 +10,26 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const { docs, activeDocId } = useStoreSlice('docs', 'activeDocId')
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
 
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORAGE) || '')
+  // La key vive cifrada en el main (safeStorage); aquí solo se sabe si existe.
+  const [hasKey, setHasKey] = useState(false)
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
+
+  useEffect(() => {
+    // Migración: keys guardadas en localStorage por versiones anteriores pasan al
+    // almacén cifrado y se borran de localStorage.
+    const legacy = localStorage.getItem(LEGACY_KEY_STORAGE)
+    if (legacy) {
+      window.api.aiSetKey(legacy).then((r) => {
+        if (r.success) {
+          localStorage.removeItem(LEGACY_KEY_STORAGE)
+          setHasKey(true)
+        }
+      })
+      return
+    }
+    window.api.aiHasKey().then(setHasKey)
+  }, [])
   // Conversación independiente por documento (clave = doc_id, o '__nodoc__' sin doc).
   const [conversations, setConversations] = useState<Record<string, Msg[]>>({})
   const [input, setInput] = useState('')
@@ -68,18 +85,18 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     }
     window.addEventListener('app:ai-preset', onPreset as EventListener)
     return () => window.removeEventListener('app:ai-preset', onPreset as EventListener)
-  }, [apiKey, activeDocId, conversations, streaming])
+  }, [hasKey, activeDocId, conversations, streaming])
 
-  const saveKey = () => {
+  const saveKey = async () => {
     const k = keyInput.trim()
     if (!k) return
-    localStorage.setItem(KEY_STORAGE, k)
-    setApiKey(k); setEditingKey(false); setKeyInput('')
+    const r = await window.api.aiSetKey(k)
+    if (r.success) { setHasKey(true); setEditingKey(false); setKeyInput('') }
   }
 
   const send = (text: string) => {
     const content = text.trim()
-    if (!content || streaming || !apiKey) return
+    if (!content || streaming || !hasKey) return
     const key = activeDocId || '__nodoc__'
     const history = [...(conversations[key] || []), { role: 'user' as const, text: content }]
     const requestId = crypto.randomUUID()
@@ -88,10 +105,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     setMsgsFor(key, () => [...history, { role: 'assistant', text: '' }])
     setInput('')
     setStreaming(true)
-    window.api.aiChat({ requestId, docId: activeDocId, apiKey, messages: history, scope, page: activeDoc?.currentPage ?? 0 })
+    window.api.aiChat({ requestId, docId: activeDocId, messages: history, scope, page: activeDoc?.currentPage ?? 0 })
   }
 
-  if (!apiKey || editingKey) {
+  if (!hasKey || editingKey) {
     return (
       <div className="w-[360px] border-l border-border bg-panel flex flex-col shrink-0">
         <Header onClose={onClose} onKey={() => {}} />

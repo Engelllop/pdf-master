@@ -77,7 +77,7 @@ class DocumentsMixin:
             logger.exception("compress falló (doc %s → %s)", doc_id, output_path)
             return False
 
-    def save(self, doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
+    def save(self, doc_id: str, output_path: Optional[str] = None, backup: bool = False) -> Optional[str]:
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
@@ -88,6 +88,14 @@ class DocumentsMixin:
             temp_path = None
             try:
                 import tempfile
+                # Copia de seguridad opcional (ajuste del usuario): solo al sobrescribir
+                # un archivo existente, y nunca de forma automática.
+                if backup and os.path.exists(save_path):
+                    import shutil
+                    try:
+                        shutil.copy2(save_path, save_path + '.bak')
+                    except Exception:
+                        logger.exception("No se pudo crear la copia .bak de %s", save_path)
                 dir_name = os.path.dirname(os.path.abspath(save_path))
                 fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
                 os.close(fd)

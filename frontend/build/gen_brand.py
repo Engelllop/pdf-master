@@ -1,107 +1,133 @@
-"""Generate the professional app icon (pure code) and NSIS installer graphics."""
+"""Genera icono de la app (fondo transparente real) y graficos NSIS del instalador
+a partir del logo fuente. Fuente: glifo negro sobre fondo blanco -> se elimina el
+fondo por flood-fill desde los bordes (las letras "PDF" internas se conservan)."""
 import os
+from collections import deque
+
 from PIL import Image, ImageDraw, ImageFont
 
 BUILD = os.path.dirname(os.path.abspath(__file__))
-TENKA = r"C:\Users\Engelllop\Downloads\Tenka_Izumo.png"
+LOGO_SRC = r"C:\Users\Engelllop\Downloads\LOGO PDF-Master.png"
+RENDERER_ICON = os.path.join(BUILD, "..", "src", "renderer", "src", "assets", "icon.png")
+
+DARK_TOP = (24, 27, 33)
+DARK_BOT = (15, 17, 21)
 
 
-def load_font(size, bold=True):
-    for name in (("arialbd.ttf", "ariblk.ttf") if bold else ("arial.ttf",)):
-        try:
-            return ImageFont.truetype(name, size)
-        except Exception:
-            continue
+def load_glyph():
+    """Logo con el fondo blanco exterior eliminado (alpha 0), recortado a su bbox."""
+    im = Image.open(LOGO_SRC).convert("RGBA")
+    w, h = im.size
+    px = im.load()
+
+    def is_bg(x, y):
+        r, g, b, a = px[x, y]
+        return a < 10 or (r > 180 and g > 180 and b > 180)
+
+    seen = bytearray(w * h)
+    q = deque()
+    for x in range(w):
+        for y in (0, h - 1):
+            if is_bg(x, y) and not seen[y * w + x]:
+                seen[y * w + x] = 1
+                q.append((x, y))
+    for y in range(h):
+        for x in (0, w - 1):
+            if is_bg(x, y) and not seen[y * w + x]:
+                seen[y * w + x] = 1
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        px[x, y] = (0, 0, 0, 0)
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and is_bg(nx, ny):
+                seen[ny * w + nx] = 1
+                q.append((nx, ny))
+
+    return im.crop(im.getbbox())
+
+
+def invert(glyph):
+    from PIL import ImageOps
+    rgb = ImageOps.invert(glyph.convert("RGB"))
+    rgb.putalpha(glyph.getchannel("A"))
+    return rgb
+
+
+def square(glyph, size, pad=0.08):
+    inner = int(size * (1 - 2 * pad))
+    g = glyph.copy()
+    g.thumbnail((inner, inner), Image.LANCZOS)
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    canvas.paste(g, ((size - g.width) // 2, (size - g.height) // 2), g)
+    return canvas
+
+
+def font(size, weight="semibold"):
+    names = {"semibold": "seguisb.ttf", "regular": "segoeui.ttf", "light": "segoeuil.ttf"}
     try:
-        return ImageFont.truetype(r"C:\Windows\Fonts\arialbd.ttf", size)
+        return ImageFont.truetype(rf"C:\Windows\Fonts\{names[weight]}", size)
     except Exception:
         return ImageFont.load_default()
 
 
-def lerp(a, b, t):
-    return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+def vgrad(w, h, top, bot):
+    col = Image.new("RGB", (1, h))
+    for y in range(h):
+        t = y / (h - 1)
+        col.putpixel((0, y), tuple(int(top[i] + (bot[i] - top[i]) * t) for i in range(3)))
+    return col.resize((w, h))
 
 
-def _draw_M(draw, size, color, dx=0, dy=0):
-    """Bold geometric 'M' monogram (for 'Master') that fills most of the canvas."""
-    top = int(size * 0.20) + dy
-    bot = int(size * 0.80) + dy
-    xl = int(size * 0.17) + dx
-    xr = int(size * 0.83) + dx
-    mid = int(size * 0.50) + dx
-    valley = int(size * 0.55) + dy
-    w = int(size * 0.155)
-    pts = [(xl, bot), (xl, top), (mid, valley), (xr, top), (xr, bot)]
-    draw.line(pts, fill=color, width=w, joint="curve")
-    r = w / 2
-    for (cx, cy) in [(xl, top), (xl, bot), (xr, top), (xr, bot)]:
-        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
-
-
-def make_icon(size=1024):
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-
-    # Full-bleed vertical gradient inside a rounded square (fills the whole tile)
-    top = (37, 99, 235)     # blue-600
-    bot = (67, 56, 202)     # indigo-700
-    grad = Image.new("RGB", (1, size))
-    for y in range(size):
-        grad.putpixel((0, y), lerp(top, bot, y / size))
-    grad = grad.resize((size, size))
-    mask = Image.new("L", (size, size), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=int(size * 0.20), fill=255)
-    img.paste(grad, (0, 0), mask)
-
+def sidebar(glyph):
+    W, H = 164, 314
+    img = vgrad(W, H, DARK_TOP, DARK_BOT).convert("RGB")
     d = ImageDraw.Draw(img)
-    # subtle depth shadow under the monogram
-    _draw_M(d, size, (23, 30, 84, 130), dx=0, dy=int(size * 0.014))
-    # main white monogram
-    _draw_M(d, size, (255, 255, 255, 255))
-    # red accent dot in the M's valley — a touch of the document/brand color
-    rr = int(size * 0.052)
-    cx, cy = int(size * 0.50), int(size * 0.55)
-    d.ellipse([cx - rr, cy - rr, cx + rr, cy + rr], fill=(220, 38, 38, 255))
 
-    return img
+    mark = invert(glyph)
+    mark.thumbnail((72, 72), Image.LANCZOS)
+    mx, my = (W - mark.width) // 2, 92
+    img.paste(mark, (mx, my), mark)
 
+    f1 = font(17)
+    t1 = "PDF Master"
+    tw = d.textlength(t1, font=f1)
+    d.text(((W - tw) / 2, my + mark.height + 18), t1, font=f1, fill=(245, 246, 248))
 
-def cover_crop(im, tw, th, anchor_y=0.5):
-    """Fill tw x th by scaling to cover and cropping (no bars, no distortion).
-    anchor_y biases the vertical crop (0 = top/face, 0.5 = center)."""
-    sw, sh = im.size
-    scale = max(tw / sw, th / sh)
-    nw, nh = int(sw * scale + 0.5), int(sh * scale + 0.5)
-    im2 = im.resize((nw, nh), Image.LANCZOS)
-    x = (nw - tw) // 2
-    y = int((nh - th) * anchor_y)
-    return im2.crop((x, y, x + tw, y + th))
+    f2 = font(10, "regular")
+    t2 = "Lector y editor de PDF"
+    tw2 = d.textlength(t2, font=f2)
+    d.text(((W - tw2) / 2, my + mark.height + 44), t2, font=f2, fill=(148, 155, 166))
+
+    lw = 28
+    d.rectangle([(W - lw) // 2, H - 40, (W + lw) // 2, H - 39], fill=(90, 96, 106))
+    img.save(os.path.join(BUILD, "installerSidebar.bmp"), "BMP")
 
 
-def contain_on_bg(im, tw, th, bg):
-    canvas = Image.new("RGB", (tw, th), bg)
-    sw, sh = im.size
-    scale = min(tw / sw, th / sh)
-    nw, nh = max(1, int(sw * scale)), max(1, int(sh * scale))
-    im2 = im.resize((nw, nh), Image.LANCZOS)
-    canvas.paste(im2, ((tw - nw) // 2, (th - nh) // 2))
-    return canvas
+def header(glyph):
+    W, H = 150, 57
+    img = Image.new("RGB", (W, H), (255, 255, 255))
+    mark = glyph.copy()
+    mark.thumbnail((30, 30), Image.LANCZOS)
+    img.paste(mark, (W - mark.width - 14, (H - mark.height) // 2), mark)
+    img.save(os.path.join(BUILD, "installerHeader.bmp"), "BMP")
 
 
 def main():
-    icon = make_icon(1024)
-    icon.convert("RGBA").save(os.path.join(BUILD, "icon.png"))
-    icon.save(os.path.join(BUILD, "icon.ico"),
-              sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
-    print("icon.png + icon.ico generados")
+    glyph = load_glyph()
 
-    if os.path.exists(TENKA):
-        tk = Image.open(TENKA).convert("RGB")
-        cover_crop(tk, 164, 314, anchor_y=0.30).save(os.path.join(BUILD, "installerSidebar.bmp"), "BMP")
-        # Header fills the strip with a face-biased crop — no black bars, no stretching
-        cover_crop(tk, 150, 57, anchor_y=0.30).save(os.path.join(BUILD, "installerHeader.bmp"), "BMP")
-        print("installerSidebar.bmp + installerHeader.bmp generados")
-    else:
-        print("WARN: no se encontro Tenka_Izumo.png")
+    icon = square(glyph, 1024)
+    icon.resize((256, 256), Image.LANCZOS).save(os.path.join(BUILD, "icon.png"))
+    icon.resize((256, 256), Image.LANCZOS).save(
+        os.path.join(BUILD, "icon.ico"),
+        sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+    )
+    icon.resize((256, 256), Image.LANCZOS).save(RENDERER_ICON)
+    print("icon.png + icon.ico + renderer icon.png (fondo transparente)")
+
+    sidebar(glyph)
+    header(glyph)
+    print("installerSidebar.bmp + installerHeader.bmp")
 
 
 if __name__ == "__main__":

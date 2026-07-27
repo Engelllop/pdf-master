@@ -1,4 +1,4 @@
-import { PanelLeft, Sun, Moon, HelpCircle } from 'lucide-react'
+import { PanelLeft, Sun, Moon, HelpCircle, Settings } from 'lucide-react'
 import Tooltip from './Tooltip'
 import TabStrip from './TabStrip'
 import { useStoreSlice } from '../hooks/useStoreSlice'
@@ -30,6 +30,9 @@ export default function TopBar() {
           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Cambiar tema" className={rightBtn}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
+        </Tooltip>
+        <Tooltip content="Ajustes">
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-settings'))} aria-label="Ajustes" className={rightBtn}><Settings size={16} /></button>
         </Tooltip>
         <Tooltip content="Atajos de teclado" shortcut="F1">
           <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-shortcuts'))} aria-label="Atajos" className={rightBtn}><HelpCircle size={16} /></button>

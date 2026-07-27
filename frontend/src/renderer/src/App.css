@@ -2,31 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens (claro por defecto). El tema oscuro los sobreescribe en .dark */
+/* Design tokens (claro por defecto). El tema oscuro los sobreescribe en .dark.
+   Los colores van como canales RGB "r g b" para que Tailwind pueda aplicar
+   opacidad (bg-accent/10, bg-surface/80…) vía rgb(var(--x) / <alpha-value>). */
 :root {
-  --surface: #f3f4f6;   /* fondo del área de documento */
-  --panel: #ffffff;     /* paneles laterales */
-  --toolbar: #ffffff;   /* barras superior e inferior */
-  --border: #e3e5e9;
-  --fg: #1f2329;        /* texto / iconos (casi negro) */
-  --muted: #6b7280;
-  --accent: #1f2329;    /* indicadores activos en negro (no azul) */
-  --hover: #eef0f3;     /* hover de botones */
-  --active: #e8e9ec;    /* fondo de herramienta/pestaña activa */
+  --surface: 243 244 246;   /* fondo del área de documento */
+  --panel: 255 255 255;     /* paneles laterales */
+  --toolbar: 255 255 255;   /* barras superior e inferior */
+  --border: 227 229 233;
+  --fg: 31 35 41;           /* texto / iconos (casi negro) */
+  --muted: 87 96 106;
+  --accent: 31 35 41;       /* indicadores activos en negro (no azul) */
+  --hover: 238 240 243;     /* hover de botones */
+  --active: 232 233 236;    /* fondo de herramienta/pestaña activa */
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 html.dark {
-  --surface: #0f172a;
-  --panel: #1e293b;
-  --toolbar: #1e293b;
-  --border: #334155;
-  --fg: #e2e8f0;
-  --muted: #94a3b8;
-  --accent: #f1f5f9;
-  --hover: #334155;
-  --active: #2a2f3a;
+  --surface: 15 23 42;
+  --panel: 30 41 59;
+  --toolbar: 30 41 59;
+  --border: 51 65 85;
+  --fg: 226 232 240;
+  --muted: 148 163 184;
+  --accent: 241 245 249;
+  --hover: 51 65 85;
+  --active: 42 47 58;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
@@ -42,8 +44,8 @@ html, body, #root {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  background-color: var(--surface);
-  color: var(--fg);
+  background-color: rgb(var(--surface));
+  color: rgb(var(--fg));
 }
 
 ::-webkit-scrollbar {
@@ -79,11 +81,18 @@ html:not(.dark) ::-webkit-scrollbar-thumb:hover {
 /* Foco visible al navegar con teclado (no aparece con clic de ratón) */
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid rgb(var(--accent));
   outline-offset: -2px;
   border-radius: 4px;
 }
+
+/* Oculta la barra de scroll horizontal en tiras de pestañas (ribbon / tabs) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
 
 @keyframes menu-in {
   from { opacity: 0; transform: translateY(-4px); }

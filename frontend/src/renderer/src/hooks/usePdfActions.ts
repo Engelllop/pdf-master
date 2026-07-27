@@ -1,5 +1,5 @@
 import { useStoreSlice } from './useStoreSlice'
-import { type PdfDoc } from '../store/usePdfStore'
+import { usePdfStore, type PdfDoc } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
@@ -37,11 +37,11 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleExportWord = async () => {
     if (!activeDoc) return
     try {
-      const res = await apiFetch(`/pdf/export-word/${activeDoc.doc_id}`)
+      const res = await withProgress('Exportando a Word…', () => apiFetch(`/pdf/export-word/${activeDoc.doc_id}`))
       if (res.ok) {
         const data = await res.json()
         const link = document.createElement('a')
-        link.download = data.filename || `${activeDoc.file_name.replace('.pdf', '')}.docx`
+        link.download = data.filename || `${activeDoc.file_name.replace(/\.pdf$/i, '')}.docx`
         link.href = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${data.data_base64}`
         link.click()
         showToast('Exportado a Word', 'success')
@@ -96,8 +96,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     try {
       const avail = await (await apiFetch(`/pdf/ocr-available`)).json()
       if (!avail.available) { showToast('Tesseract OCR no está instalado en el sistema', 'error'); return }
-      showToast('Procesando OCR de la página...', 'info')
-      const res = await apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}?page=${activeDoc.currentPage}`, { method: 'POST' })
+      const res = await withProgress('Haciendo la página buscable (OCR)…', () => apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}?page=${activeDoc.currentPage}`, { method: 'POST' }))
       if (res.ok) {
         const d = await res.json()
         setDocDirty(activeDoc.doc_id, true)
@@ -183,10 +182,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleExportExcel = async () => {
     if (!activeDoc) return
-    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '.xlsx') })
+    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.xlsx') })
     if (!outputPath) return
     try {
-      const res = await apiFetch(`/pdf/export-excel/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await withProgress('Exportando a Excel…', () => apiFetch(`/pdf/export-excel/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (res.ok) {
         showToast('Exportado a Excel', 'success')
       } else {
@@ -199,10 +198,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleExportPptx = async () => {
     if (!activeDoc) return
-    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '.pptx') })
+    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.pptx') })
     if (!outputPath) return
     try {
-      const res = await apiFetch(`/pdf/export-pptx/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await withProgress('Exportando a PowerPoint…', () => apiFetch(`/pdf/export-pptx/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (res.ok) {
         showToast('Exportado a PowerPoint', 'success')
       } else {
@@ -216,7 +215,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleOcr = async () => {
     if (!activeDoc) return
     try {
-      const res = await apiFetch(`/pdf/ocr/${activeDoc.doc_id}/${activeDoc.currentPage}`)
+      const res = await withProgress('Reconociendo texto (OCR)…', () => apiFetch(`/pdf/ocr/${activeDoc.doc_id}/${activeDoc.currentPage}`))
       if (res.ok) {
         const data = await res.json()
         await askForm(`Texto OCR · página ${activeDoc.currentPage + 1}`,
@@ -238,7 +237,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `${activeDoc.file_name.replace('.pdf', '')}_pagina_${activeDoc.currentPage + 1}.png`
+        a.download = `${activeDoc.file_name.replace(/\.pdf$/i, '')}_pagina_${activeDoc.currentPage + 1}.png`
         a.click()
         URL.revokeObjectURL(url)
         showToast('Página guardada como imagen', 'success')
@@ -316,16 +315,18 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       if (res.ok) {
         const data = await res.json()
         if (data.success) {
-          // Reload doc info
-          const infoRes = await apiFetch(`/pdf/open`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file_path: activeDoc.file_path }),
-          })
-          const info = await infoRes.json()
-          updateDocPageCount(activeDoc.doc_id, info.page_count)
-          updateDocPageSizes(activeDoc.doc_id, info.page_sizes)
+          // El merge vive solo en memoria del motor: /pdf/info devuelve el estado
+          // actualizado (reabrir el archivo desde disco daba el page_count viejo).
+          const infoRes = await apiFetch(`/pdf/info/${activeDoc.doc_id}`)
+          if (infoRes.ok) {
+            const info = await infoRes.json()
+            updateDocPageCount(activeDoc.doc_id, info.page_count)
+            updateDocPageSizes(activeDoc.doc_id, info.page_sizes)
+          }
+          setDocDirty(activeDoc.doc_id, true)
           invalidatePageCache(activeDoc.doc_id)
           invalidateThumbnails(activeDoc.doc_id)
+          incrementDocVersion(activeDoc.doc_id)
           showToast('PDFs combinados', 'success')
         }
       }
@@ -336,9 +337,9 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleCompress = async () => {
     if (!activeDoc) return
-    const outputPath = activeDoc.file_path.replace('.pdf', '_compressed.pdf')
+    const outputPath = activeDoc.file_path.replace(/\.pdf$/i, '_compressed.pdf')
     try {
-      const res = await apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      const res = await withProgress('Comprimiendo…', () => apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (res.ok) {
         showToast('Comprimido: ' + outputPath.split(/[\\/]/).pop(), 'success')
       } else {
@@ -352,12 +353,34 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const runBatch = async (label: string, op: (d: typeof docs[number]) => Promise<void>) => {
     if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
-    showToast(`${label}: procesando ${docs.length} documento(s)...`, 'info')
+    const { startProgress, updateProgress, endProgress, isCancelRequested } = usePdfStore.getState()
+    startProgress(label, docs.length)
     let ok = 0
-    for (const d of docs) {
+    let canceled = false
+    for (const [i, d] of docs.entries()) {
+      // Cancelar detiene la cola: lo ya procesado se conserva.
+      if (isCancelRequested()) { canceled = true; break }
+      updateProgress(i, d.file_name)
       try { await op(d); ok++ } catch (err) { window.api.logError(`[batch] ${String(err)}`).catch(() => {}) }
+      updateProgress(i + 1, d.file_name)
     }
-    showToast(`${label}: ${ok}/${docs.length} completado(s)`, ok === docs.length ? 'success' : 'error')
+    endProgress()
+    showToast(
+      canceled ? `${label}: cancelado tras ${ok} documento(s)` : `${label}: ${ok}/${docs.length} completado(s)`,
+      canceled ? 'info' : ok === docs.length ? 'success' : 'error',
+    )
+  }
+
+  /** Envuelve una operación de un solo documento que tarda (OCR, exportar, comprimir)
+   * con un progreso indeterminado, para que la app no parezca colgada. */
+  const withProgress = async <T,>(label: string, op: () => Promise<T>): Promise<T> => {
+    const { startProgress, endProgress } = usePdfStore.getState()
+    startProgress(label, 0, false)
+    try {
+      return await op()
+    } finally {
+      endProgress()
+    }
   }
 
   const handleBatchCompress = () => runBatch('Comprimir', async (d) => {
@@ -614,7 +637,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleExportMeasurements = async () => {
     if (!activeDoc) return
     const anns = activeDoc.annotations
-    const measures = anns.filter((a) => a.type === 'measure_distance' || a.type === 'measure_area')
+    const measures = anns.filter((a) => a.type === 'measure_distance' || a.type === 'measure_area' || a.type === 'measure_perimeter')
     const counts = anns.filter((a) => a.type === 'count')
     if (measures.length === 0 && counts.length === 0) {
       showToast('No hay mediciones ni conteos en el documento', 'info')
@@ -629,18 +652,21 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       .sort((a, b) => a.page - b.page)
       .map((a) => ({
         page: String(a.page + 1),
-        tipo: a.type === 'measure_distance' ? 'Distancia' : 'Área',
+        tipo: a.type === 'measure_distance' ? 'Distancia' : a.type === 'measure_perimeter' ? 'Perímetro' : 'Área',
         etiqueta: a.measurement?.label || '',
         valor: a.measurement ? a.measurement.value.toFixed(2) : '',
         unidad: a.measurement?.unit || 'px',
       }))
-    const byCategory = new Map<string, number>()
+    // Los conteos se agrupan por categoría + símbolo (dos categorías pueden usar
+    // el mismo nombre con símbolos distintos en planos diferentes).
+    const byCategory = new Map<string, { n: number; symbol: string }>()
     for (const c of counts) {
       const cat = c.text || 'General'
-      byCategory.set(cat, (byCategory.get(cat) || 0) + 1)
+      const cur = byCategory.get(cat)
+      byCategory.set(cat, { n: (cur?.n || 0) + 1, symbol: c.symbol || cur?.symbol || 'circle' })
     }
-    for (const [cat, n] of byCategory) {
-      rows.push({ page: '', tipo: 'Conteo (total)', etiqueta: cat, valor: String(n), unidad: 'uds' })
+    for (const [cat, { n, symbol }] of byCategory) {
+      rows.push({ page: '', tipo: `Conteo (${symbol})`, etiqueta: cat, valor: String(n), unidad: 'uds' })
     }
     const scale = activeDoc.measurementScale
     const title = `${activeDoc.file_name} — ${scale ? `escala: 1 ${scale.unit} = ${scale.pixelsPerUnit.toFixed(2)} pt` : 'sin calibrar'}`

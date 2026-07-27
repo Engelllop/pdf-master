@@ -8,6 +8,7 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
   {
     title: 'Archivo',
     items: [
+      ['Ctrl+K', 'Paleta de comandos'],
       ['Ctrl+O', 'Abrir PDF'],
       ['Ctrl+S', 'Guardar'],
       ['Ctrl+W', 'Cerrar pestaña'],
@@ -38,9 +39,35 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
     items: [
       ['Ctrl+Z / Ctrl+Y', 'Deshacer / rehacer'],
       ['Ctrl+F', 'Buscar'],
-      ['Supr / Retroceso', 'Eliminar anotación seleccionada'],
+      ['Supr / Retroceso', 'Eliminar la selección'],
       ['Enter', 'Cerrar polígono de medición de área'],
-      ['Esc', 'Cancelar herramienta activa'],
+      ['Esc', 'Soltar herramienta y selección'],
+    ],
+  },
+  {
+    title: 'Marcas seleccionadas',
+    items: [
+      ['Clic', 'Seleccionar una marca'],
+      ['Ctrl+clic', 'Añadir o quitar de la selección'],
+      ['Arrastrar con V', 'Marquesina de selección'],
+      ['Ctrl+A', 'Todas las de la página'],
+      ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copiar / cortar / pegar (entre páginas y documentos)'],
+      ['Ctrl+D', 'Duplicar'],
+      ['↑ ↓ ← →', 'Mover 1 pt (Shift: 10 pt)'],
+    ],
+  },
+  {
+    title: 'Herramientas',
+    items: [
+      ['V', 'Seleccionar'],
+      ['H / U / K', 'Resaltar / subrayar / tachar'],
+      ['R / O', 'Rectángulo / círculo'],
+      ['L / A / G', 'Línea / flecha / llamada'],
+      ['T / N / D', 'Cuadro de texto / nota / dibujar'],
+      ['C', 'Conteo'],
+      ['M / Shift+M', 'Medir distancia / área'],
+      ['Shift+C', 'Calibrar escala'],
+      ['Shift al dibujar', 'Ángulos de 45° · cuadrados'],
     ],
   },
   {

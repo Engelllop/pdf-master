@@ -13,12 +13,19 @@ import PresentationView from './components/PresentationView'
 import ContinuousView from './components/ContinuousView'
 import FloatingViewBar from './components/FloatingViewBar'
 import ShortcutsModal from './components/ShortcutsModal'
+import SettingsModal from './components/SettingsModal'
 import AIPanel from './components/AIPanel'
 import { useFormModal } from './components/FormModal'
 import { registerPromptHandler } from './lib/uiPrompt'
 import { openDocument } from './lib/openDocument'
 import { requestCloseDoc } from './lib/closeDocument'
 import { updateRecentMeta } from './lib/recents'
+import { TOOL_KEYS } from './lib/tools'
+import CalibrationBanner from './components/CalibrationBanner'
+import ProgressBar from './components/ProgressBar'
+import CommandPalette from './components/CommandPalette'
+import StampSignatureManager from './components/StampSignatureManager'
+import PageOrganizer from './components/PageOrganizer'
 
 import { apiFetch } from './lib/api'
 
@@ -27,10 +34,15 @@ function App() {
     'theme', 'readingMode', 'compareMode', 'presentationMode', 'continuousMode',
     'docs', 'activeDocId', 'toggleReadingMode', 'setActiveDoc', 'nextPage', 'prevPage',
     'setPage', 'toggleSidebar', 'setZoom', 'setFitMode',
+    'activeTool', 'setActiveTool', 'setActiveRibbon',
   )
   const { theme, readingMode, compareMode, presentationMode, continuousMode } = store
   const [backendOk, setBackendOk] = useState(true)
   const [showShortcuts, setShowShortcuts] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [showPalette, setShowPalette] = useState(false)
+  const [showStamps, setShowStamps] = useState(false)
+  const [showOrganizer, setShowOrganizer] = useState(false)
   const [aiOpen, setAiOpen] = useState(false)
   const { askForm, askConfirm, formModal } = useFormModal()
 
@@ -54,15 +66,50 @@ function App() {
         setShowShortcuts((s) => !s)
       } else if (e.key === 'Escape') {
         setShowShortcuts(false)
+        setShowSettings(false)
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setShowPalette((s) => !s)
       }
     }
     const onOpen = () => setShowShortcuts(true)
+    const onSettings = () => setShowSettings(true)
+    const onStamps = () => setShowStamps(true)
+    const onOrganizer = () => setShowOrganizer(true)
+    window.addEventListener('app:page-organizer', onOrganizer as EventListener)
     window.addEventListener('keydown', onKey)
     window.addEventListener('app:show-shortcuts', onOpen as EventListener)
+    window.addEventListener('app:show-settings', onSettings as EventListener)
+    window.addEventListener('app:show-stamps', onStamps as EventListener)
     return () => {
       window.removeEventListener('keydown', onKey)
       window.removeEventListener('app:show-shortcuts', onOpen as EventListener)
+      window.removeEventListener('app:show-settings', onSettings as EventListener)
+      window.removeEventListener('app:show-stamps', onStamps as EventListener)
+      window.removeEventListener('app:page-organizer', onOrganizer as EventListener)
     }
+  }, [])
+
+  // Autor por defecto de las marcas: el usuario de Windows, hasta que se cambie en Ajustes.
+  useEffect(() => {
+    if (usePdfStore.getState().annotationAuthor) return
+    window.api.osUsername()
+      .then((name) => { if (name) usePdfStore.getState().setAnnotationAuthor(name) })
+      .catch(() => {})
+  }, [])
+
+  // Escalado de interfaz guardado: hay que reaplicarlo en cada arranque de ventana.
+  useEffect(() => {
+    const scale = usePdfStore.getState().uiScale
+    if (scale !== 1) window.api.setUiZoom(scale).catch(() => {})
+  }, [])
+
+  // Tema "seguir al sistema": reacciona a los cambios de Windows en caliente.
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = () => usePdfStore.getState().applySystemTheme()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
   }, [])
 
   useEffect(() => {
@@ -115,6 +162,7 @@ function App() {
   // Restore the previous session on startup (only if nothing was opened via file association).
   useEffect(() => {
     const t = setTimeout(async () => {
+      if (!usePdfStore.getState().restoreSession) return
       if (usePdfStore.getState().docs.length > 0) return
       let session: { activeFile: string | null; docs: { file_path: string; currentPage: number; zoom: number; fitMode: string }[] } | null = null
       try { session = JSON.parse(localStorage.getItem('pdfmaster_session') || 'null') } catch {}
@@ -229,9 +277,11 @@ function App() {
         }
       }
 
-      // Navigation keys (work even without meta)
+      // Navigation keys (work even without meta). Con marcas seleccionadas las
+      // flechas las desplazan (useKeyboardShortcuts), así que aquí no navegan.
       const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
-      if (!isMeta && activeDoc) {
+      const hasSelection = usePdfStore.getState().selectedAnnotationIds.length > 0
+      if (!isMeta && activeDoc && !(hasSelection && e.key.startsWith('Arrow'))) {
         switch (e.key) {
           case 'ArrowDown':
           case 'PageDown':
@@ -251,6 +301,20 @@ function App() {
             e.preventDefault()
             store.setPage(activeDoc.doc_id, activeDoc.page_count - 1)
             break
+        }
+      }
+
+      // Herramientas con una sola tecla (V, H, R, M…). Solo en el visor de página
+      // única: el modo continuo y la comparación no dibujan.
+      if (!isMeta && activeDoc && !compareMode && !presentationMode && !continuousMode) {
+        const target = e.target as HTMLElement
+        const isEditing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
+        const tool = TOOL_KEYS[(e.shiftKey ? 'shift+' : '') + e.key.toLowerCase()]
+        if (!isEditing && tool) {
+          e.preventDefault()
+          store.setActiveTool(store.activeTool === tool ? null : tool)
+          store.setActiveRibbon('comment')
+          return
         }
       }
 
@@ -323,7 +387,7 @@ function App() {
   }, [store, readingMode])
 
   return (
-    <div className={`h-screen w-screen flex flex-col overflow-hidden transition-colors ${theme === 'dark' ? 'bg-slate-900' : 'bg-gray-100'}`}>
+    <div className="h-screen w-screen flex flex-col overflow-hidden transition-colors bg-surface">
       {!backendOk && (
         <div className="bg-red-600 text-white text-xs text-center py-1 px-3 font-medium flex items-center justify-center gap-1.5">
           <AlertTriangle size={13} className="shrink-0" />
@@ -340,6 +404,8 @@ function App() {
           ) : (
             continuousMode ? <ContinuousView /> : <Viewer />
           )}
+          {!readingMode && !compareMode && <CalibrationBanner />}
+          <ProgressBar />
           {!readingMode && !compareMode && <FloatingViewBar />}
           {!readingMode && <StatusBar />}
         </div>
@@ -349,6 +415,10 @@ function App() {
       {formModal}
       {presentationMode && <PresentationView />}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
+      {showStamps && <StampSignatureManager onClose={() => setShowStamps(false)} />}
+      {showOrganizer && <PageOrganizer onClose={() => setShowOrganizer(false)} />}
     </div>
   )
 }

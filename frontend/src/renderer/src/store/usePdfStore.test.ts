@@ -118,7 +118,10 @@ describe('remapDocId (auto-reparación de doc_ids muertos)', () => {
     const state = usePdfStore.getState()
     const doc = state.docs[0]
     expect(doc.doc_id).toBe('new')
-    expect(doc.annotations).toEqual([a])
+    // addAnnotation sella createdAt (y el autor si está configurado), así que se
+    // compara el contenido original en vez de la identidad exacta del objeto.
+    expect(doc.annotations).toHaveLength(1)
+    expect(doc.annotations[0]).toMatchObject(a)
     expect(doc.currentPage).toBe(3)
     expect(doc.zoom).toBe(2)
     expect(doc.pageCache.size).toBe(0)
@@ -167,6 +170,18 @@ describe('navegación de páginas', () => {
     expect(usePdfStore.getState().docs[0].currentPage).toBe(5)
     usePdfStore.getState().goForward('doc-1')
     expect(usePdfStore.getState().docs[0].currentPage).toBe(12)
+  })
+
+  it('el historial de navegación es independiente por documento', () => {
+    usePdfStore.getState().addDoc(docInfo({ doc_id: 'a', page_count: 20 }))
+    usePdfStore.getState().addDoc(docInfo({ doc_id: 'b', file_path: 'C:\\b.pdf', page_count: 20 }))
+    usePdfStore.getState().setPage('a', 5)
+    usePdfStore.getState().setPage('b', 9)
+    usePdfStore.getState().setPage('a', 12)
+    usePdfStore.getState().goBack('a')
+    const docs = usePdfStore.getState().docs
+    expect(docs.find((d) => d.doc_id === 'a')?.currentPage).toBe(5)
+    expect(docs.find((d) => d.doc_id === 'b')?.currentPage).toBe(9)
   })
 })
 
@@ -359,6 +374,217 @@ describe('preferencias de trazo', () => {
     const prefs = JSON.parse(localStorage.getItem('pdfmaster_stroke')!)
     expect(prefs.lineWidth).toBe(20)
     expect(prefs.opacity).toBe(0.05)
+  })
+})
+
+describe('herramienta pegajosa', () => {
+  it('con modo pegajoso, releaseTool mantiene la herramienta activa', () => {
+    usePdfStore.getState().setStickyTools(true)
+    usePdfStore.getState().setActiveTool('highlight')
+    usePdfStore.getState().releaseTool()
+    expect(usePdfStore.getState().activeTool).toBe('highlight')
+  })
+
+  it('sin modo pegajoso, releaseTool suelta la herramienta', () => {
+    usePdfStore.getState().setStickyTools(false)
+    usePdfStore.getState().setActiveTool('highlight')
+    usePdfStore.getState().releaseTool()
+    expect(usePdfStore.getState().activeTool).toBeNull()
+  })
+
+  it('las herramientas de un solo uso se sueltan aunque el modo pegajoso esté activo', () => {
+    usePdfStore.getState().setStickyTools(true)
+    for (const tool of ['image', 'measure_calibrate', 'croparea', 'redactarea']) {
+      usePdfStore.getState().setActiveTool(tool)
+      usePdfStore.getState().releaseTool()
+      expect(usePdfStore.getState().activeTool).toBeNull()
+    }
+  })
+
+  it('persiste la preferencia en localStorage', () => {
+    usePdfStore.getState().setStickyTools(false)
+    expect(localStorage.getItem('pdfmaster_sticky_tools')).toBe('0')
+    usePdfStore.getState().setStickyTools(true)
+    expect(localStorage.getItem('pdfmaster_sticky_tools')).toBe('1')
+  })
+})
+
+describe('metadatos de revisión', () => {
+  it('sella autor y fecha al crear la marca, y respeta los que ya vengan puestos', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().setAnnotationAuthor('Engell')
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    usePdfStore.getState().addAnnotation('doc-1', { ...ann({ id: 'a2' }), author: 'Otro', createdAt: 111 })
+    const [a1, a2] = usePdfStore.getState().docs[0].annotations
+    expect(a1.author).toBe('Engell')
+    expect(a1.createdAt).toBeGreaterThan(0)
+    expect(a2.author).toBe('Otro')
+    expect(a2.createdAt).toBe(111)
+  })
+
+  it('sin autor configurado no añade el campo (no ensucia el sidecar)', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().setAnnotationAuthor('')
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    expect('author' in usePdfStore.getState().docs[0].annotations[0]).toBe(false)
+  })
+
+  it('updateAnnotation marca modifiedAt', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    usePdfStore.getState().updateAnnotation('doc-1', 'a1', { color: '#000000' })
+    expect(usePdfStore.getState().docs[0].annotations[0].modifiedAt).toBeGreaterThan(0)
+  })
+
+  it('resuelve y reabre una marca', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    usePdfStore.getState().setAnnotationStatus('doc-1', 'a1', 'resolved')
+    expect(usePdfStore.getState().docs[0].annotations[0].status).toBe('resolved')
+    usePdfStore.getState().setAnnotationStatus('doc-1', 'a1', 'open')
+    expect(usePdfStore.getState().docs[0].annotations[0].status).toBe('open')
+  })
+
+  it('añade y elimina respuestas, ignorando las vacías', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().setAnnotationAuthor('Engell')
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    usePdfStore.getState().addReply('doc-1', 'a1', '   ')
+    expect(usePdfStore.getState().docs[0].annotations[0].replies).toBeUndefined()
+    usePdfStore.getState().addReply('doc-1', 'a1', '  Revisar cota  ')
+    const reply = usePdfStore.getState().docs[0].annotations[0].replies![0]
+    expect(reply.text).toBe('Revisar cota')
+    expect(reply.author).toBe('Engell')
+    usePdfStore.getState().deleteReply('doc-1', 'a1', reply.id)
+    expect(usePdfStore.getState().docs[0].annotations[0].replies).toEqual([])
+  })
+})
+
+describe('selección múltiple y portapapeles', () => {
+  const seed = () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a1' }))
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a2' }))
+    usePdfStore.getState().addAnnotation('doc-1', ann({ id: 'a3' }))
+  }
+
+  it('toggle suma y resta, y la principal es la última', () => {
+    seed()
+    usePdfStore.getState().selectAnnotation('doc-1', 'a1')
+    usePdfStore.getState().toggleAnnotationSelection('doc-1', 'a2')
+    expect(usePdfStore.getState().selectedAnnotationIds).toEqual(['a1', 'a2'])
+    expect(usePdfStore.getState().selectedAnnotationId).toBe('a2')
+    usePdfStore.getState().toggleAnnotationSelection('doc-1', 'a2')
+    expect(usePdfStore.getState().selectedAnnotationIds).toEqual(['a1'])
+    expect(usePdfStore.getState().selectedAnnotationId).toBe('a1')
+  })
+
+  it('borra varias marcas en un solo paso de undo', () => {
+    seed()
+    usePdfStore.getState().deleteAnnotations('doc-1', ['a1', 'a3'])
+    expect(usePdfStore.getState().docs[0].annotations.map((a) => a.id)).toEqual(['a2'])
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations).toHaveLength(3)
+  })
+
+  it('mueve el grupo desplazando también los puntos', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', {
+      ...ann({ id: 'd1' }), type: 'draw', points: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    })
+    usePdfStore.getState().moveAnnotations('doc-1', ['d1'], 5, -3)
+    const moved = usePdfStore.getState().docs[0].annotations[0]
+    expect(moved.x).toBe(15)
+    expect(moved.y).toBe(7)
+    expect(moved.points).toEqual([{ x: 5, y: -3 }, { x: 15, y: 7 }])
+  })
+
+  it('copia y pega en otra página con ids nuevos', () => {
+    seed()
+    expect(usePdfStore.getState().copyAnnotations('doc-1', ['a1', 'a2'])).toBe(2)
+    expect(usePdfStore.getState().pasteAnnotations('doc-1', 4)).toBe(2)
+    const anns = usePdfStore.getState().docs[0].annotations
+    expect(anns).toHaveLength(5)
+    const pasted = anns.slice(3)
+    expect(pasted.every((a) => a.page === 4)).toBe(true)
+    expect(pasted.map((a) => a.id)).not.toContain('a1')
+    expect(usePdfStore.getState().selectedAnnotationIds).toEqual(pasted.map((a) => a.id))
+  })
+
+  it('pega en otro documento (el portapapeles es global)', () => {
+    seed()
+    usePdfStore.getState().addDoc(docInfo({ doc_id: 'doc-2', file_path: 'C:\\planos\\b.pdf' }))
+    usePdfStore.getState().copyAnnotations('doc-1', ['a1'])
+    expect(usePdfStore.getState().pasteAnnotations('doc-2', 0)).toBe(1)
+    expect(usePdfStore.getState().docs[1].annotations).toHaveLength(1)
+  })
+})
+
+describe('preferencias de tema y rueda', () => {
+  it('el tema "system" resuelve al del sistema y persiste la preferencia', () => {
+    usePdfStore.getState().setThemePreference('system')
+    expect(usePdfStore.getState().themePreference).toBe('system')
+    expect(['dark', 'light']).toContain(usePdfStore.getState().theme)
+    expect(localStorage.getItem('pdfmaster_theme_pref')).toBe('system')
+  })
+
+  it('setTheme fija la preferencia explícita', () => {
+    usePdfStore.getState().setTheme('dark')
+    expect(usePdfStore.getState().themePreference).toBe('dark')
+    expect(usePdfStore.getState().theme).toBe('dark')
+  })
+
+  it('el modo de rueda se persiste', () => {
+    usePdfStore.getState().setWheelMode('scroll')
+    expect(localStorage.getItem('pdfmaster_wheel_mode')).toBe('scroll')
+  })
+})
+
+describe('progreso cancelable', () => {
+  it('avanza, se cancela y se cierra', () => {
+    usePdfStore.getState().startProgress('Comprimir', 3)
+    expect(usePdfStore.getState().progress).toMatchObject({ label: 'Comprimir', total: 3, canceled: false })
+    usePdfStore.getState().updateProgress(2, 'plano-a.pdf')
+    expect(usePdfStore.getState().progress?.current).toBe(2)
+    expect(usePdfStore.getState().isCancelRequested()).toBe(false)
+    usePdfStore.getState().requestCancel()
+    expect(usePdfStore.getState().isCancelRequested()).toBe(true)
+    usePdfStore.getState().endProgress()
+    expect(usePdfStore.getState().progress).toBeNull()
+  })
+
+  it('sin progreso activo, cancelar no rompe nada', () => {
+    usePdfStore.getState().requestCancel()
+    expect(usePdfStore.getState().isCancelRequested()).toBe(false)
+  })
+})
+
+describe('preferencias de apertura', () => {
+  it('el zoom por defecto define el encuadre del documento nuevo', () => {
+    usePdfStore.getState().setViewerSize(1000, 800)
+    usePdfStore.getState().setDefaultZoomMode('actual')
+    usePdfStore.getState().addDoc(docInfo({ doc_id: 'z1' }))
+    const doc = usePdfStore.getState().docs.find((d) => d.doc_id === 'z1')!
+    expect(doc.zoom).toBe(1)
+    expect(doc.fitMode).toBe('custom')
+
+    usePdfStore.getState().setDefaultZoomMode('fit-width')
+    usePdfStore.getState().addDoc(docInfo({ doc_id: 'z2' }))
+    const doc2 = usePdfStore.getState().docs.find((d) => d.doc_id === 'z2')!
+    expect(doc2.fitMode).toBe('fit-width')
+    expect(doc2.zoom).toBeCloseTo((1000 - 48) / 612, 5)
+  })
+
+  it('clampa el escalado de interfaz y lo persiste', () => {
+    usePdfStore.getState().setUiScale(3)
+    expect(usePdfStore.getState().uiScale).toBe(1.5)
+    usePdfStore.getState().setUiScale(0.1)
+    expect(usePdfStore.getState().uiScale).toBe(0.75)
+    expect(localStorage.getItem('pdfmaster_ui_scale')).toBe('0.75')
+  })
+
+  it('la copia .bak está desactivada por defecto', () => {
+    expect(usePdfStore.getState().backupOnSave).toBe(false)
   })
 })
 

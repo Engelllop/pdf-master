@@ -32,6 +32,15 @@ def open_pdf(request: OpenPdfRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.get("/info/{doc_id}", response_model=PdfInfo)
+def get_info(doc_id: str):
+    """Info actual del doc en memoria (page_count/page_sizes reflejan merges,
+    borrados, etc. aún sin guardar), sin reabrir el archivo desde disco."""
+    info = pdf_service.get_info(doc_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return info
+
 @router.get("/dirty/{doc_id}", response_model=DirtyStatus)
 def get_dirty(doc_id: str):
     return DirtyStatus(dirty=pdf_service._dirty.get(doc_id, False))
@@ -62,10 +71,10 @@ def compress_pdf(doc_id: str, output_path: str = Query(...)):
     return SaveResult(success=True, path=output_path)
 
 @router.post("/save/{doc_id}", response_model=SaveResult)
-def save_pdf(doc_id: str, output_path: Optional[str] = Query(None)):
+def save_pdf(doc_id: str, output_path: Optional[str] = Query(None), backup: bool = Query(False)):
     if output_path:
         _validate_output_path(output_path, {'.pdf'})
-    path = pdf_service.save(doc_id, output_path)
+    path = pdf_service.save(doc_id, output_path, backup=backup)
     if not path:
         raise HTTPException(status_code=400, detail="Save failed")
     return SaveResult(success=True, path=path)

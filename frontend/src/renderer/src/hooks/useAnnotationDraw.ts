@@ -8,7 +8,10 @@ import { getSpans, type SpanItem } from '../lib/spans'
 import { computeLineRects, type LineRect } from '../lib/textMarkup'
 const SNAP_TOLERANCE_SCREEN_PX = 10
 
-const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area']
+const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area', 'measure_perimeter']
+// Tamaño inicial (en puntos PDF) de la caja de un callout; luego se redimensiona.
+const CALLOUT_W = 160
+const CALLOUT_H = 48
 const MARKUP_TOOLS = ['highlight', 'underline', 'strikethrough']
 
 export type DrawPreview = Partial<Annotation> & { type?: Annotation['type'] | 'textselect' | 'measure_calibrate' | 'measure_distance' | 'measure_area' }
@@ -29,13 +32,13 @@ export function useAnnotationDraw(
   pageData: { width: number; height: number; originalWidth: number; originalHeight: number } | null,
 ) {
   const store = useStoreSlice(
-    'activeTool', 'annotationColor', 'addAnnotation', 'setActiveTool', 'showToast',
+    'activeTool', 'annotationColor', 'addAnnotation', 'setActiveTool', 'releaseTool', 'showToast',
     'setMeasurementScale', 'textFontFamily', 'textFontSize',
     'annotationLineWidth', 'annotationLineStyle', 'annotationOpacity',
-    'annotationFillColor', 'annotationFillOpacity', 'countCategory',
-    'setAnnotations', 'setDocDirty', 'textStyle',
+    'annotationFillColor', 'annotationFillOpacity', 'countCategory', 'countSymbol',
+    'setAnnotations', 'setDocDirty', 'textStyle', 'annotationAuthor', 'defaultUnit',
   )
-  const { activeTool, annotationColor, addAnnotation, setActiveTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
+  const { activeTool, annotationColor, addAnnotation, setActiveTool, releaseTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
 
   const [drawing, setDrawing] = useState(false)
   const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null)
@@ -130,6 +133,7 @@ export function useAnnotationDraw(
         y: pdf.y,
         color: annotationColor,
         text: store.countCategory || 'General',
+        symbol: store.countSymbol,
       })
       setDrawing(false)
       return true
@@ -140,7 +144,7 @@ export function useAnnotationDraw(
       return true
     }
 
-    if (activeTool === 'measure_area' || activeTool === 'polygon') {
+    if (activeTool === 'measure_area' || activeTool === 'polygon' || activeTool === 'measure_perimeter') {
       if (!drawingArea) {
         setDrawingArea(true)
         setAreaPoints([{ x: pdf.x, y: pdf.y }])
@@ -194,7 +198,7 @@ export function useAnnotationDraw(
     return true
   }
 
-  const handleMouseMove = (svgPoint: { x: number; y: number }) => {
+  const handleMouseMove = (svgPoint: { x: number; y: number }, shiftKey = false) => {
     if (!activeDoc || !pageData || !activeTool) return
     if (!drawing || !drawPreview) {
       // Hover sin arrastrar: muestra el imán de snap para apuntar con precisión
@@ -207,21 +211,37 @@ export function useAnnotationDraw(
       setDrawPoints((prev) => [...prev, { x: pdf.x, y: pdf.y }])
     } else if (
       activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect' ||
-      activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' ||
+      activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' || activeTool === 'line' ||
+      activeTool === 'callout' ||
       activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud' ||
       activeTool === 'measure_calibrate' || activeTool === 'measure_distance'
     ) {
       // Keep the sign of the delta so dragging up/left works; the shape is
       // normalized to a top-left origin on mouse up (and at render time).
-      const width = pdf.x - (drawPreview.x || 0)
-      const height = pdf.y - (drawPreview.y || 0)
+      let width = pdf.x - (drawPreview.x || 0)
+      let height = pdf.y - (drawPreview.y || 0)
+      // Shift restringe: líneas/flechas/mediciones a múltiplos de 45°, cajas a cuadrado.
+      if (shiftKey) {
+        const isLinear = activeTool === 'arrow' || activeTool === 'line' ||
+          activeTool === 'measure_distance' || activeTool === 'measure_calibrate'
+        if (isLinear) {
+          const len = Math.hypot(width, height)
+          const snapped = Math.round(Math.atan2(height, width) / (Math.PI / 4)) * (Math.PI / 4)
+          width = Math.cos(snapped) * len
+          height = Math.sin(snapped) * len
+        } else {
+          const size = Math.max(Math.abs(width), Math.abs(height))
+          width = Math.sign(width || 1) * size
+          height = Math.sign(height || 1) * size
+        }
+      }
       setDrawPreview({ ...drawPreview, width, height })
       if (isMarkupTool) {
         setMarkupRects(computeLineRects(spansRef.current, {
           x: drawPreview.x || 0, y: drawPreview.y || 0, width, height,
         }))
       }
-    } else if ((activeTool === 'measure_area' || activeTool === 'polygon') && drawingArea) {
+    } else if ((activeTool === 'measure_area' || activeTool === 'polygon' || activeTool === 'measure_perimeter') && drawingArea) {
       setDrawPreview((prev) => {
         if (!prev) return null
         const nextPoints = [...areaPoints, { x: pdf.x, y: pdf.y }]
@@ -260,7 +280,7 @@ export function useAnnotationDraw(
       setDrawing(false)
       setDrawPreview(null)
       setDrawPoints([])
-      setActiveTool(null)
+      releaseTool()
       return
     }
 
@@ -272,7 +292,7 @@ export function useAnnotationDraw(
       )
       const v = await askForm(`Calibrar escala — ${pixelDist.toFixed(1)} px medidos`, [
         { name: 'real', label: 'Distancia real conocida', type: 'number', defaultValue: '', placeholder: 'Ej. 100' },
-        { name: 'unit', label: 'Unidad', type: 'select', options: ['mm', 'cm', 'm', 'ft', 'in'], defaultValue: 'mm' },
+        { name: 'unit', label: 'Unidad', type: 'select', options: ['mm', 'cm', 'm', 'ft', 'in'], defaultValue: store.defaultUnit },
       ], 'Calibrar')
       if (!v) {
         showToast('Calibración cancelada', 'info')
@@ -338,7 +358,7 @@ export function useAnnotationDraw(
       setDrawing(false)
       setDrawPreview(null)
       setDrawPoints([])
-      setActiveTool(null)
+      releaseTool()
       return
     }
 
@@ -361,6 +381,7 @@ export function useAnnotationDraw(
       // Marcado anclado al texto: una anotación por línea con el rect real de la
       // línea (el render pinta subrayado abajo / tachado al centro, y el embed
       // usa add_*_annot con el quad correcto). Un solo paso de undo.
+      const now = Date.now()
       const anns = markupRects.map((l) => ({
         ...(drawPreview as Annotation),
         id: crypto.randomUUID(),
@@ -368,6 +389,10 @@ export function useAnnotationDraw(
         y: l.y0,
         width: l.x1 - l.x0,
         height: l.y1 - l.y0,
+        // No pasan por addAnnotation (van en bloque para un solo undo), así que el
+        // sellado de autor/fecha se hace aquí.
+        author: store.annotationAuthor || undefined,
+        createdAt: now,
       }))
       store.setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...anns])
       store.setDocDirty(activeDoc.doc_id, true)
@@ -389,8 +414,28 @@ export function useAnnotationDraw(
         finalPreview.height = size
       }
       addAnnotation(activeDoc.doc_id, finalPreview as Annotation)
-    } else if ((activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow') && (drawPreview.width || 0) !== 0) {
+    } else if ((activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' ||
+      activeTool === 'line') && (drawPreview.width || 0) !== 0) {
       addAnnotation(activeDoc.doc_id, drawPreview as Annotation)
+    } else if (activeTool === 'callout' && (Math.abs(drawPreview.width || 0) > 2 || Math.abs(drawPreview.height || 0) > 2)) {
+      // Se arrastra desde el punto señalado hasta donde va la caja de texto.
+      const tip = { x: drawPreview.x || 0, y: drawPreview.y || 0 }
+      const id = crypto.randomUUID()
+      addAnnotation(activeDoc.doc_id, {
+        ...(drawPreview as Annotation),
+        id,
+        type: 'callout',
+        x: tip.x + (drawPreview.width || 0),
+        y: tip.y + (drawPreview.height || 0),
+        width: CALLOUT_W,
+        height: CALLOUT_H,
+        points: [tip],
+        text: '',
+        fontSize: textFontSize,
+        fontFamily: textFontFamily,
+      })
+      // El Viewer abre el editor in-situ para escribir de inmediato.
+      window.dispatchEvent(new CustomEvent('app:edit-annotation-text', { detail: { id } }))
     }
 
     setDrawing(false)
@@ -406,11 +451,50 @@ export function useAnnotationDraw(
       setDrawPreview(null)
       return
     }
-    if (areaPoints.length < 3) {
-      showToast(activeTool === 'polygon' ? 'Dibuja al menos 3 vértices' : 'Dibuja al menos 3 puntos para medir un area', 'error')
+    const minPoints = activeTool === 'measure_perimeter' ? 2 : 3
+    if (areaPoints.length < minPoints) {
+      showToast(activeTool === 'polygon' ? 'Dibuja al menos 3 vértices'
+        : activeTool === 'measure_perimeter' ? 'Marca al menos 2 puntos para medir'
+        : 'Dibuja al menos 3 puntos para medir un area', 'error')
       setDrawingArea(false)
       setAreaPoints([])
       setDrawPreview(null)
+      return
+    }
+    if (activeTool === 'measure_perimeter') {
+      // Longitud acumulada de la polilínea (no se cierra: para el contorno cerrado
+      // están el polígono y la medición de área).
+      const scale = activeDoc.measurementScale
+      let pixels = 0
+      for (let i = 1; i < areaPoints.length; i++) pixels += computeDistance(areaPoints[i - 1], areaPoints[i])
+      let value = 0
+      let unit = 'px'
+      let label = `${pixels.toFixed(1)} px`
+      if (scale && scale.pixelsPerUnit > 0) {
+        value = pixels / scale.pixelsPerUnit
+        unit = scale.unit
+        label = formatDistance(value, unit)
+      } else {
+        showToast('Sin calibración. Usa "Calibrar escala" primero.', 'error')
+      }
+      addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'measure_perimeter',
+        page: activeDoc.currentPage,
+        x: areaPoints[0].x,
+        y: areaPoints[0].y,
+        color: annotationColor,
+        points: areaPoints,
+        lineWidth: store.annotationLineWidth,
+        lineStyle: store.annotationLineStyle,
+        opacity: store.annotationOpacity,
+        measurement: { value, unit, label },
+      })
+      setDrawingArea(false)
+      setAreaPoints([])
+      setDrawPreview(null)
+      releaseTool()
+      showToast(`Perímetro: ${label}`, 'success')
       return
     }
     if (activeTool === 'polygon') {
@@ -469,7 +553,7 @@ export function useAnnotationDraw(
     setDrawingArea(false)
     setAreaPoints([])
     setDrawPreview(null)
-    setActiveTool(null)
+    releaseTool()
     showToast(`Área medida: ${label}`, 'success')
   }
 

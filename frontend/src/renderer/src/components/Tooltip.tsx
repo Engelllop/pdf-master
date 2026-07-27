@@ -30,14 +30,14 @@ export default function Tooltip({ content, children, position = 'bottom', shortc
     <div className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
       {children}
       {visible && (
-        <div className={`absolute z-50 px-2 py-1 bg-slate-800 text-slate-200 text-xs rounded shadow-lg border border-slate-600 whitespace-nowrap pointer-events-none ${posClasses[position]}`}>
+        <div className={`absolute z-50 px-2 py-1 bg-fg text-toolbar text-xs rounded shadow-lg border border-border whitespace-nowrap pointer-events-none ${posClasses[position]}`}>
           {content}
           {shortcut && (
-            <kbd className="ml-1.5 px-1 py-px rounded bg-slate-700 border border-slate-600 text-slate-400 text-[10px] font-sans">
+            <kbd className="ml-1.5 px-1 py-px rounded bg-toolbar/20 border border-toolbar/25 text-toolbar/80 text-[10px] font-sans">
               {shortcut}
             </kbd>
           )}
-          <div className={`absolute w-1.5 h-1.5 bg-slate-800 border-slate-600 rotate-45 ${
+          <div className={`absolute w-1.5 h-1.5 bg-fg border-border rotate-45 ${
             position === 'bottom' ? '-top-0.5 left-1/2 -translate-x-1/2 border-t border-l' :
             position === 'top' ? '-bottom-0.5 left-1/2 -translate-x-1/2 border-b border-r' :
             position === 'right' ? '-left-0.5 top-1/2 -translate-y-1/2 border-t border-l' :

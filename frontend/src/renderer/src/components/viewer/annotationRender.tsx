@@ -67,13 +67,21 @@ export function getAnnotationBounds(
       const s = toScreen(ann.x, ann.y)
       return { x: s.x, y: s.y, w: (ann.width || 200) * sx, h: (ann.height || 150) * sy }
     }
-    case 'arrow': {
+    case 'arrow':
+    case 'line': {
       const s1 = toScreen(ann.x, ann.y)
       const s2 = toScreen(ann.x + (ann.width || 0), ann.y + (ann.height || 0))
       return { x: Math.min(s1.x, s2.x), y: Math.min(s1.y, s2.y), w: Math.abs(s2.x - s1.x), h: Math.abs(s2.y - s1.y) }
     }
+    case 'callout': {
+      const s = toScreen(ann.x, ann.y)
+      const w = (ann.width || 0) * sx
+      const h = (ann.height || 0) * sy
+      return { x: w < 0 ? s.x + w : s.x, y: h < 0 ? s.y + h : s.y, w: Math.abs(w), h: Math.abs(h) }
+    }
     case 'draw':
-    case 'polygon': {
+    case 'polygon':
+    case 'measure_perimeter': {
       if (!ann.points || ann.points.length === 0) return null
       const pts = ann.points.map((p) => toScreen(p.x, p.y))
       const xs = pts.map((p) => p.x)
@@ -116,7 +124,7 @@ function cloudPath(x: number, y: number, w: number, h: number): string {
 
 export interface RenderAnnotationOptions {
   isPreview?: boolean
-  onSelect?: () => void
+  onSelect?: (e: React.MouseEvent) => void
   onNoteClick?: (ann: Annotation, screen: { x: number; y: number }) => void
   onTextDoubleClick?: (ann: Annotation) => void
   textDefaults?: { fontSize: number; fontFamily: string }
@@ -135,7 +143,7 @@ export function renderAnnotation(
   const key = isPreview ? 'preview' : ann.id
   const stroke = strokePropsFor(ann, sx, ann.type === 'signature' ? 3 : 2)
   const clickProps = (!isPreview && onSelect)
-    ? { onClick: (e: React.MouseEvent) => { e.stopPropagation(); onSelect() }, style: { cursor: 'pointer' } }
+    ? { onClick: (e: React.MouseEvent) => { e.stopPropagation(); onSelect(e) }, style: { cursor: 'pointer' } }
     : {}
 
   switch (ann.type) {
@@ -252,6 +260,57 @@ export function renderAnnotation(
         </g>
       )
     }
+    case 'line': {
+      const x2 = s.x + ((ann.width || 0) * sx)
+      const y2 = s.y + ((ann.height || 0) * sy)
+      return (
+        <line key={key} x1={s.x} y1={s.y} x2={x2} y2={y2}
+          stroke={ann.color || '#fff'} {...stroke} {...clickProps} />
+      )
+    }
+    case 'callout': {
+      // Caja de texto + línea guía al punto señalado (points[0]).
+      const w = Math.abs((ann.width || 0) * sx)
+      const h = Math.abs((ann.height || 0) * sy)
+      const bx = (ann.width || 0) < 0 ? s.x + (ann.width || 0) * sx : s.x
+      const by = (ann.height || 0) < 0 ? s.y + (ann.height || 0) * sy : s.y
+      const tip = ann.points?.[0] ? toScreen(ann.points[0].x, ann.points[0].y) : null
+      const color = ann.color || '#ef4444'
+      const fontSize = (ann.fontSize || textDefaults?.fontSize || 12) * sx
+      // La línea sale del lado de la caja que mira a la punta.
+      const cx = bx + w / 2
+      const cy = by + h / 2
+      let anchorX = cx
+      let anchorY = cy
+      if (tip) {
+        anchorX = tip.x < bx ? bx : tip.x > bx + w ? bx + w : cx
+        anchorY = tip.y < by ? by : tip.y > by + h ? by + h : cy
+      }
+      return (
+        <g key={key} opacity={ann.opacity ?? 1} {...clickProps}
+          onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(e); if (onTextDoubleClick) onTextDoubleClick(ann) }}>
+          {tip && (
+            <>
+              <line x1={anchorX} y1={anchorY} x2={tip.x} y2={tip.y} stroke={color} strokeWidth={stroke.strokeWidth} />
+              <circle cx={tip.x} cy={tip.y} r={Math.max(2, stroke.strokeWidth * 1.5)} fill={color} />
+            </>
+          )}
+          <rect x={bx} y={by} width={w} height={h} rx={3}
+            fill={ann.fillColor || '#ffffff'} fillOpacity={ann.fillOpacity ?? 0.9}
+            stroke={color} strokeWidth={stroke.strokeWidth} strokeDasharray={stroke.strokeDasharray} />
+          <foreignObject x={bx + 3} y={by + 2} width={Math.max(0, w - 6)} height={Math.max(0, h - 4)}>
+            <div className="select-none" style={{
+              color, fontFamily: ann.fontFamily || textDefaults?.fontFamily || 'Arial',
+              fontSize, lineHeight: ann.lineHeight || 1.25, whiteSpace: 'pre-wrap', wordWrap: 'break-word',
+              fontWeight: ann.bold ? 700 : 400, fontStyle: ann.italic ? 'italic' : 'normal',
+              textAlign: ann.align || 'left', overflow: 'hidden',
+            }}>
+              {ann.text || ''}
+            </div>
+          </foreignObject>
+        </g>
+      )
+    }
     case 'draw':
     case 'signature': {
       if (!ann.points || ann.points.length < 2) return null
@@ -269,7 +328,7 @@ export function renderAnnotation(
         <g key={key} {...clickProps}
           onClick={(e) => {
             e.stopPropagation()
-            if (onSelect) onSelect()
+            if (onSelect) onSelect(e)
             if (onNoteClick) onNoteClick(ann, toScreen(ann.x, ann.y))
           }}>
           <rect x={s.x} y={s.y} width={nw} height={nh} fill={ann.color || '#fbbf24'} rx={3} />
@@ -298,7 +357,7 @@ export function renderAnnotation(
       return (
         <foreignObject key={key} x={s.x} y={s.y} width={textWidth} height={textHeight}
           {...clickProps}
-          onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(); if (onTextDoubleClick) onTextDoubleClick(ann) }}>
+          onDoubleClick={(e) => { e.stopPropagation(); if (onSelect) onSelect(e); if (onTextDoubleClick) onTextDoubleClick(ann) }}>
           <div className="select-none" style={{
             color: ann.color || '#fff', wordWrap: 'break-word', whiteSpace: 'pre-wrap', lineHeight: lh,
             fontFamily, fontSize: displayFontSize, opacity: ann.opacity ?? 1,
@@ -328,13 +387,53 @@ export function renderAnnotation(
     }
     case 'count': {
       const r = 9 * sx
-      const cross = Math.max(1, r * 0.2)
+      const color = ann.color || '#ef4444'
+      const sw = Math.max(1, r * 0.16)
+      const inner = Math.max(1, r * 0.2)
+      const symbol = ann.symbol || 'circle'
+      // El símbolo distingue categorías de conteo de un vistazo (estilo Bluebeam).
+      const shape = symbol === 'square'
+        ? <rect x={s.x - r * 0.85} y={s.y - r * 0.85} width={r * 1.7} height={r * 1.7} fill={color} stroke="#fff" strokeWidth={sw} rx={r * 0.15} />
+        : symbol === 'triangle'
+        ? <polygon points={`${s.x},${s.y - r} ${s.x + r * 0.9},${s.y + r * 0.7} ${s.x - r * 0.9},${s.y + r * 0.7}`} fill={color} stroke="#fff" strokeWidth={sw} strokeLinejoin="round" />
+        : symbol === 'diamond'
+        ? <polygon points={`${s.x},${s.y - r} ${s.x + r},${s.y} ${s.x},${s.y + r} ${s.x - r},${s.y}`} fill={color} stroke="#fff" strokeWidth={sw} strokeLinejoin="round" />
+        : symbol === 'star'
+        ? <path d={starPath(s.x - r, s.y - r, r * 2, r * 2)} fill={color} stroke="#fff" strokeWidth={sw} strokeLinejoin="round" />
+        : <circle cx={s.x} cy={s.y} r={r} fill={symbol === 'cross' ? 'none' : color} stroke={symbol === 'cross' ? color : '#fff'} strokeWidth={sw} />
       return (
         <g key={key} {...clickProps} opacity={ann.opacity ?? 1}>
           <title>{`Conteo: ${ann.text || 'General'}`}</title>
-          <circle cx={s.x} cy={s.y} r={r} fill={ann.color || '#ef4444'} stroke="#fff" strokeWidth={Math.max(1, r * 0.16)} />
-          <line x1={s.x - r * 0.45} y1={s.y} x2={s.x + r * 0.45} y2={s.y} stroke="#fff" strokeWidth={cross} strokeLinecap="round" />
-          <line x1={s.x} y1={s.y - r * 0.45} x2={s.x} y2={s.y + r * 0.45} stroke="#fff" strokeWidth={cross} strokeLinecap="round" />
+          {shape}
+          {(symbol === 'circle' || symbol === 'cross') && (
+            <>
+              <line x1={s.x - r * 0.45} y1={s.y} x2={s.x + r * 0.45} y2={s.y}
+                stroke={symbol === 'cross' ? color : '#fff'} strokeWidth={inner} strokeLinecap="round" />
+              <line x1={s.x} y1={s.y - r * 0.45} x2={s.x} y2={s.y + r * 0.45}
+                stroke={symbol === 'cross' ? color : '#fff'} strokeWidth={inner} strokeLinecap="round" />
+            </>
+          )}
+        </g>
+      )
+    }
+    case 'measure_perimeter': {
+      if (!ann.points || ann.points.length < 2) return null
+      const pts = ann.points.map((p) => toScreen(p.x, p.y))
+      const d = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')
+      const label = ann.measurement?.label || ''
+      const mid = pts[Math.floor(pts.length / 2)]
+      return (
+        <g key={key} opacity={stroke.opacity} {...clickProps}>
+          <path d={d} fill="none" stroke={ann.color || '#22d3ee'} strokeWidth={stroke.strokeWidth}
+            strokeDasharray={`${stroke.strokeWidth * 3} ${stroke.strokeWidth * 1.5}`} strokeLinejoin="round" />
+          {pts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />)}
+          {label && (
+            <>
+              <rect x={mid.x - label.length * 4.5 - 6} y={mid.y - 26} width={label.length * 9 + 12} height={22} rx={4}
+                fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+              <text x={mid.x} y={mid.y - 9} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
+            </>
+          )}
         </g>
       )
     }

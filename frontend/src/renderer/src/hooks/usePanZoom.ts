@@ -7,7 +7,7 @@ export function usePanZoom(
   activeDoc: PdfState['docs'][number] | undefined,
   pageData: { width: number; height: number; originalWidth: number } | null,
 ) {
-  const { setZoom, nextPage, prevPage, activeTool } = useStoreSlice('setZoom', 'nextPage', 'prevPage', 'activeTool')
+  const { setZoom, nextPage, prevPage, activeTool, wheelMode } = useStoreSlice('setZoom', 'nextPage', 'prevPage', 'activeTool', 'wheelMode')
 
   const [isPanning, setIsPanning] = useState(false)
   const panStart = useRef<{ x: number; y: number } | null>(null)
@@ -93,7 +93,7 @@ export function usePanZoom(
       })
       return
     }
-    if (isChangingPage.current || activeTool) return
+    if (wheelMode === 'scroll' || isChangingPage.current || activeTool) return
     const el = containerRef.current
     const isAtBottom = Math.abs(el.scrollHeight - el.scrollTop - el.clientHeight) < 5
     const isAtTop = el.scrollTop <= 0
@@ -118,7 +118,7 @@ export function usePanZoom(
       }, 50)
     }
     lastScrollDir.current = e.deltaY > 0 ? 'down' : 'up'
-  }, [activeDoc, pageData, setZoom, nextPage, prevPage, activeTool])
+  }, [activeDoc, pageData, setZoom, nextPage, prevPage, activeTool, wheelMode])
 
   return {
     isPanning,

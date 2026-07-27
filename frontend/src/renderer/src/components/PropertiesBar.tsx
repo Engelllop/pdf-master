@@ -2,11 +2,12 @@ import { type Annotation, type LineStyle } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { X, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
 import { FONT_OPTIONS } from '../lib/fonts'
+import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
 
 const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
 const SHAPE_IDS = ['check', 'cross', 'star', 'cloud', 'polygon']
-const STROKE_TYPES = ['rect', 'circle', 'arrow', 'draw', 'signature', 'underline', 'strikethrough', 'highlight', 'measure_distance', 'measure_area', ...SHAPE_IDS]
-const STROKE_TOOLS = ['draw', 'rect', 'circle', 'arrow', 'underline', 'strikethrough', 'highlight', 'signature', 'measure_calibrate', 'measure_distance', 'measure_area', ...SHAPE_IDS]
+const STROKE_TYPES = ['rect', 'circle', 'arrow', 'line', 'callout', 'draw', 'signature', 'underline', 'strikethrough', 'highlight', 'measure_distance', 'measure_area', 'measure_perimeter', ...SHAPE_IDS]
+const STROKE_TOOLS = ['draw', 'rect', 'circle', 'arrow', 'line', 'callout', 'underline', 'strikethrough', 'highlight', 'signature', 'measure_calibrate', 'measure_distance', 'measure_area', 'measure_perimeter', ...SHAPE_IDS]
 const COLOR_TOOLS = [...STROKE_TOOLS, 'note', 'text']
 const LINE_STYLES: Array<{ id: LineStyle; label: string; dash?: string }> = [
   { id: 'solid', label: 'Sólida' },
@@ -16,6 +17,7 @@ const LINE_STYLES: Array<{ id: LineStyle; label: string; dash?: string }> = [
 const ROTATABLE = ['image', 'text', 'rect', 'circle']
 
 export default function PropertiesBar() {
+  const customStamps = loadStamps()
   const store = useStoreSlice(
     'docs', 'activeDocId', 'activeTool', 'selectedAnnotationId',
     'annotationColor', 'setAnnotationColor', 'annotationLineWidth', 'setAnnotationLineWidth',
@@ -23,17 +25,18 @@ export default function PropertiesBar() {
     'annotationFillColor', 'setAnnotationFillColor', 'annotationFillOpacity', 'setAnnotationFillOpacity',
     'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize', 'textStyle', 'setTextStyle',
     'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'updateAnnotation',
+    'annotationAuthor',
   )
   const { activeTool, activeDocId, docs } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const selAnn = activeDoc?.annotations.find((a) => a.id === store.selectedAnnotationId) || null
 
-  const isTextCtx = activeTool === 'text' || selAnn?.type === 'text'
+  const isTextCtx = activeTool === 'text' || activeTool === 'callout' || selAnn?.type === 'text' || selAnn?.type === 'callout'
   const strokeSel = selAnn && STROKE_TYPES.includes(selAnn.type) ? selAnn : null
   const showStroke = strokeSel !== null || (!!activeTool && STROKE_TOOLS.includes(activeTool))
   const showColor = isTextCtx || showStroke || activeTool === 'note' || (!!activeTool && COLOR_TOOLS.includes(activeTool)) || (!!selAnn && selAnn.type !== 'image')
   const isStamp = activeTool === 'stamp'
-  const FILLABLE = ['rect', 'circle', 'star', 'cloud', 'polygon']
+  const FILLABLE = ['rect', 'circle', 'star', 'cloud', 'polygon', 'callout']
   const fillCapable = strokeSel ? FILLABLE.includes(strokeSel.type) : (!!activeTool && FILLABLE.includes(activeTool))
   const rotAnn = selAnn && ROTATABLE.includes(selAnn.type) ? selAnn : null
 
@@ -182,8 +185,13 @@ export default function PropertiesBar() {
             <Label>Sello</Label>
             <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
               className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
-              {['APROBADO', 'RECHAZADO', 'REVISADO', 'URGENTE', 'BORRADOR', 'FIRMADO', 'COPIA'].map((s) => <option key={s} value={s}>{s}</option>)}
+              {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
+                .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
+            <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-stamps'))}
+              className="px-2 py-1 text-[11px] rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
+              Gestionar…
+            </button>
           </div>
         </>
       )}

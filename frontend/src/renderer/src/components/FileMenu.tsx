@@ -11,29 +11,10 @@ import {
   loadRecents, setRecentPinned, removeRecent, clearUnpinnedRecents,
   frequentFolders, type RecentEntry, type FrequentFolder,
 } from '../lib/recents'
+import { loadLastSession, reopenLastSession, type SessionSnapshot } from '../lib/session'
+import { formatWhen } from '../lib/format'
+import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
-
-function formatWhen(ts: number): string {
-  const days = Math.floor((Date.now() - ts) / 86400000)
-  if (days === 0) return 'hoy'
-  if (days === 1) return 'ayer'
-  if (days < 30) return `hace ${days} días`
-  return new Date(ts).toLocaleDateString()
-}
-
-interface SessionSnapshot {
-  activeFile: string | null
-  docs: { file_path: string; currentPage: number; zoom: number; fitMode: string }[]
-}
-
-function loadLastSession(): SessionSnapshot | null {
-  try {
-    const s = JSON.parse(localStorage.getItem('pdfmaster_session_last') || 'null') as SessionSnapshot | null
-    return s?.docs?.length ? s : null
-  } catch {
-    return null
-  }
-}
 
 // Menú "Archivo": acciones a la izquierda + recientes con miniatura, búsqueda y
 // carpetas frecuentes a la derecha. Se abre desde su propio botón o desde el logo
@@ -97,20 +78,7 @@ export default function FileMenu() {
   }
 
   const handleReopenSession = async () => {
-    const session = lastSession
-    if (!session) return
-    const { setPage, setZoom, setActiveDoc } = usePdfStore.getState()
-    const idByPath: Record<string, string> = {}
-    for (const d of session.docs) {
-      const id = await openDocument(d.file_path, { activate: false })
-      if (id) {
-        idByPath[d.file_path] = id
-        setPage(id, d.currentPage || 0)
-        if (typeof d.zoom === 'number' && d.zoom > 0) setZoom(id, d.zoom)
-      }
-    }
-    const opened = Object.keys(idByPath).length
-    if (session.activeFile && idByPath[session.activeFile]) setActiveDoc(idByPath[session.activeFile])
+    const opened = await reopenLastSession()
     showToast(opened > 0 ? `Sesión restaurada (${opened} documento${opened === 1 ? '' : 's'})` : 'No se pudo restaurar la sesión', opened > 0 ? 'success' : 'error')
   }
 
@@ -124,6 +92,18 @@ export default function FileMenu() {
     const { docs, activeDocId } = usePdfStore.getState()
     const doc = docs.find((d) => d.doc_id === activeDocId)
     if (!doc) return
+    // `embed_annotations` no tiene rama para el tipo `image`: esas marcas se ven en
+    // la app y viven en el sidecar, pero NO quedan dentro del PDF. Avisar antes de
+    // guardar en vez de perderlas en silencio.
+    const imageAnns = doc.annotations.filter((a) => a.type === 'image').length
+    if (imageAnns > 0) {
+      const ok = await askConfirm(
+        'Imágenes no incrustadas',
+        `Este documento tiene ${imageAnns} imagen(es) añadida(s) que todavía no se pueden incrustar en el PDF.\n\nSe guardarán junto al archivo (sidecar .pdfmaster.json) y las verás al reabrirlo en PDF Master, pero NO aparecerán en otros lectores.\n\n¿Guardar de todos modos?`,
+        'Guardar',
+      )
+      if (!ok) return
+    }
     setSaveStatus('saving')
     try {
       const embedRes = await apiFetch(`/pdf/embed/${doc.doc_id}`, {
@@ -131,7 +111,8 @@ export default function FileMenu() {
         body: JSON.stringify({ annotations: doc.annotations }),
       })
       if (!embedRes.ok) throw new Error('Error al embeber anotaciones')
-      const res = await apiFetch(`/pdf/save/${doc.doc_id}`, { method: 'POST' })
+      const backup = usePdfStore.getState().backupOnSave
+      const res = await apiFetch(`/pdf/save/${doc.doc_id}${backup ? '?backup=true' : ''}`, { method: 'POST' })
       if (res.ok) {
         await apiFetch(`/pdf/annotations/${doc.doc_id}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },

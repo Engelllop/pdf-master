@@ -158,3 +158,57 @@ class TestDocumentOps:
         assert resp.status_code == 200
         with fitz.open(out) as d:
             assert d.needs_pass
+
+
+class TestInfoEndpoint:
+    def test_info_reflects_in_memory_merge(self, client, open_doc, pdf_factory):
+        info = open_doc(pages=3)
+        source = pdf_factory(pages=2)
+        assert client.post(f"/pdf/merge/{info['doc_id']}", json={"source_path": source}).status_code == 200
+        resp = client.get(f"/pdf/info/{info['doc_id']}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["page_count"] == 5
+        assert len(data["page_sizes"]) == 5
+
+    def test_info_unknown_doc_is_404(self, client):
+        assert client.get("/pdf/info/no-such-doc").status_code == 404
+
+
+class TestReplaceCaseSensitive:
+    def _make_doc(self, client, pdf_factory):
+        import fitz
+        import shutil
+        path = pdf_factory(pages=1)
+        doc = fitz.open(path)
+        page = doc[0]
+        page.insert_text((72, 200), "ZebRa uno", fontsize=12)
+        page.insert_text((72, 240), "zebra dos", fontsize=12)
+        doc.save(str(path) + ".tmp")
+        doc.close()
+        shutil.move(str(path) + ".tmp", path)
+        resp = client.post("/pdf/open", json={"file_path": path})
+        assert resp.status_code == 200
+        return resp.json()["doc_id"]
+
+    def test_case_sensitive_only_replaces_exact_match(self, client, pdf_factory):
+        doc_id = self._make_doc(client, pdf_factory)
+        try:
+            r = client.post(f"/pdf/replace-text/{doc_id}", json={
+                "query": "ZebRa", "replace": "Cebra", "case_sensitive": True, "replace_all": True,
+            })
+            assert r.status_code == 200
+            assert r.json()["replaced"] == 1
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+
+    def test_case_insensitive_replaces_all(self, client, pdf_factory):
+        doc_id = self._make_doc(client, pdf_factory)
+        try:
+            r = client.post(f"/pdf/replace-text/{doc_id}", json={
+                "query": "zebra", "replace": "cebra", "case_sensitive": False, "replace_all": True,
+            })
+            assert r.status_code == 200
+            assert r.json()["replaced"] == 2
+        finally:
+            client.post(f"/pdf/close/{doc_id}")

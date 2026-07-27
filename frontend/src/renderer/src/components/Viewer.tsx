@@ -13,30 +13,31 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
 import { useFormFields } from '../hooks/useFormFields'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 import DetailTile from './DetailTile'
 import TextLayer from './viewer/TextLayer'
 import SelectionOverlay from './viewer/SelectionOverlay'
 import FloatingSelectionBar from './viewer/FloatingSelectionBar'
+import MultiSelectionBar from './viewer/MultiSelectionBar'
 import TextBoxEditor from './viewer/TextBoxEditor'
 import FormFieldsLayer from './viewer/FormFieldsLayer'
 import { renderAnnotation, strokePropsFor, getAnnotationBounds } from './viewer/annotationRender'
 import ViewerEmptyState from './viewer/ViewerEmptyState'
 import ViewerContextMenu from './viewer/ViewerContextMenu'
 import { recoverImage } from '../lib/recoverImage'
+import { loadSignatures, signatureAtPoint } from '../lib/signatures'
 import { Loader2 } from 'lucide-react'
 
 import { apiFetch } from '../lib/api'
 
 export default function Viewer() {
-  const tc = useThemeClasses()
   const store = useStoreSlice(
     'docs', 'activeDocId', 'activeTool', 'annotationColor', 'annotationLineWidth',
-    'selectedAnnotationId', 'selectedImageData', 'selectedStamp', 'stampColor',
+    'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotations', 'toggleAnnotationSelection',
+    'selectedImageData', 'selectedStamp', 'stampColor',
     'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode', 'activeRibbon',
     'setViewerSize', 'selectAnnotation', 'deleteAnnotation', 'addBookmark',
     'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
-    'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'setDocDirty',
+    'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'releaseTool', 'setDocDirty',
     'setSelectedImageData', 'setSelectedImagePath', 'setViewerScroll', 'showToast',
     'updateAnnotation', 'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
     'textStyle', 'setTextStyle',
@@ -168,6 +169,31 @@ export default function Viewer() {
   // Edición in-situ de texto existente (herramienta 'edittext')
   const [editSpan, setEditSpan] = useState<{ x0: number; y0: number; x1: number; y1: number; size: number; color: string; font: string; value: string } | null>(null)
 
+  // Colocación de una firma guardada: el gestor la elige y el siguiente clic en la
+  // página la sitúa (escalada al ancho estándar).
+  const [pendingSignature, setPendingSignature] = useState<string | null>(null)
+  useEffect(() => {
+    const onPlace = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined
+      if (!id) return
+      setPendingSignature(id)
+      store.setActiveTool('placesig')
+    }
+    window.addEventListener('app:place-signature', onPlace as EventListener)
+    return () => window.removeEventListener('app:place-signature', onPlace as EventListener)
+  }, [])
+
+  // Marquesina de selección múltiple (herramienta Seleccionar)
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null)
+
+  /** Clic sobre una marca: Ctrl/⌘ suma o resta de la selección, clic normal la aísla. */
+  const handleSelectAnnotation = (e: React.MouseEvent, annId: string) => {
+    if (!activeDoc) return
+    if (e.ctrlKey || e.metaKey) store.toggleAnnotationSelection(activeDoc.doc_id, annId)
+    else selectAnnotation(activeDoc.doc_id, annId)
+  }
+
   // Selección visual de área para recortar/redactar (herramientas 'croparea'/'redactarea')
   const { areaSel, areaSelRef, areaDraggingRef, areaToolRef, setArea, applyArea } = useAreaSelect(activeDoc, pageData)
 
@@ -252,7 +278,7 @@ export default function Viewer() {
         } else {
           store.showToast('Error al insertar sello', 'error')
         }
-        store.setActiveTool(null)
+        store.releaseTool()
       })
       return
     }
@@ -281,6 +307,40 @@ export default function Viewer() {
       return
     }
 
+    // Colocar una firma guardada
+    if (store.activeTool === 'placesig') {
+      e.preventDefault()
+      const sig = loadSignatures().find((s) => s.id === pendingSignature)
+      if (!sig) { store.setActiveTool(null); setPendingSignature(null); return }
+      const pdfX = pt.x * (pageData.originalWidth / pageData.width)
+      const pdfY = pt.y * (pageData.originalHeight / pageData.height)
+      store.addAnnotation(activeDoc.doc_id, {
+        id: crypto.randomUUID(),
+        type: 'signature',
+        page: activeDoc.currentPage,
+        x: pdfX,
+        y: pdfY,
+        color: store.annotationColor,
+        lineWidth: 2,
+        points: signatureAtPoint(sig, { x: pdfX, y: pdfY }),
+      })
+      store.setDocDirty(activeDoc.doc_id, true)
+      store.setActiveTool(null)
+      setPendingSignature(null)
+      return
+    }
+
+    // Con la herramienta Seleccionar: arrastrar una marca la mueve y arrastrar en
+    // vacío dibuja una marquesina (con las demás herramientas, arrastrar dibuja).
+    if (store.activeTool === 'select') {
+      const didDrag = handleDragMouseDown(e, pt)
+      if (didDrag) return
+      e.preventDefault()
+      marqueeStartRef.current = { x: pt.x, y: pt.y, additive: e.ctrlKey || e.metaKey }
+      setMarquee({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y })
+      return
+    }
+
     // Drawing takes precedence
     if (store.activeTool) {
       e.preventDefault()
@@ -299,6 +359,11 @@ export default function Viewer() {
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning) return
     const pt = getSvgPoint(e)
+    if (marqueeStartRef.current) {
+      const s = marqueeStartRef.current
+      setMarquee({ x0: s.x, y0: s.y, x1: pt.x, y1: pt.y })
+      return
+    }
     if (areaDraggingRef.current) {
       const s = areaSelRef.current
       if (s) setArea({ x0: s.x0, y0: s.y0, x1: pt.x, y1: pt.y })
@@ -310,10 +375,37 @@ export default function Viewer() {
       else setImgPreview({ l: st.rect.l, t: st.rect.t, w: Math.max(8, st.rect.w + dx), h: Math.max(8, st.rect.h + dy) })
       return
     }
-    handleDrawMouseMove(pt)
+    handleDrawMouseMove(pt, e.shiftKey)
   }
 
   const handleMouseUp = () => {
+    if (marqueeStartRef.current) {
+      const start = marqueeStartRef.current
+      const box = marquee
+      marqueeStartRef.current = null
+      setMarquee(null)
+      if (activeDoc && pageData) {
+        // Un clic sin arrastre en vacío = limpiar selección.
+        if (!box || (Math.abs(box.x1 - box.x0) < 3 && Math.abs(box.y1 - box.y0) < 3)) {
+          if (!start.additive) selectAnnotation(activeDoc.doc_id, null)
+          return
+        }
+        const x0 = Math.min(box.x0, box.x1)
+        const x1 = Math.max(box.x0, box.x1)
+        const y0 = Math.min(box.y0, box.y1)
+        const y1 = Math.max(box.y0, box.y1)
+        const hits = annotations.filter((a) => {
+          const b = getAnnotationBounds(a, pageData, toScreenCoords)
+          if (!b) return false
+          return b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0
+        }).map((a) => a.id)
+        const next = start.additive
+          ? [...new Set([...store.selectedAnnotationIds, ...hits])]
+          : hits
+        store.selectAnnotations(activeDoc.doc_id, next)
+      }
+      return
+    }
     if (areaDraggingRef.current) {
       areaDraggingRef.current = false
       const tool = areaToolRef.current
@@ -391,6 +483,18 @@ export default function Viewer() {
     setEditTextValue(ann.text || '')
   }
 
+  // Un callout recién creado abre su editor de texto sin pasar por el doble clic.
+  useEffect(() => {
+    const onEdit = (e: Event) => {
+      const id = (e as CustomEvent).detail?.id as string | undefined
+      if (!id) return
+      setEditingTextAnn(id)
+      setEditTextValue('')
+    }
+    window.addEventListener('app:edit-annotation-text', onEdit as EventListener)
+    return () => window.removeEventListener('app:edit-annotation-text', onEdit as EventListener)
+  }, [])
+
   const commitEditText = () => {
     if (!editingTextAnn || !activeDoc) return
     store.updateAnnotation(activeDoc.doc_id, editingTextAnn, { text: editTextValue })
@@ -424,7 +528,7 @@ export default function Viewer() {
   const isDouble = store.viewMode === 'double'
 
   return (
-    <div ref={containerRef} className={`flex-1 overflow-auto relative ${tc('bg-slate-900', 'bg-gray-100')}`}
+    <div ref={containerRef} className={`flex-1 overflow-auto relative bg-surface`}
       onWheel={handleWheel} onScroll={handleScroll} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -435,7 +539,7 @@ export default function Viewer() {
 
       {!pageData && loading && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Loader2 className="animate-spin text-blue-500" size={36} />
+          <Loader2 className="animate-spin text-accent" size={36} />
         </div>
       )}
 
@@ -449,8 +553,8 @@ export default function Viewer() {
         {pageData && (
           <div className="relative" data-page-wrapper="left" style={{ width: displayWidth, height: displayHeight, overflow: 'hidden', flexShrink: 0 }}>
             {loading && (
-              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded ${tc('bg-slate-900/80', 'bg-gray-200/80')}`}>
-                <Loader2 className="animate-spin text-blue-500" size={32} />
+              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded bg-surface/80`}>
+                <Loader2 className="animate-spin text-accent" size={32} />
               </div>
             )}
             <div className="relative"
@@ -494,7 +598,7 @@ export default function Viewer() {
 
                 {/* Existing annotations (la que se está editando se oculta: la dibuja el editor) */}
                 {annotations.filter((a) => a.id !== editingTextAnn).map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
-                  onSelect: () => selectAnnotation(activeDoc.doc_id, ann.id),
+                  onSelect: (e) => handleSelectAnnotation(e, ann.id),
                   onNoteClick: openNotePopup,
                   onTextDoubleClick: startEditText,
                   textDefaults,
@@ -581,10 +685,28 @@ export default function Viewer() {
                   )
                 })}
 
-                {/* Selection box */}
-                {selectedAnnLeft && (
-                  <SelectionOverlay ann={selectedAnnLeft} pageData={pageData} toScreen={toScreenCoords}
-                    onResizeStart={setResizingAnn} onRotateStart={setRotatingAnn} />
+                {/* Selección: handles solo con una marca; con varias, contorno simple */}
+                {store.selectedAnnotationIds.length > 1
+                  ? annotations.filter((a) => store.selectedAnnotationIds.includes(a.id)).map((a) => {
+                      const b = getAnnotationBounds(a, pageData, toScreenCoords)
+                      if (!b) return null
+                      return (
+                        <rect key={`multi-${a.id}`} x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6}
+                          fill="rgba(59,130,246,0.08)" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 2" rx={3}
+                          pointerEvents="none" />
+                      )
+                    })
+                  : selectedAnnLeft && (
+                    <SelectionOverlay ann={selectedAnnLeft} pageData={pageData} toScreen={toScreenCoords}
+                      onResizeStart={setResizingAnn} onRotateStart={setRotatingAnn} />
+                  )}
+
+                {/* Marquesina de selección múltiple */}
+                {marquee && (
+                  <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
+                    width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
+                    fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth={1} strokeDasharray="3 2"
+                    pointerEvents="none" />
                 )}
 
                 {/* Imágenes existentes (herramienta editar imagen) */}
@@ -613,13 +735,13 @@ export default function Viewer() {
 
               {/* Note input popup */}
               {notePos && (
-                <div className={`absolute z-30 border rounded shadow-xl p-2 ${tc('bg-slate-800 border-slate-600', 'bg-white border-gray-300')}`}
+                <div className={`absolute z-30 border rounded shadow-xl p-2 bg-panel border-border`}
                   style={{ left: toScreenCoords(notePos.x, notePos.y).x, top: toScreenCoords(notePos.x, notePos.y).y }}>
-                  <input autoFocus className={`border rounded px-2 py-1 text-sm w-40 ${tc('bg-slate-900 border-slate-600 text-white', 'bg-gray-50 border-gray-300 text-gray-900')}`}
+                  <input autoFocus className={`border rounded px-2 py-1 text-sm w-40 bg-surface border-border text-fg`}
                     placeholder="Escribe nota..." value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveNote()} />
                   <div className="flex gap-1 mt-1">
-                    <button onClick={saveNote} className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">Guardar</button>
-                    <button onClick={() => { setNotePos(null); setNoteText('') }} className={`px-2 py-0.5 text-xs rounded ${tc('bg-slate-600 text-white', 'bg-gray-200 text-gray-800')}`}>Cancelar</button>
+                    <button onClick={saveNote} className="px-2 py-0.5 bg-accent text-toolbar text-xs rounded">Guardar</button>
+                    <button onClick={() => { setNotePos(null); setNoteText('') }} className={`px-2 py-0.5 text-xs rounded bg-active text-fg`}>Cancelar</button>
                   </div>
                 </div>
               )}
@@ -642,7 +764,7 @@ export default function Viewer() {
               {/* Editor in-place de texto existente */}
               {editSpan && activeDoc && (() => {
                 const sx2 = pageData.width / pageData.originalWidth
-                const s = toScreenCoords(editSpan.x0 * sx2, editSpan.y0 * sx2)
+                const s = toScreenCoords(editSpan.x0, editSpan.y0)
                 const fpx = (editSpan.size || 12) * sx2
                 const w = Math.max((editSpan.x1 - editSpan.x0) * sx2 + fpx * 3, fpx * 4)
                 const commit = async () => {
@@ -684,10 +806,10 @@ export default function Viewer() {
               {/* Area measurement floating controls */}
               {drawingArea && (
                 <div className="absolute z-30 bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                  <button onClick={closeArea} className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded shadow-lg hover:bg-blue-500">
-                    Cerrar polígono (Enter)
+                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-toolbar text-xs rounded shadow-lg hover:opacity-90">
+                    {store.activeTool === 'measure_perimeter' ? 'Terminar medición (Enter)' : 'Cerrar polígono (Enter)'}
                   </button>
-                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-xs rounded shadow-lg ${tc('bg-slate-600 text-white hover:bg-slate-500', 'bg-gray-300 text-gray-800 hover:bg-gray-200')}`}>
+                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-xs rounded shadow-lg bg-active text-fg hover:bg-hover`}>
                     Cancelar
                   </button>
                 </div>
@@ -706,8 +828,8 @@ export default function Viewer() {
                       <button onClick={() => {
                         store.updateAnnotation(activeDoc.doc_id, notePopup.annId, { text: notePopupText })
                         setNotePopup(null)
-                      }} className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded">Guardar</button>
-                      <button onClick={() => { setNotePopup(null) }} className="px-2 py-0.5 bg-slate-600 text-white text-xs rounded">Cerrar</button>
+                      }} className="px-2 py-0.5 bg-accent text-toolbar text-xs rounded">Guardar</button>
+                      <button onClick={() => { setNotePopup(null) }} className="px-2 py-0.5 bg-active text-fg text-xs rounded">Cerrar</button>
                     </div>
                   </div>
                 )
@@ -717,9 +839,14 @@ export default function Viewer() {
             </div>
 
             {/* Barra contextual de la anotación seleccionada (no escala con el zoom) */}
-            {selectedAnnLeft && !editingTextAnn && !textPos && (
+            {selectedAnnLeft && store.selectedAnnotationIds.length <= 1 && !editingTextAnn && !textPos && (
               <FloatingSelectionBar ann={selectedAnnLeft} docId={activeDoc.doc_id}
                 pageData={pageData} toScreen={toScreenCoords} scale={scale} wrapperWidth={displayWidth} />
+            )}
+
+            {/* Barra de acciones en lote (selección múltiple) */}
+            {store.selectedAnnotationIds.length > 1 && (
+              <MultiSelectionBar docId={activeDoc.doc_id} ids={store.selectedAnnotationIds} />
             )}
 
             {/* Editor de texto nuevo (estilo Acrobat, con mini-toolbar) */}
@@ -788,8 +915,8 @@ export default function Viewer() {
         {isDouble && pageDataRight && (
           <div className="relative" data-page-wrapper="right" style={{ width: displayWidthRight, height: displayHeightRight, overflow: 'hidden', flexShrink: 0 }}>
             {loadingRight && (
-              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded ${tc('bg-slate-900/60', 'bg-gray-200/60')}`}>
-                <Loader2 className="animate-spin text-blue-500" size={24} />
+              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded bg-surface/60`}>
+                <Loader2 className="animate-spin text-accent" size={24} />
               </div>
             )}
             <div className="relative"
@@ -871,12 +998,12 @@ export default function Viewer() {
 
       {/* Drag & Drop overlay */}
       {isDraggingFile && (
-        <div className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none ${tc('bg-slate-900/80', 'bg-gray-200/80')}`}>
-          <div className="border-2 border-dashed border-blue-400 rounded-2xl p-12 flex flex-col items-center gap-4">
-            <svg className="w-16 h-16 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none bg-surface/80`}>
+          <div className="border-2 border-dashed border-accent rounded-2xl p-12 flex flex-col items-center gap-4">
+            <svg className="w-16 h-16 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            <span className="text-blue-500 text-lg font-medium">Suelta el PDF aquí</span>
+            <span className="text-accent text-lg font-medium">Suelta el PDF aquí</span>
           </div>
         </div>
       )}
@@ -895,7 +1022,7 @@ export default function Viewer() {
           onExportImage={() => {
             if (!pageData) return
             const link = document.createElement('a')
-            link.download = `${activeDoc.file_name.replace('.pdf', '')}_p${activeDoc.currentPage + 1}.png`
+            link.download = `${activeDoc.file_name.replace(/\.pdf$/i, '')}_p${activeDoc.currentPage + 1}.png`
             link.href = pageData.image
             link.click()
             closeMenu()

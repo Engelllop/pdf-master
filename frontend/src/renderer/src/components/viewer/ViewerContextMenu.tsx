@@ -1,5 +1,3 @@
-import { useThemeClasses } from '../../hooks/useThemeClasses'
-
 /** Menú contextual del visor (clic derecho sobre la página). Presentacional: la
  * lógica de cada acción se inyecta como callbacks desde Viewer. */
 export default function ViewerContextMenu({
@@ -15,13 +13,12 @@ export default function ViewerContextMenu({
   onExportImage: () => void
   onCopyText: () => void
 }) {
-  const tc = useThemeClasses()
-  const item = `w-full text-left px-3 py-1.5 text-sm ${tc('text-slate-200 hover:bg-slate-700', 'text-gray-800 hover:bg-gray-100')}`
+  const item = 'w-full text-left px-3 py-1.5 text-sm text-fg hover:bg-hover'
   return (
-    <div className={`fixed z-50 border rounded shadow-xl py-1 min-w-[160px] ${tc('bg-slate-800 border-slate-600', 'bg-white border-gray-300')}`}
+    <div className="fixed z-50 border border-border rounded shadow-xl py-1 min-w-[160px] bg-panel"
       style={{ left: x, top: y }}>
       {hasSelection && (
-        <button className={`w-full text-left px-3 py-1.5 text-sm text-red-400 ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}
+        <button className="w-full text-left px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-hover"
           onClick={onDeleteAnnotation}>
           Eliminar anotación
         </button>

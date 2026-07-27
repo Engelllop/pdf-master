@@ -3,7 +3,6 @@ import { X, Lock, Unlock, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2,
 import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import Tooltip from './Tooltip'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 
 import { apiFetch, apiUrl } from '../lib/api'
 
@@ -55,12 +54,11 @@ function ComparePagePanel({
 
   const scale = data ? zoom / (data.width / data.originalWidth) : 1
 
-  const tc = useThemeClasses()
   return (
-    <div className={`flex-1 flex flex-col min-w-0 ${tc('bg-slate-900', 'bg-gray-100')}`}>
-      <div className={`px-3 py-1.5 border-b text-xs flex items-center justify-between shrink-0 ${tc('bg-slate-800 border-slate-700 text-slate-300', 'bg-white border-gray-300 text-gray-600')}`}>
+    <div className={`flex-1 flex flex-col min-w-0 bg-surface`}>
+      <div className={`px-3 py-1.5 border-b text-xs flex items-center justify-between shrink-0 bg-panel border-border text-muted`}>
         <span className="truncate" title={label}>{label} — Pág. {page + 1}</span>
-        {loading && <span className="text-blue-400 animate-pulse shrink-0 ml-2">Cargando…</span>}
+        {loading && <span className="text-muted animate-pulse shrink-0 ml-2">Cargando…</span>}
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto">
         <div className="min-h-full flex items-start justify-center p-4">
@@ -76,7 +74,7 @@ function ComparePagePanel({
               draggable={false}
             />
           ) : (
-            <div className={`self-center text-sm ${tc('text-slate-500', 'text-gray-500')}`}>{loading ? '' : 'Error al cargar página'}</div>
+            <div className={`self-center text-sm text-muted`}>{loading ? '' : 'Error al cargar página'}</div>
           )}
         </div>
       </div>
@@ -118,7 +116,6 @@ function CompareOverlayPanel({
   docB: string; versionB: number; pageB: number
   zoom: number
 }) {
-  const tc = useThemeClasses()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
@@ -160,14 +157,14 @@ function CompareOverlayPanel({
   }, [docA, versionA, pageA, docB, versionB, pageB])
 
   return (
-    <div className={`flex-1 overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}>
+    <div className={`flex-1 overflow-auto bg-surface`}>
       <div className="min-h-full flex items-start justify-center p-4">
         {error ? (
-          <div className={`self-center text-sm ${tc('text-slate-500', 'text-gray-500')}`}>Error al componer el overlay</div>
+          <div className={`self-center text-sm text-muted`}>Error al componer el overlay</div>
         ) : (
           <div className="relative">
             {loading && (
-              <div className={`absolute inset-0 flex items-center justify-center text-xs ${tc('text-slate-400', 'text-gray-500')}`}>Componiendo…</div>
+              <div className={`absolute inset-0 flex items-center justify-center text-xs text-muted`}>Componiendo…</div>
             )}
             <canvas ref={canvasRef} className="rounded shadow-lg bg-white"
               style={dims ? { width: (dims.w / OVERLAY_SCALE) * zoom, height: (dims.h / OVERLAY_SCALE) * zoom } : undefined} />
@@ -179,7 +176,6 @@ function CompareOverlayPanel({
 }
 
 export default function ComparisonView() {
-  const tc = useThemeClasses()
   const { docs, activeDocId, compareDocId, compareSync, clearCompare, setCompareSync } = useStoreSlice(
     'docs', 'activeDocId', 'compareDocId', 'compareSync', 'clearCompare', 'setCompareSync',
   )
@@ -255,78 +251,78 @@ export default function ComparisonView() {
 
   if (!activeDoc || !compareDoc) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center ${tc('bg-slate-900 text-slate-400', 'bg-gray-100 text-gray-500')}`}>
+      <div className={`flex-1 flex flex-col items-center justify-center bg-surface text-muted`}>
         <p>Documento de comparación no disponible</p>
-        <button onClick={clearCompare} className="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm">Salir</button>
+        <button onClick={clearCompare} className="mt-2 px-3 py-1 bg-accent text-toolbar rounded text-sm">Salir</button>
       </div>
     )
   }
 
   return (
-    <div className={`flex-1 flex flex-col ${tc('bg-slate-900', 'bg-gray-100')}`}>
+    <div className={`flex-1 flex flex-col bg-surface`}>
       {/* Toolbar de comparación */}
-      <div className={`h-11 border-b flex items-center px-3 gap-2 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
-        <span className={`text-xs font-semibold uppercase tracking-wider mr-2 ${tc('text-slate-400', 'text-gray-500')}`}>Comparar</span>
+      <div className={`h-11 border-b flex items-center px-3 gap-2 shrink-0 bg-panel border-border`}>
+        <span className={`text-xs font-semibold uppercase tracking-wider mr-2 text-muted`}>Comparar</span>
 
         <Tooltip content="Página anterior">
-          <button onClick={goPrev} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={goPrev} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ChevronLeft size={16} />
           </button>
         </Tooltip>
-        <span className={`text-xs w-24 text-center font-mono ${tc('text-slate-300', 'text-gray-700')}`}>
+        <span className={`text-xs w-24 text-center font-mono text-fg`}>
           {leftPage + 1} / {activeDoc.page_count}
         </span>
         <Tooltip content="Página siguiente">
-          <button onClick={goNext} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={goNext} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ChevronRight size={16} />
           </button>
         </Tooltip>
 
-        <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
+        <div className={`w-px h-5 mx-1 bg-border`} />
 
         <Tooltip content="Alejar">
-          <button onClick={handleZoomOut} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={handleZoomOut} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomOut size={16} />
           </button>
         </Tooltip>
-        <span className={`text-xs w-12 text-center font-mono ${tc('text-slate-300', 'text-gray-700')}`}>{Math.round(zoom * 100)}%</span>
+        <span className={`text-xs w-12 text-center font-mono text-fg`}>{Math.round(zoom * 100)}%</span>
         <Tooltip content="Acercar">
-          <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomIn size={16} />
           </button>
         </Tooltip>
         <Tooltip content="Ajustar">
-          <button onClick={handleFit} className={`p-1.5 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={handleFit} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <Maximize2 size={16} />
           </button>
         </Tooltip>
 
-        <div className={`w-px h-5 mx-1 ${tc('bg-slate-700', 'bg-gray-300')}`} />
+        <div className={`w-px h-5 mx-1 bg-border`} />
 
         <Tooltip content={compareSync ? 'Navegación sincronizada' : 'Navegación independiente'}>
           <button
             onClick={() => setCompareSync(!compareSync)}
-            className={`p-1.5 rounded transition-colors ${compareSync ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}
+            className={`p-1.5 rounded transition-colors ${compareSync ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}
           >
             {compareSync ? <Lock size={16} /> : <Unlock size={16} />}
           </button>
         </Tooltip>
 
         <Tooltip content={diff ? 'Ocultar diferencias de texto' : 'Comparar texto'}>
-          <button onClick={runDiff} className={`p-1.5 rounded transition-colors ${diff ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+          <button onClick={runDiff} className={`p-1.5 rounded transition-colors ${diff ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <GitCompare size={16} />
           </button>
         </Tooltip>
 
         <Tooltip content={overlayMode ? 'Volver a lado a lado' : 'Overlay de revisiones (actual en rojo, comparado en azul)'}>
           <button onClick={() => setOverlayMode((v) => !v)}
-            className={`p-1.5 rounded transition-colors ${overlayMode ? 'bg-blue-600 text-white' : tc('hover:bg-slate-700 text-slate-300', 'hover:bg-gray-100 text-gray-600')}`}>
+            className={`p-1.5 rounded transition-colors ${overlayMode ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <Layers size={16} />
           </button>
         </Tooltip>
 
         {overlayMode && (
-          <span className={`text-xs flex items-center gap-2 ml-1 ${tc('text-slate-400', 'text-gray-500')}`}>
+          <span className={`text-xs flex items-center gap-2 ml-1 text-muted`}>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#ff2222' }} />{activeDoc.file_name}</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#2244ff' }} />{compareDoc.file_name}</span>
           </span>
@@ -335,7 +331,7 @@ export default function ComparisonView() {
         <div className="flex-1" />
 
         <Tooltip content="Salir de comparación">
-          <button onClick={clearCompare} className={`p-1.5 rounded transition-colors flex items-center gap-1 text-xs text-red-400 ${tc('hover:bg-red-900/50', 'hover:bg-red-50')}`}>
+          <button onClick={clearCompare} className="p-1.5 rounded transition-colors flex items-center gap-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10">
             <X size={16} /> Salir
           </button>
         </Tooltip>
@@ -343,23 +339,23 @@ export default function ComparisonView() {
 
       {/* Panel de diferencias de texto */}
       {(diff !== null || diffLoading) && (
-        <div className={`max-h-48 overflow-y-auto border-b text-xs ${tc('bg-slate-800 border-slate-700', 'bg-gray-50 border-gray-300')}`}>
+        <div className={`max-h-48 overflow-y-auto border-b text-xs bg-panel border-border`}>
           {diffLoading ? (
-            <div className={`p-2 ${tc('text-slate-400', 'text-gray-500')}`}>Comparando texto…</div>
+            <div className={`p-2 text-muted`}>Comparando texto…</div>
           ) : diff && diff.length > 0 ? (
             <>
-              <div className={`px-3 py-1 font-semibold ${tc('text-slate-300', 'text-gray-700')}`}>{diff.length} página(s) con cambios</div>
+              <div className={`px-3 py-1 font-semibold text-fg`}>{diff.length} página(s) con cambios</div>
               {diff.map((d) => (
                 <button key={d.page} onClick={() => { setLeftPage(d.page); setRightPage(d.page) }}
-                  className={`block w-full text-left px-3 py-1.5 border-t ${tc('border-slate-700/50 hover:bg-slate-700/40', 'border-gray-200 hover:bg-gray-100')}`}>
-                  <span className={`font-mono mr-2 ${tc('text-slate-400', 'text-gray-500')}`}>Pág {d.page + 1}</span>
-                  {d.removed && <span className="text-red-400 line-through mr-2">{d.removed}</span>}
-                  {d.added && <span className="text-emerald-400">{d.added}</span>}
+                  className={`block w-full text-left px-3 py-1.5 border-t border-border hover:bg-hover`}>
+                  <span className={`font-mono mr-2 text-muted`}>Pág {d.page + 1}</span>
+                  {d.removed && <span className="text-red-600 dark:text-red-400 line-through mr-2">{d.removed}</span>}
+                  {d.added && <span className="text-emerald-600 dark:text-emerald-400">{d.added}</span>}
                 </button>
               ))}
             </>
           ) : (
-            <div className={`p-2 ${tc('text-slate-400', 'text-gray-500')}`}>Sin diferencias de texto</div>
+            <div className={`p-2 text-muted`}>Sin diferencias de texto</div>
           )}
         </div>
       )}
@@ -381,7 +377,7 @@ export default function ComparisonView() {
             scrollRef={leftScrollRef}
             onScroll={() => syncScroll('left')}
           />
-          <div className={`w-px shrink-0 ${tc('bg-slate-700', 'bg-gray-300')}`} />
+          <div className={`w-px shrink-0 bg-border`} />
           <ComparePagePanel
             docId={compareDoc.doc_id}
             page={rightPage}

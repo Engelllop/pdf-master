@@ -2,26 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2 } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useFormModal } from './FormModal'
+import ReviewPanel from './ReviewPanel'
 
 import { apiFetch } from '../lib/api'
 
-function OutlineTree({ items, depth = 0, onJump, tc }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void; tc: (d: string, l: string) => string }) {
+function OutlineTree({ items, depth = 0, onJump }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void }) {
   return (
     <>
       {items.map((item, idx) => (
         <div key={idx}>
           <button
             onClick={() => onJump(item.page)}
-            className={`w-full text-left text-xs rounded px-2 py-1 transition-colors truncate ${tc('text-slate-300 hover:text-white hover:bg-slate-700', 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
+            className={`w-full text-left text-xs rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
             style={{ paddingLeft: `${8 + depth * 12}px` }}
             title={item.title}
           >
             {item.title}
           </button>
           {item.children && item.children.length > 0 && (
-            <OutlineTree items={item.children} depth={depth + 1} onJump={onJump} tc={tc} />
+            <OutlineTree items={item.children} depth={depth + 1} onJump={onJump} />
           )}
         </div>
       ))}
@@ -30,7 +30,6 @@ function OutlineTree({ items, depth = 0, onJump, tc }: { items: OutlineItem[]; d
 }
 
 export default function ThumbnailPanel() {
-  const tc = useThemeClasses()
   const store = useStoreSlice(
     'docs', 'activeDocId', 'sidebarOpen', 'toggleSidebar', 'setPage', 'addThumbnail',
     'bookmarks', 'removeBookmark', 'reorderPages', 'showToast', 'setDocDirty',
@@ -269,12 +268,12 @@ export default function ThumbnailPanel() {
     if (!sidebarOpen) toggleSidebar()
   }
   const railEl = (
-    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
+    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 bg-panel border-border`}>
       {railItems.map(({ id, icon: Icon, title }) => {
         const on = sidebarOpen && tab === id
         return (
           <button key={id} onClick={() => onRail(id)} title={title} aria-label={title}
-            className={`relative p-2 rounded-token transition-colors ${on ? 'text-accent bg-hover' : tc('text-slate-400 hover:text-slate-100 hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}>
+            className={`relative p-2 rounded-token transition-colors ${on ? 'text-accent bg-hover' : 'text-muted hover:text-fg hover:bg-hover'}`}>
             {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
@@ -291,15 +290,15 @@ export default function ThumbnailPanel() {
       <div className="flex shrink-0">
         {railEl}
         {sidebarOpen && (
-          <div className={`w-56 border-r flex flex-col ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
-            <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
-              <span className={`text-xs font-semibold uppercase tracking-wider ${tc('text-slate-400', 'text-gray-500')}`}>{sectionTitle[tab]}</span>
-              <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+          <div className={`w-56 border-r flex flex-col bg-panel border-border`}>
+            <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
+              <span className={`text-xs font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+              <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
                 <PanelLeftClose size={14} />
               </button>
             </div>
             <div className="flex-1 flex items-center justify-center">
-              <p className={`text-sm text-center px-4 ${tc('text-slate-500', 'text-gray-500')}`}>Abre un PDF</p>
+              <p className={`text-sm text-center px-4 text-muted`}>Abre un PDF</p>
             </div>
           </div>
         )}
@@ -312,10 +311,11 @@ export default function ThumbnailPanel() {
       {railEl}
       {formModal}
       {sidebarOpen && (
-      <div className={`w-56 border-r flex flex-col ${tc('bg-slate-800 border-slate-700', 'bg-white border-gray-300')}`}>
-      <div className={`flex items-center justify-between px-3 py-2 border-b ${tc('border-slate-700', 'border-gray-300')}`}>
-        <span className={`text-xs font-semibold uppercase tracking-wider ${tc('text-slate-400', 'text-gray-500')}`}>{sectionTitle[tab]}</span>
-        <button onClick={toggleSidebar} className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+      // El panel de revisión necesita más ancho que las miniaturas (filtros + hilos).
+      <div className={`${tab === 'annotations' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
+      <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
+        <span className={`text-xs font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+        <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
           <PanelLeftClose size={14} />
         </button>
       </div>
@@ -361,15 +361,15 @@ export default function ThumbnailPanel() {
                   onClick={(e) => handleThumbClick(i, e)}
                   className={`w-full rounded border transition-all cursor-pointer relative ${
                     activeDoc.currentPage === i
-                      ? isSelected ? 'border-green-500 bg-green-500/10' : 'border-accent bg-black/5 dark:bg-white/10'
-                      : isSelected ? 'border-green-500 bg-green-500/10' : tc('border-slate-700 hover:border-slate-500 bg-slate-900/50', 'border-gray-300 hover:border-gray-400 bg-gray-50')
+                      ? isSelected ? 'border-accent bg-accent/10' : 'border-accent bg-black/5 dark:bg-white/10'
+                      : isSelected ? 'border-accent bg-accent/10' : 'border-border hover:border-muted bg-surface/50'
                   } ${dragIndex === i ? 'opacity-50' : ''}`}
                 >
                   {isVisible && activeDoc.thumbnails.has(i) ? (
                     <img src={activeDoc.thumbnails.get(i)} alt={`Pagina ${i + 1}`} className="w-full h-auto rounded pointer-events-none" />
                   ) : (
-                    <div className={`w-full aspect-[3/4] flex items-center justify-center rounded ${tc('bg-slate-900', 'bg-gray-100')}`}>
-                      <span className={`text-xs ${tc('text-slate-600', 'text-gray-400')}`}>{i + 1}</span>
+                    <div className={`w-full aspect-[3/4] flex items-center justify-center rounded bg-surface`}>
+                      <span className={`text-xs text-muted`}>{i + 1}</span>
                     </div>
                   )}
                   {activeDoc.currentPage === i && viewerScroll.scrollWidth > 0 && (
@@ -383,29 +383,29 @@ export default function ThumbnailPanel() {
                     </div>
                   )}
                   {isSelected && (
-                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-green-500 flex items-center justify-center">
-                      <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
+                      <svg className="w-3 h-3 text-toolbar" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
                     </div>
                   )}
-                  <div className={`text-center text-[10px] py-1 ${tc('text-slate-400', 'text-gray-500')}`}>{i + 1}</div>
+                  <div className={`text-center text-[10px] py-1 text-muted`}>{i + 1}</div>
                 </div>
               </div>
             )
           })}
           {selectedPages.size > 0 && (
-            <div className={`sticky bottom-2 z-10 mx-1 rounded-xl border shadow-xl ${tc('bg-slate-800/95 border-slate-600', 'bg-white/95 border-gray-300')}`}>
-              <div className={`flex items-center justify-between px-2.5 pt-2 pb-1.5 border-b ${tc('border-slate-700', 'border-gray-200')}`}>
-                <span className={`text-[11px] font-medium ${tc('text-slate-300', 'text-gray-600')}`}>{selectedPages.size} seleccionada(s)</span>
-                <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors ${tc('text-slate-300 hover:text-white hover:bg-slate-700', 'text-gray-500 hover:text-gray-900 hover:bg-gray-100')}`}><X size={15} /></button>
+            <div className={`sticky bottom-2 z-10 mx-1 rounded-xl border shadow-xl bg-panel/95 border-border`}>
+              <div className={`flex items-center justify-between px-2.5 pt-2 pb-1.5 border-b border-border`}>
+                <span className={`text-[11px] font-medium text-muted`}>{selectedPages.size} seleccionada(s)</span>
+                <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors text-muted hover:text-fg hover:bg-hover`}><X size={15} /></button>
               </div>
               <div className="flex flex-wrap gap-1.5 justify-center p-2.5">
                 <button onClick={() => handleRotateSelected(90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° derecha"><RotateCw size={15} /></button>
                 <button onClick={() => handleRotateSelected(-90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° izquierda"><RotateCcw size={15} /></button>
                 <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página"><Copy size={15} /></button>
                 <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después"><FilePlus2 size={15} /></button>
-                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors" title="Extraer a nuevo PDF"><Scissors size={15} /></button>
+                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-colors" title="Extraer a nuevo PDF"><Scissors size={15} /></button>
                 <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors" title="Eliminar página(s)"><Trash2 size={15} /></button>
               </div>
             </div>
@@ -415,9 +415,9 @@ export default function ThumbnailPanel() {
       {tab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-2">
           {activeDoc.outline.length > 0 ? (
-            <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} tc={tc} />
+            <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} />
           ) : (
-            <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Este PDF no tiene outline</p>
+            <p className={`text-xs text-center mt-4 text-muted`}>Este PDF no tiene outline</p>
           )}
         </div>
       )}
@@ -426,12 +426,12 @@ export default function ThumbnailPanel() {
           {bookmarks.filter((b) => b.docId === activeDoc.doc_id).length > 0 ? (
             bookmarks.filter((b) => b.docId === activeDoc.doc_id).map((b) => (
               <div key={b.id} className="flex items-center gap-1 group">
-                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-xs rounded px-2 py-1 transition-colors truncate ${tc('text-slate-300 hover:text-white hover:bg-slate-700', 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}>{b.label}</button>
-                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-900/50 text-red-400 transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
+                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-xs rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
+                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
               </div>
             ))
           ) : (
-            <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Sin marcadores</p>
+            <p className={`text-xs text-center mt-4 text-muted`}>Sin marcadores</p>
           )}
         </div>
       )}
@@ -439,7 +439,7 @@ export default function ThumbnailPanel() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {activeDoc.searchResults.length > 0 ? (
             <>
-              <div className={`text-[10px] px-1 pb-1 ${tc('text-slate-500', 'text-gray-500')}`}>
+              <div className={`text-[10px] px-1 pb-1 text-muted`}>
                 {activeDoc.searchResults.length} resultado(s) para "{activeDoc.searchQuery}"
               </div>
               {activeDoc.searchResults.map((r, i) => (
@@ -449,17 +449,17 @@ export default function ThumbnailPanel() {
                   className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
                     i === activeDoc.searchIndex
                       ? 'bg-black/5 dark:bg-white/10 border border-accent'
-                      : tc('hover:bg-slate-700 border border-transparent', 'hover:bg-gray-100 border border-transparent')
+                      : 'hover:bg-hover border border-transparent'
                   }`}
                   title={r.snippet || ''}
                 >
-                  <span className={`block text-[10px] mb-0.5 ${tc('text-slate-500', 'text-gray-500')}`}>Pág. {r.page + 1}</span>
-                  <span className={`block truncate ${tc('text-slate-300', 'text-gray-700')}`}>{r.snippet || '(sin texto)'}</span>
+                  <span className={`block text-[10px] mb-0.5 text-muted`}>Pág. {r.page + 1}</span>
+                  <span className={`block truncate text-fg`}>{r.snippet || '(sin texto)'}</span>
                 </button>
               ))}
             </>
           ) : (
-            <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Sin resultados de búsqueda</p>
+            <p className={`text-xs text-center mt-4 text-muted`}>Sin resultados de búsqueda</p>
           )}
           {(() => {
             // Resultados de la misma búsqueda en los demás documentos abiertos
@@ -468,15 +468,15 @@ export default function ThumbnailPanel() {
             if (others.length === 0) return null
             return (
               <>
-                <div className={`text-[10px] px-1 pt-3 pb-1 border-t mt-2 ${tc('text-slate-500 border-slate-700', 'text-gray-500 border-gray-200')}`}>
+                <div className={`text-[10px] px-1 pt-3 pb-1 border-t mt-2 text-muted border-border`}>
                   En otros documentos
                 </div>
                 {others.map((d) => (
                   <button key={d.doc_id} onClick={() => { setActiveDoc(d.doc_id); goToSearchResult(d.doc_id, 0) }}
-                    className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${tc('hover:bg-slate-700', 'hover:bg-gray-100')}`}
+                    className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors hover:bg-hover`}
                     title={d.file_path}>
-                    <span className={`block truncate font-medium ${tc('text-slate-300', 'text-gray-700')}`}>{d.file_name}</span>
-                    <span className={`block text-[10px] ${tc('text-slate-500', 'text-gray-500')}`}>{d.searchResults.length} resultado(s)</span>
+                    <span className={`block truncate font-medium text-fg`}>{d.file_name}</span>
+                    <span className={`block text-[10px] text-muted`}>{d.searchResults.length} resultado(s)</span>
                   </button>
                 ))}
               </>
@@ -484,23 +484,7 @@ export default function ThumbnailPanel() {
           })()}
         </div>
       )}
-      {tab === 'annotations' && (
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {activeDoc.annotations.length > 0 ? (
-            activeDoc.annotations.map((ann) => (
-              <div key={ann.id} className="flex items-center gap-1 group">
-                <button onClick={() => { setPage(activeDoc.doc_id, ann.page); store.selectAnnotation(activeDoc.doc_id, ann.id) }} className={`flex-1 text-left text-xs rounded px-2 py-1 transition-colors truncate ${tc('text-slate-300 hover:text-white hover:bg-slate-700', 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`} title={ann.text || ann.type}>
-                  <span className="capitalize text-slate-500 mr-1">{ann.type}</span>
-                  <span className="truncate">{ann.text || `Pag. ${ann.page + 1}`}</span>
-                </button>
-                <button onClick={() => store.deleteAnnotation(activeDoc.doc_id, ann.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-900/50 text-red-400 transition-opacity" aria-label="Eliminar anotacion"><Trash2 size={12} /></button>
-              </div>
-            ))
-          ) : (
-            <p className={`text-xs text-center mt-4 ${tc('text-slate-500', 'text-gray-500')}`}>Sin anotaciones</p>
-          )}
-        </div>
-      )}
+      {tab === 'annotations' && <ReviewPanel activeDoc={activeDoc} />}
       </div>
       )}
     </div>

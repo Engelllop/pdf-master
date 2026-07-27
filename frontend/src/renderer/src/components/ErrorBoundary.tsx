@@ -25,17 +25,17 @@ export default class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         this.props.fallback || (
-          <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white p-8">
+          <div className="h-screen w-screen flex flex-col items-center justify-center bg-surface text-fg p-8">
             <h1 className="text-2xl font-bold mb-2">Algo salió mal</h1>
-            <p className="text-sm text-gray-400 mb-4 max-w-md text-center">
+            <p className="text-sm text-muted mb-4 max-w-md text-center">
               PDF Master encontró un error inesperado. Guarda tu trabajo y reinicia la aplicación.
             </p>
-            <pre className="text-xs bg-slate-800 p-3 rounded max-w-lg overflow-auto">
+            <pre className="text-xs bg-panel border border-border p-3 rounded max-w-lg overflow-auto text-muted">
               {this.state.error?.message}
             </pre>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-sm font-medium"
+              className="mt-4 px-4 py-2 bg-fg text-toolbar hover:opacity-90 rounded text-sm font-medium transition-opacity"
             >
               Reiniciar
             </button>

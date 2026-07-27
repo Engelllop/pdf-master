@@ -5,6 +5,7 @@ import math
 import uuid
 import json
 import os
+from datetime import datetime
 from typing import Dict, Optional, List
 from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
@@ -174,6 +175,37 @@ class AnnotationsMixin:
                 shape.finish(color=color, fill=color, closePath=True,
                              stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
                 shape.commit()
+            elif ann.type == 'line':
+                page.draw_line(fitz.Point(ann.x, ann.y),
+                               fitz.Point(ann.x + (ann.width or 0), ann.y + (ann.height or 0)),
+                               color=color, width=ann.lineWidth or 2,
+                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann), lineCap=1)
+            elif ann.type == 'callout':
+                # Caja + línea guía al punto señalado (points[0]) + texto dentro.
+                w, h = ann.width or 0, ann.height or 0
+                box = fitz.Rect(ann.x, ann.y, ann.x + w, ann.y + h)
+                tip = (ann.points or [None])[0]
+                if tip:
+                    tx, ty = float(tip.get('x', 0)), float(tip.get('y', 0))
+                    anchor_x = box.x0 if tx < box.x0 else box.x1 if tx > box.x1 else (box.x0 + box.x1) / 2
+                    anchor_y = box.y0 if ty < box.y0 else box.y1 if ty > box.y1 else (box.y0 + box.y1) / 2
+                    page.draw_line(fitz.Point(anchor_x, anchor_y), fitz.Point(tx, ty),
+                                   color=color, width=ann.lineWidth or 1.5, stroke_opacity=stroke_op(ann))
+                    page.draw_circle(fitz.Point(tx, ty), max(1.5, (ann.lineWidth or 1.5) * 1.5),
+                                     color=color, fill=color, stroke_opacity=stroke_op(ann))
+                page.draw_rect(box, color=color, width=ann.lineWidth or 1.5,
+                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
+                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
+                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.9)
+                if ann.text:
+                    fs = ann.fontSize or 12
+                    fargs = _font_args(ann.fontFamily, bool(ann.bold), bool(ann.italic))
+                    try:
+                        page.insert_textbox(fitz.Rect(box.x0 + 3, box.y0 + 2, box.x1 - 3, box.y1 - 2),
+                                            ann.text, fontsize=fs, color=color, align=0, **fargs)
+                    except Exception:
+                        page.insert_textbox(fitz.Rect(box.x0 + 3, box.y0 + 2, box.x1 - 3, box.y1 - 2),
+                                            ann.text, fontsize=fs, color=color, align=0)
             elif ann.type == 'check':
                 w, h = ann.width or 0, ann.height or 0
                 pts = [fitz.Point(ann.x + w * 0.12, ann.y + h * 0.55),
@@ -290,18 +322,60 @@ class AnnotationsMixin:
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':
-                # Marca de conteo: círculo relleno con cruz blanca; (x, y) es el centro
-                # y `text` lleva la categoría (queda como contenido del annot al pasar
-                # por add_circle si algún visor la muestra — aquí se dibuja plano).
+                # Marca de conteo: (x, y) es el centro y `text` lleva la categoría.
+                # `symbol` distingue categorías por forma, no solo por color.
                 r = 9.0
-                rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
-                page.draw_oval(rect, color=(1, 1, 1), width=r * 0.16, fill=color,
-                               stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
-                shape = page.new_shape()
-                shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
-                shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
-                shape.finish(color=(1, 1, 1), width=r * 0.2, stroke_opacity=stroke_op(ann))
-                shape.commit()
+                sym = ann.symbol or 'circle'
+                op = stroke_op(ann)
+                if sym == 'square':
+                    page.draw_rect(fitz.Rect(ann.x - r * 0.85, ann.y - r * 0.85, ann.x + r * 0.85, ann.y + r * 0.85),
+                                   color=(1, 1, 1), width=r * 0.16, fill=color,
+                                   stroke_opacity=op, fill_opacity=op)
+                elif sym in ('triangle', 'diamond', 'star'):
+                    if sym == 'triangle':
+                        pts = [fitz.Point(ann.x, ann.y - r), fitz.Point(ann.x + r * 0.9, ann.y + r * 0.7),
+                               fitz.Point(ann.x - r * 0.9, ann.y + r * 0.7)]
+                    elif sym == 'diamond':
+                        pts = [fitz.Point(ann.x, ann.y - r), fitz.Point(ann.x + r, ann.y),
+                               fitz.Point(ann.x, ann.y + r), fitz.Point(ann.x - r, ann.y)]
+                    else:
+                        pts = []
+                        for i in range(10):
+                            angle = -math.pi / 2 + i * math.pi / 5
+                            f = 1.0 if i % 2 == 0 else 0.42
+                            pts.append(fitz.Point(ann.x + math.cos(angle) * r * f, ann.y + math.sin(angle) * r * f))
+                    shape = page.new_shape()
+                    shape.draw_polyline(pts)
+                    shape.finish(color=(1, 1, 1), fill=color, closePath=True, width=r * 0.16,
+                                 stroke_opacity=op, fill_opacity=op)
+                    shape.commit()
+                elif sym == 'cross':
+                    rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
+                    page.draw_oval(rect, color=color, width=r * 0.16, stroke_opacity=op)
+                    shape = page.new_shape()
+                    shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
+                    shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
+                    shape.finish(color=color, width=r * 0.2, stroke_opacity=op)
+                    shape.commit()
+                else:
+                    rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
+                    page.draw_oval(rect, color=(1, 1, 1), width=r * 0.16, fill=color,
+                                   stroke_opacity=op, fill_opacity=op)
+                    shape = page.new_shape()
+                    shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
+                    shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
+                    shape.finish(color=(1, 1, 1), width=r * 0.2, stroke_opacity=op)
+                    shape.commit()
+            elif ann.type == 'measure_perimeter':
+                pts = [fitz.Point(p['x'], p['y']) for p in (ann.points or [])]
+                if len(pts) >= 2:
+                    page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
+                                       dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
+                                       lineCap=1, lineJoin=1)
+                    if ann.measurement:
+                        mid = pts[len(pts) // 2]
+                        page.insert_text((mid.x + 4, mid.y - 6), ann.measurement.label,
+                                         fontsize=9, color=color)
 
         # Las fuentes TTF incrustadas por insert_text(fontfile=...) se reducen al
         # subconjunto de glifos usados (sin esto cada fuente añade cientos de KB).
@@ -324,7 +398,9 @@ class AnnotationsMixin:
         y = 60
         page.insert_text((50, y), f"Resumen de marcas — {source_name}", fontsize=15, color=(0, 0, 0))
         y += 28
-        page.insert_text((50, y), f"Total: {len(annotations)} anotaciones", fontsize=10, color=(0.3, 0.3, 0.3))
+        resolved = sum(1 for a in annotations if a.status == "resolved")
+        page.insert_text((50, y), f"Total: {len(annotations)} anotaciones  ·  {resolved} resuelta(s)",
+                         fontsize=10, color=(0.3, 0.3, 0.3))
         y += 22
         for idx, ann in enumerate(sorted(annotations, key=lambda a: (a.page, a.y or 0)), 1):
             if y > 780:
@@ -334,6 +410,28 @@ class AnnotationsMixin:
             line = f"{idx}.  Pág {ann.page + 1}  ·  {ann.type}" + (f"  ·  {text[:90]}" if text else "")
             page.insert_text((50, y), line, fontsize=9, color=(0.1, 0.1, 0.1))
             y += 15
+            # Segunda línea con los metadatos de revisión, solo si los hay.
+            meta = []
+            if ann.author:
+                meta.append(ann.author)
+            if ann.createdAt:
+                meta.append(datetime.fromtimestamp(ann.createdAt / 1000).strftime("%m/%d/%Y %H:%M"))
+            if ann.status == "resolved":
+                meta.append("RESUELTA")
+            replies = ann.replies or []
+            if replies:
+                meta.append(f"{len(replies)} respuesta(s)")
+            if meta:
+                page.insert_text((66, y), "  ·  ".join(meta), fontsize=8, color=(0.45, 0.45, 0.45))
+                y += 13
+            for r in replies:
+                if y > 780:
+                    page = out.new_page()
+                    y = 60
+                reply_text = (r.text or "").replace("\n", " ").strip()
+                page.insert_text((80, y), f"↳ {r.author or 'Sin autor'}: {reply_text[:80]}",
+                                 fontsize=8, color=(0.45, 0.45, 0.45))
+                y += 13
         data = out.tobytes()
         out.close()
         return {
@@ -374,9 +472,21 @@ class AnnotationsMixin:
                 attrs["opacity"] = f"{ann.opacity:.2f}"
             if ann.lineWidth:
                 attrs["width"] = f"{ann.lineWidth:g}"
+            # `title` es el autor en XFDF (así lo leen Acrobat y Bluebeam).
+            if ann.author:
+                attrs["title"] = ann.author
+            if ann.createdAt:
+                attrs["date"] = datetime.fromtimestamp(ann.createdAt / 1000).strftime("D:%Y%m%d%H%M%S")
             return attrs
 
         def rect_attr(ann: Annotation) -> str:
+            # Las marcas definidas por puntos (área, perímetro, polígono) no tienen
+            # width/height: su rect es el bbox de los vértices.
+            if ann.points and not ann.width:
+                xs = [p['x'] for p in ann.points]
+                ys = [p['y'] for p in ann.points]
+                return (f"{min(xs):.2f},{flip(ann.page, max(ys)):.2f},"
+                        f"{max(xs):.2f},{flip(ann.page, min(ys)):.2f}")
             w = ann.width or 0
             h = ann.height or 0
             x0, x1 = sorted((ann.x, ann.x + w))
@@ -404,7 +514,7 @@ class AnnotationsMixin:
                 if ann.fillColor:
                     a["interior-color"] = ann.fillColor
                 el = ET.SubElement(annots, f"{{{NS}}}circle", a)
-            elif ann.type in ("arrow", "measure_distance"):
+            elif ann.type in ("arrow", "line", "measure_distance"):
                 x2 = ann.x + (ann.width or 0)
                 y2 = ann.y + (ann.height or 0)
                 a["start"] = f"{ann.x:.2f},{flip(ann.page, ann.y):.2f}"
@@ -425,6 +535,15 @@ class AnnotationsMixin:
                 inklist = ET.SubElement(el, f"{{{NS}}}inklist")
                 gesture = ET.SubElement(inklist, f"{{{NS}}}gesture")
                 gesture.text = ";".join(f"{p['x']:.2f},{flip(ann.page, p['y']):.2f}" for p in ann.points)
+            elif ann.type == "measure_perimeter":
+                if not ann.points:
+                    continue
+                a["vertices"] = ";".join(f"{p['x']:.2f},{flip(ann.page, p['y']):.2f}" for p in ann.points)
+                a["rect"] = rect_attr(ann)
+                el = ET.SubElement(annots, f"{{{NS}}}polyline", a)
+                if ann.measurement:
+                    c = ET.SubElement(el, f"{{{NS}}}contents")
+                    c.text = ann.measurement.label
             elif ann.type == "measure_area":
                 if not ann.points:
                     continue
@@ -446,6 +565,22 @@ class AnnotationsMixin:
                 el = ET.SubElement(annots, f"{{{NS}}}freetext", a)
                 c = ET.SubElement(el, f"{{{NS}}}contents")
                 c.text = ann.text or ""
+            elif ann.type == "callout":
+                # freetext con línea guía: `callout` lleva los 3 puntos (punta,
+                # codo, anclaje) que definen la guía en el estándar XFDF.
+                a["rect"] = rect_attr(ann)
+                a["intent"] = "FreeTextCallout"
+                tip = (ann.points or [None])[0]
+                if tip:
+                    tx, ty = float(tip.get("x", 0)), flip(ann.page, float(tip.get("y", 0)))
+                    ax = ann.x if tx < ann.x else ann.x + (ann.width or 0)
+                    ay = flip(ann.page, ann.y + (ann.height or 0) / 2)
+                    a["callout"] = f"{tx:.2f},{ty:.2f},{tx:.2f},{ty:.2f},{ax:.2f},{ay:.2f}"
+                if ann.fillColor:
+                    a["interior-color"] = ann.fillColor
+                el = ET.SubElement(annots, f"{{{NS}}}freetext", a)
+                c = ET.SubElement(el, f"{{{NS}}}contents")
+                c.text = ann.text or ""
             elif ann.type == "count":
                 r = 9.0
                 y = flip(ann.page, ann.y)
@@ -454,7 +589,8 @@ class AnnotationsMixin:
                 a["interior-color"] = ann.color or "#FF0000"
                 el = ET.SubElement(annots, f"{{{NS}}}circle", a)
             # 'image' no viaja en XFDF (el estándar no embebe bitmaps de forma portable)
-            if el is not None and info:
+            # `title` es el autor: solo se pone el genérico si la marca no lo trae.
+            if el is not None and info and not ann.author:
                 el.set("title", "PDF Master")
 
         f_el = ET.SubElement(root, f"{{{NS}}}f")

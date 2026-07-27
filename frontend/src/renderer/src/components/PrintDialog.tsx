@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { X, Printer } from 'lucide-react'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 
 interface PrintDialogProps {
@@ -11,7 +10,6 @@ interface PrintDialogProps {
 }
 
 export default function PrintDialog({ docId, pageCount, currentPage, onClose }: PrintDialogProps) {
-  const tc = useThemeClasses()
   const { showToast } = useStoreSlice('showToast')
   const [mode, setMode] = useState<'all' | 'current' | 'range'>('all')
   const [range, setRange] = useState('')
@@ -47,12 +45,13 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
   return (
     <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Imprimir" onClick={(e) => e.stopPropagation()}
-        className={`menu-pop w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel ${tc('border-slate-600 text-slate-200', 'border-gray-300 text-gray-800')}`}>
-        <div className={`flex items-center gap-2 px-4 py-3 border-b ${tc('border-slate-700', 'border-gray-200')}`}>
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
+        className="menu-pop w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel border-border text-fg">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Printer size={18} className="text-fg" />
           <h2 className="text-sm font-semibold flex-1">Imprimir</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className={`p-1 rounded transition-colors ${tc('hover:bg-slate-700 text-slate-400', 'hover:bg-gray-100 text-gray-500')}`}>
+            className="p-1 rounded transition-colors hover:bg-hover text-muted">
             <X size={16} />
           </button>
         </div>
@@ -77,7 +76,7 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
           </div>
         </div>
 
-        <div className={`flex justify-end gap-2 px-4 py-3 border-t ${tc('border-slate-700', 'border-gray-200')}`}>
+        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
           <button onClick={onClose} className="px-3 py-1.5 text-sm rounded text-fg hover:bg-hover transition-colors">Cancelar</button>
           <button onClick={handlePrint} disabled={printing}
             className="px-4 py-1.5 text-sm rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">

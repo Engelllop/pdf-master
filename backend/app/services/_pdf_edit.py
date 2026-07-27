@@ -91,14 +91,17 @@ class EditMixin:
         doc = self._acquire(doc_id)
         if not doc or not query:
             return 0
-        flags = 0 if case_sensitive else fitz.TEXT_DEHYPHENATE
         count = 0
         pages_to_search = [page_num] if page_num is not None else range(len(doc))
         for p in pages_to_search:
             if p < 0 or p >= len(doc):
                 continue
             page = doc.load_page(p)
-            rects = page.search_for(query, flags=flags)
+            # search_for de PyMuPDF es siempre case-insensitive; la sensibilidad se
+            # aplica comparando el texto real de cada rect con la query exacta.
+            rects = page.search_for(query, flags=fitz.TEXT_DEHYPHENATE)
+            if case_sensitive:
+                rects = [r for r in rects if query in page.get_textbox(r + (-1, -1, 1, 1))]
             if not rects:
                 continue
             # Redact old text

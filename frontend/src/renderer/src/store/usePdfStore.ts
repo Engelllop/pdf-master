@@ -4,7 +4,12 @@ import { apiFetch } from '../lib/api'
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
 
 export type LineStyle = 'solid' | 'dashed' | 'dotted'
-export type RibbonTab = 'read' | 'comment' | 'edit' | 'form' | 'page' | 'protect' | 'convert' | 'tools' | 'ai' | 'batch'
+export type ThemePreference = 'light' | 'dark' | 'system'
+/** Qué hace la rueda al llegar al borde de la página: desplazar o cambiar de página. */
+export type WheelMode = 'scroll' | 'page'
+/** Encuadre con el que se abre un documento. */
+export type DefaultZoomMode = 'fit-page' | 'fit-width' | 'actual'
+export type RibbonTab = 'read' | 'comment' | 'edit' | 'page' | 'protect' | 'convert' | 'ai'
 
 export interface PageSize {
   page_num: number
@@ -26,9 +31,20 @@ export interface ViewerScroll {
   scrollHeight: number
 }
 
+export type AnnotationStatus = 'open' | 'resolved'
+export type CountSymbol = 'circle' | 'square' | 'triangle' | 'diamond' | 'cross' | 'star'
+export const COUNT_SYMBOLS: CountSymbol[] = ['circle', 'square', 'triangle', 'diamond', 'cross', 'star']
+
+export interface Reply {
+  id: string
+  author?: string
+  text: string
+  at: number
+}
+
 export interface Annotation {
   id: string
-  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'signature' | 'measure_distance' | 'measure_area' | 'image' | 'count' | 'check' | 'cross' | 'star' | 'cloud' | 'polygon'
+  type: 'highlight' | 'underline' | 'strikethrough' | 'note' | 'draw' | 'text' | 'rect' | 'circle' | 'arrow' | 'line' | 'callout' | 'signature' | 'measure_distance' | 'measure_area' | 'measure_perimeter' | 'image' | 'count' | 'check' | 'cross' | 'star' | 'cloud' | 'polygon'
   page: number
   x: number
   y: number
@@ -52,6 +68,15 @@ export interface Annotation {
   align?: 'left' | 'center' | 'right'
   lineHeight?: number
   listStyle?: 'none' | 'bullet' | 'number'
+  /** Símbolo de las marcas de conteo (estilo Bluebeam): permite contar varias
+   * categorías en el mismo plano distinguiéndolas de un vistazo. */
+  symbol?: CountSymbol
+  // Metadatos de revisión: los rellena el store al crear/editar la marca.
+  author?: string
+  createdAt?: number
+  modifiedAt?: number
+  status?: AnnotationStatus
+  replies?: Reply[]
 }
 
 export interface TextStyle {
@@ -97,12 +122,24 @@ export interface PdfDoc {
   outline: OutlineItem[]
   measurementScale?: MeasurementScale | null
   docVersion: number
+  navHistory: number[]
+  navHistoryIndex: number
 }
 
 interface Toast {
   id: string
   message: string
   type: 'success' | 'error' | 'info'
+}
+
+/** Operación larga en curso. `total` 0 = progreso indeterminado. */
+export interface ProgressState {
+  label: string
+  detail?: string
+  current: number
+  total: number
+  cancelable: boolean
+  canceled: boolean
 }
 
 interface AnnCommand {
@@ -118,6 +155,7 @@ export interface PdfState {
   viewerWidth: number
   viewerHeight: number
   activeTool: string | null
+  stickyTools: boolean
   activeRibbon: RibbonTab
   annotationColor: string
   annotationLineWidth: number
@@ -133,8 +171,6 @@ export interface PdfState {
   textFontFamily: string
   textFontSize: number
   bookmarks: Bookmark[]
-  navHistory: number[]
-  navHistoryIndex: number
   toasts: Toast[]
   undoStack: AnnCommand[]
   redoStack: AnnCommand[]
@@ -149,6 +185,13 @@ export interface PdfState {
   selectedStamp: string
   stampColor: string
   loadingDocId: string | null
+
+  progress: ProgressState | null
+  startProgress: (label: string, total: number, cancelable?: boolean) => void
+  updateProgress: (current: number, detail?: string) => void
+  endProgress: () => void
+  requestCancel: () => void
+  isCancelRequested: () => boolean
 
   setDocLoading: (docId: string | null) => void
   addDoc: (info: {
@@ -181,10 +224,14 @@ export interface PdfState {
   prevSearchResult: (docId: string) => void
   goToSearchResult: (docId: string, index: number) => void
   setActiveTool: (tool: string | null) => void
+  setStickyTools: (sticky: boolean) => void
+  releaseTool: () => void
   setActiveRibbon: (tab: RibbonTab) => void
   setAnnotationColor: (color: string) => void
   countCategory: string
   setCountCategory: (category: string) => void
+  countSymbol: CountSymbol
+  setCountSymbol: (symbol: CountSymbol) => void
   setAnnotationLineWidth: (width: number) => void
   setAnnotationLineStyle: (style: LineStyle) => void
   setAnnotationOpacity: (opacity: number) => void
@@ -192,6 +239,21 @@ export interface PdfState {
   setAnnotationFillOpacity: (opacity: number) => void
   setViewMode: (mode: 'single' | 'double') => void
   setTheme: (theme: 'dark' | 'light') => void
+  themePreference: ThemePreference
+  setThemePreference: (pref: ThemePreference) => void
+  applySystemTheme: () => void
+  wheelMode: WheelMode
+  setWheelMode: (mode: WheelMode) => void
+  uiScale: number
+  setUiScale: (scale: number) => void
+  defaultZoomMode: DefaultZoomMode
+  setDefaultZoomMode: (mode: DefaultZoomMode) => void
+  defaultUnit: MeasurementScale['unit']
+  setDefaultUnit: (unit: MeasurementScale['unit']) => void
+  restoreSession: boolean
+  setRestoreSession: (on: boolean) => void
+  backupOnSave: boolean
+  setBackupOnSave: (on: boolean) => void
   toggleReadingMode: () => void
   togglePresentationMode: () => void
   toggleContinuousMode: () => void
@@ -199,6 +261,11 @@ export interface PdfState {
   removeBookmark: (id: string) => void
   goBack: (docId: string) => void
   goForward: (docId: string) => void
+  annotationAuthor: string
+  setAnnotationAuthor: (name: string) => void
+  setAnnotationStatus: (docId: string, annId: string, status: AnnotationStatus) => void
+  addReply: (docId: string, annId: string, text: string) => void
+  deleteReply: (docId: string, annId: string, replyId: string) => void
   addAnnotation: (docId: string, ann: Annotation) => void
   deleteAnnotation: (docId: string, annId: string) => void
   setAnnotations: (docId: string, anns: Annotation[]) => void
@@ -208,6 +275,15 @@ export interface PdfState {
   updateDocPageSizes: (docId: string, sizes: PageSize[]) => void
   setOutline: (docId: string, outline: OutlineItem[]) => void
   selectAnnotation: (docId: string, annId: string | null) => void
+  selectedAnnotationIds: string[]
+  selectAnnotations: (docId: string, ids: string[]) => void
+  toggleAnnotationSelection: (docId: string, annId: string) => void
+  updateAnnotations: (docId: string, ids: string[], updates: Partial<Annotation>) => void
+  moveAnnotations: (docId: string, ids: string[], dx: number, dy: number) => void
+  deleteAnnotations: (docId: string, ids: string[]) => void
+  annotationClipboard: Annotation[]
+  copyAnnotations: (docId: string, ids: string[]) => number
+  pasteAnnotations: (docId: string, page: number, offset?: number) => number
   invalidatePageCache: (docId: string) => void
   invalidateThumbnails: (docId: string) => void
   updateAnnotation: (docId: string, annId: string, updates: Partial<Annotation>) => void
@@ -238,6 +314,49 @@ export interface PdfState {
 
 const SCALES_KEY = 'pdfmaster_scales'
 const STROKE_KEY = 'pdfmaster_stroke'
+const STICKY_KEY = 'pdfmaster_sticky_tools'
+const AUTHOR_KEY = 'pdfmaster_author'
+const THEME_PREF_KEY = 'pdfmaster_theme_pref'
+const WHEEL_KEY = 'pdfmaster_wheel_mode'
+const PREF_KEYS = {
+  uiScale: 'pdfmaster_ui_scale',
+  zoomMode: 'pdfmaster_default_zoom',
+  unit: 'pdfmaster_default_unit',
+  restore: 'pdfmaster_restore_session',
+  backup: 'pdfmaster_backup_on_save',
+}
+
+function loadPref<T extends string>(key: string, valid: readonly T[], fallback: T): T {
+  try {
+    const v = localStorage.getItem(key) as T | null
+    return v && valid.includes(v) ? v : fallback
+  } catch {
+    return fallback
+  }
+}
+
+function systemTheme(): 'dark' | 'light' {
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+function loadThemePreference(): ThemePreference {
+  try {
+    const pref = localStorage.getItem(THEME_PREF_KEY)
+    if (pref === 'dark' || pref === 'light' || pref === 'system') return pref
+    // Sin preferencia nueva: respeta el tema que ya tuviera guardado la app.
+    return localStorage.getItem('pdfmaster_theme') === 'dark' ? 'dark' : 'light'
+  } catch {
+    return 'light'
+  }
+}
+
+// Herramientas que siempre se sueltan tras un uso aunque el modo pegajoso esté
+// activo: piden un archivo, una calibración o una selección de área puntual.
+const ONE_SHOT_TOOLS = ['image', 'measure_calibrate', 'croparea', 'redactarea']
 
 function loadStrokePrefs(): Record<string, unknown> {
   try { return JSON.parse(localStorage.getItem(STROKE_KEY) || '{}') } catch { return {} }
@@ -272,10 +391,20 @@ function persistScale(filePath: string, scale: MeasurementScale | null) {
 // vw/vh = tamaño real del visor (mismos márgenes que computeFitZoom fit-page),
 // para que el zoom inicial ya sea el ajuste correcto aunque el doc se abra en
 // segundo plano y el recálculo del efecto no llegue a dispararse.
-function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0], vw: number, vh: number): PdfDoc {
+function createDocFromInfo(
+  info: Parameters<PdfState['addDoc']>[0],
+  vw: number,
+  vh: number,
+  zoomMode: DefaultZoomMode = 'fit-page',
+): PdfDoc {
   const sizes = info.page_sizes || []
-  const fitZoom = sizes.length > 0
-    ? Math.min((vw - 48) / sizes[0].width, (vh - 40) / sizes[0].height)
+  const first = sizes[0]
+  const fitZoom = first
+    ? zoomMode === 'actual'
+      ? 1
+      : zoomMode === 'fit-width'
+        ? (vw - 48) / first.width
+        : Math.min((vw - 48) / first.width, (vh - 40) / first.height)
     : 1
   return {
     ...info,
@@ -283,7 +412,7 @@ function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0], vw: number, 
     file_name: info.file_path.split(/[\\/]/).pop() || 'Documento',
     currentPage: 0,
     zoom: fitZoom,
-    fitMode: 'fit-page',
+    fitMode: zoomMode === 'actual' ? 'custom' : zoomMode,
     thumbnails: new Map(),
     searchQuery: '',
     searchResults: [],
@@ -294,6 +423,8 @@ function createDocFromInfo(info: Parameters<PdfState['addDoc']>[0], vw: number, 
     outline: [],
     measurementScale: loadPersistedScale(info.file_path),
     docVersion: 0,
+    navHistory: [],
+    navHistoryIndex: -1,
   }
 }
 
@@ -308,9 +439,12 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   viewerWidth: 800,
   viewerHeight: 600,
   activeTool: null,
+  stickyTools: (() => { try { return localStorage.getItem(STICKY_KEY) !== '0' } catch { return true } })(),
+  annotationAuthor: (() => { try { return localStorage.getItem(AUTHOR_KEY) || '' } catch { return '' } })(),
   activeRibbon: 'read',
   annotationColor: '#fbbf24',
   countCategory: 'General',
+  countSymbol: 'circle',
   annotationLineWidth: typeof strokePrefs.lineWidth === 'number' ? strokePrefs.lineWidth as number : 2,
   annotationLineStyle: (['solid', 'dashed', 'dotted'].includes(strokePrefs.lineStyle as string) ? strokePrefs.lineStyle : 'solid') as LineStyle,
   annotationOpacity: typeof strokePrefs.opacity === 'number' ? strokePrefs.opacity as number : 1,
@@ -321,6 +455,9 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   undoStack: [],
   redoStack: [],
   selectedAnnotationId: null,
+  selectedAnnotationIds: [],
+  annotationClipboard: [],
+  progress: null,
   saveStatus: 'idle',
   compareMode: false,
   compareDocId: null,
@@ -330,7 +467,19 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   viewerScroll: { left: 0, top: 0, clientWidth: 0, clientHeight: 0, scrollWidth: 0, scrollHeight: 0 },
   selectedStamp: 'APROBADO',
   stampColor: '#22c55e',
-  theme: (() => { try { const t = localStorage.getItem('pdfmaster_theme'); return t === 'dark' ? 'dark' : 'light' } catch { return 'light' } })(),
+  themePreference: loadThemePreference(),
+  theme: (() => {
+    const pref = loadThemePreference()
+    return pref === 'system' ? systemTheme() : pref
+  })(),
+  // Por defecto se mantiene el comportamiento histórico (cambiar de página al llegar
+  // al borde); quien lo encuentre sorprendente lo desactiva en Ajustes.
+  wheelMode: (() => { try { return localStorage.getItem(WHEEL_KEY) === 'scroll' ? 'scroll' : 'page' } catch { return 'page' } })(),
+  uiScale: (() => { try { return Number(localStorage.getItem(PREF_KEYS.uiScale)) || 1 } catch { return 1 } })(),
+  defaultZoomMode: loadPref(PREF_KEYS.zoomMode, ['fit-page', 'fit-width', 'actual'] as const, 'fit-page'),
+  defaultUnit: loadPref(PREF_KEYS.unit, ['m', 'cm', 'mm', 'ft', 'in'] as const, 'mm'),
+  restoreSession: (() => { try { return localStorage.getItem(PREF_KEYS.restore) !== '0' } catch { return true } })(),
+  backupOnSave: (() => { try { return localStorage.getItem(PREF_KEYS.backup) === '1' } catch { return false } })(),
   readingMode: false,
   presentationMode: false,
   continuousMode: false,
@@ -341,14 +490,27 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     try { return JSON.parse(localStorage.getItem('pdfmaster_bookmarks') || '[]') }
     catch { return [] }
   })(),
-  navHistory: [],
-  navHistoryIndex: -1,
   loadingDocId: null,
+
+  // Progreso de operaciones largas. El backend corre con UN worker: sin esto, un
+  // export o un lote de 60 documentos congela la app sin explicación.
+  startProgress: (label, total, cancelable = true) =>
+    set({ progress: { label, current: 0, total, cancelable, canceled: false } }),
+
+  updateProgress: (current, detail) =>
+    set((state) => (state.progress ? { progress: { ...state.progress, current, detail } } : state)),
+
+  endProgress: () => set({ progress: null }),
+
+  requestCancel: () =>
+    set((state) => (state.progress ? { progress: { ...state.progress, canceled: true } } : state)),
+
+  isCancelRequested: () => !!get().progress?.canceled,
 
   setDocLoading: (docId) => set({ loadingDocId: docId }),
   addDoc: (info, activate = true) => {
     const { viewerWidth, viewerHeight } = get()
-    const doc = createDocFromInfo(info, viewerWidth || 800, viewerHeight || 600)
+    const doc = createDocFromInfo(info, viewerWidth || 800, viewerHeight || 600, get().defaultZoomMode)
     set((state) => ({
       docs: [...state.docs, doc],
       // Bulk opens (e.g. 60+ plans at once) add background tabs; only activate when
@@ -369,13 +531,18 @@ export const usePdfStore = create<PdfState>((set, get) => ({
             ? remaining[remaining.length - 1].doc_id
             : null
           : state.activeDocId
+      // Si el doc cerrado participaba en la comparación, salir del modo comparar
+      // para que ComparisonView no quede apuntando a un documento muerto.
+      const wasComparing = state.compareDocId === docId || (state.compareMode && state.activeDocId === docId)
       return {
         docs: remaining,
         activeDocId: newActiveId,
         selectedAnnotationId: null,
+  selectedAnnotationIds: [],
         saveStatus: 'idle',
         undoStack: state.undoStack.filter((c) => c.docId !== docId),
         redoStack: state.redoStack.filter((c) => c.docId !== docId),
+        ...(wasComparing ? { compareMode: false, compareDocId: state.compareDocId === docId ? null : state.compareDocId } : {}),
       }
     })
   },
@@ -412,55 +579,40 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   setActiveDoc: (docId) => set({ activeDocId: docId, selectedAnnotationId: null }),
 
   setPage: (docId, page) => {
-    set((state) => {
-      const doc = state.docs.find((d) => d.doc_id === docId)
-      const validPage = doc ? Math.max(0, Math.min(doc.page_count - 1, page)) : page
-      // Update nav history
-      let newHistory = state.navHistory
-      let newIndex = state.navHistoryIndex
-      if (doc && validPage !== doc.currentPage) {
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId) return d
+        const validPage = Math.max(0, Math.min(d.page_count - 1, page))
+        if (validPage === d.currentPage) return d
         // Truncate forward history and append new page
-        newHistory = [...newHistory.slice(0, newIndex + 1), validPage].slice(-50)
-        newIndex = newHistory.length - 1
-      }
-      return {
-        docs: state.docs.map((d) =>
-          d.doc_id === docId ? { ...d, currentPage: validPage } : d
-        ),
-        navHistory: newHistory,
-        navHistoryIndex: newIndex,
-      }
-    })
+        const navHistory = [...d.navHistory.slice(0, d.navHistoryIndex + 1), validPage].slice(-50)
+        return { ...d, currentPage: validPage, navHistory, navHistoryIndex: navHistory.length - 1 }
+      }),
+    }))
   },
 
   nextPage: (docId) => {
-    set((state) => {
-      const doc = state.docs.find((d) => d.doc_id === docId)
-      if (!doc || doc.currentPage >= doc.page_count - 1) return state
-      const step = state.viewMode === 'double' ? 2 : 1
-      const newPage = Math.min(doc.page_count - 1, doc.currentPage + step)
-      const newHistory = [...state.navHistory.slice(0, state.navHistoryIndex + 1), newPage].slice(-50)
-      return {
-        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, currentPage: newPage } : d)),
-        navHistory: newHistory,
-        navHistoryIndex: newHistory.length - 1,
-      }
-    })
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId || d.currentPage >= d.page_count - 1) return d
+        const step = state.viewMode === 'double' ? 2 : 1
+        const newPage = Math.min(d.page_count - 1, d.currentPage + step)
+        const navHistory = [...d.navHistory.slice(0, d.navHistoryIndex + 1), newPage].slice(-50)
+        return { ...d, currentPage: newPage, navHistory, navHistoryIndex: navHistory.length - 1 }
+      }),
+    }))
   },
 
   prevPage: (docId) => {
-    set((state) => {
-      const doc = state.docs.find((d) => d.doc_id === docId)
-      if (!doc || doc.currentPage <= 0) return state
-      const step = state.viewMode === 'double' ? 2 : 1
-      const newPage = Math.max(0, doc.currentPage - step)
-      const newHistory = [...state.navHistory.slice(0, state.navHistoryIndex + 1), newPage].slice(-50)
-      return {
-        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, currentPage: newPage } : d)),
-        navHistory: newHistory,
-        navHistoryIndex: newHistory.length - 1,
-      }
-    })
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId || d.currentPage <= 0) return d
+        const step = state.viewMode === 'double' ? 2 : 1
+        const newPage = Math.max(0, d.currentPage - step)
+        const navHistory = [...d.navHistory.slice(0, d.navHistoryIndex + 1), newPage].slice(-50)
+        return { ...d, currentPage: newPage, navHistory, navHistoryIndex: navHistory.length - 1 }
+      }),
+    }))
   },
 
   setZoom: (docId, zoom, markCustom = true) => {
@@ -574,9 +726,19 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   setActiveTool: (tool) => set({ activeTool: tool, selectedAnnotationId: null }),
+  setStickyTools: (sticky) => {
+    set({ stickyTools: sticky })
+    try { localStorage.setItem(STICKY_KEY, sticky ? '1' : '0') } catch {}
+  },
+  releaseTool: () => {
+    const { activeTool, stickyTools } = get()
+    if (!activeTool) return
+    if (!stickyTools || ONE_SHOT_TOOLS.includes(activeTool)) set({ activeTool: null })
+  },
   setActiveRibbon: (tab) => set({ activeRibbon: tab }),
   setAnnotationColor: (color) => set({ annotationColor: color }),
   setCountCategory: (category) => set({ countCategory: category }),
+  setCountSymbol: (symbol) => set({ countSymbol: symbol }),
   setAnnotationLineWidth: (width) => {
     const v = Math.max(0.5, Math.min(20, width))
     persistStrokePrefs({ lineWidth: v })
@@ -608,7 +770,15 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       const doc = state.docs.find((d) => d.doc_id === docId)
       if (!doc) return state
       const before = doc.annotations
-      const after = [...before, ann]
+      // Sella autor y fecha en el momento de crear la marca (el panel de revisión
+      // filtra y ordena por ellos); si ya vienen puestos, se respetan.
+      const author = ann.author ?? (state.annotationAuthor || undefined)
+      const stamped: Annotation = {
+        ...ann,
+        ...(author ? { author } : {}),
+        createdAt: ann.createdAt ?? Date.now(),
+      }
+      const after = [...before, stamped]
       return {
         docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: after, dirty: true } : d)),
         undoStack: [...state.undoStack, { docId, before, after }].slice(-100),
@@ -670,13 +840,56 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   setTheme: (theme) => {
-    set({ theme })
-    try { localStorage.setItem('pdfmaster_theme', theme) } catch {}
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-    }
+    get().setThemePreference(theme)
+  },
+
+  // `themePreference` es lo que el usuario eligió ('system' incluido) y `theme` el
+  // tema efectivo que consume la UI.
+  setThemePreference: (pref) => {
+    const effective = pref === 'system' ? systemTheme() : pref
+    set({ themePreference: pref, theme: effective })
+    try { localStorage.setItem(THEME_PREF_KEY, pref) } catch {}
+    try { localStorage.setItem('pdfmaster_theme', effective) } catch {}
+    document.documentElement.classList.toggle('dark', effective === 'dark')
+  },
+
+  applySystemTheme: () => {
+    if (get().themePreference !== 'system') return
+    const effective = systemTheme()
+    set({ theme: effective })
+    document.documentElement.classList.toggle('dark', effective === 'dark')
+  },
+
+  setWheelMode: (mode) => {
+    set({ wheelMode: mode })
+    try { localStorage.setItem(WHEEL_KEY, mode) } catch {}
+  },
+
+  setUiScale: (scale) => {
+    const v = Math.max(0.75, Math.min(1.5, scale))
+    set({ uiScale: v })
+    try { localStorage.setItem(PREF_KEYS.uiScale, String(v)) } catch {}
+    window.api.setUiZoom(v).catch(() => {})
+  },
+
+  setDefaultZoomMode: (mode) => {
+    set({ defaultZoomMode: mode })
+    try { localStorage.setItem(PREF_KEYS.zoomMode, mode) } catch {}
+  },
+
+  setDefaultUnit: (unit) => {
+    set({ defaultUnit: unit })
+    try { localStorage.setItem(PREF_KEYS.unit, unit) } catch {}
+  },
+
+  setRestoreSession: (on) => {
+    set({ restoreSession: on })
+    try { localStorage.setItem(PREF_KEYS.restore, on ? '1' : '0') } catch {}
+  },
+
+  setBackupOnSave: (on) => {
+    set({ backupOnSave: on })
+    try { localStorage.setItem(PREF_KEYS.backup, on ? '1' : '0') } catch {}
   },
 
   toggleReadingMode: () => {
@@ -708,27 +921,23 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   goBack: (docId) => {
-    set((state) => {
-      if (state.navHistoryIndex <= 0) return state
-      const newIndex = state.navHistoryIndex - 1
-      const page = state.navHistory[newIndex]
-      return {
-        navHistoryIndex: newIndex,
-        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, currentPage: page } : d)),
-      }
-    })
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId || d.navHistoryIndex <= 0) return d
+        const navHistoryIndex = d.navHistoryIndex - 1
+        return { ...d, navHistoryIndex, currentPage: d.navHistory[navHistoryIndex] }
+      }),
+    }))
   },
 
   goForward: (docId) => {
-    set((state) => {
-      if (state.navHistoryIndex >= state.navHistory.length - 1) return state
-      const newIndex = state.navHistoryIndex + 1
-      const page = state.navHistory[newIndex]
-      return {
-        navHistoryIndex: newIndex,
-        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, currentPage: page } : d)),
-      }
-    })
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId || d.navHistoryIndex >= d.navHistory.length - 1) return d
+        const navHistoryIndex = d.navHistoryIndex + 1
+        return { ...d, navHistoryIndex, currentPage: d.navHistory[navHistoryIndex] }
+      }),
+    }))
   },
 
   updateDocPageCount: (docId, count) => {
@@ -809,11 +1018,42 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       const annIndex = doc.annotations.findIndex((a) => a.id === annId)
       if (annIndex === -1) return state
       const newAnns = [...doc.annotations]
-      newAnns[annIndex] = { ...newAnns[annIndex], ...updates }
+      newAnns[annIndex] = { ...newAnns[annIndex], ...updates, modifiedAt: Date.now() }
       return {
         docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: newAnns, dirty: true } : d)),
       }
     })
+  },
+
+  setAnnotationAuthor: (name) => {
+    set({ annotationAuthor: name })
+    try { localStorage.setItem(AUTHOR_KEY, name) } catch {}
+  },
+
+  setAnnotationStatus: (docId, annId, status) => {
+    get().updateAnnotation(docId, annId, { status })
+  },
+
+  addReply: (docId, annId, text) => {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    const doc = get().docs.find((d) => d.doc_id === docId)
+    const ann = doc?.annotations.find((a) => a.id === annId)
+    if (!ann) return
+    const reply: Reply = {
+      id: crypto.randomUUID(),
+      author: get().annotationAuthor || undefined,
+      text: trimmed,
+      at: Date.now(),
+    }
+    get().updateAnnotation(docId, annId, { replies: [...(ann.replies || []), reply] })
+  },
+
+  deleteReply: (docId, annId, replyId) => {
+    const doc = get().docs.find((d) => d.doc_id === docId)
+    const ann = doc?.annotations.find((a) => a.id === annId)
+    if (!ann?.replies) return
+    get().updateAnnotation(docId, annId, { replies: ann.replies.filter((r) => r.id !== replyId) })
   },
 
   setMeasurementScale: (docId, scale) => {
@@ -828,11 +1068,123 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     })
   },
 
+  // `selectedAnnotationId` es la marca "principal" (la que muestra handles y la barra
+  // de propiedades) y siempre es la última de `selectedAnnotationIds`.
   selectAnnotation: (docId, annId) => {
     const doc = get().docs.find((d) => d.doc_id === docId)
     if (!doc) return
-    const exists = doc.annotations.some((a) => a.id === annId)
-    set({ selectedAnnotationId: exists ? annId : null })
+    const exists = annId !== null && doc.annotations.some((a) => a.id === annId)
+    set({
+      selectedAnnotationId: exists ? annId : null,
+      selectedAnnotationIds: exists ? [annId as string] : [],
+    })
+  },
+
+  selectAnnotations: (docId, ids) => {
+    const doc = get().docs.find((d) => d.doc_id === docId)
+    if (!doc) return
+    const valid = ids.filter((id) => doc.annotations.some((a) => a.id === id))
+    set({ selectedAnnotationIds: valid, selectedAnnotationId: valid.length ? valid[valid.length - 1] : null })
+  },
+
+  toggleAnnotationSelection: (docId, annId) => {
+    const doc = get().docs.find((d) => d.doc_id === docId)
+    if (!doc || !doc.annotations.some((a) => a.id === annId)) return
+    const current = get().selectedAnnotationIds
+    const next = current.includes(annId) ? current.filter((id) => id !== annId) : [...current, annId]
+    set({ selectedAnnotationIds: next, selectedAnnotationId: next.length ? next[next.length - 1] : null })
+  },
+
+  updateAnnotations: (docId, ids, updates) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (!doc || ids.length === 0) return state
+      const idSet = new Set(ids)
+      const now = Date.now()
+      const newAnns = doc.annotations.map((a) => (idSet.has(a.id) ? { ...a, ...updates, modifiedAt: now } : a))
+      return { docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: newAnns, dirty: true } : d)) }
+    })
+  },
+
+  // Desplaza también `points` (dibujos, polígonos, mediciones de área): mover solo
+  // x/y dejaba esas marcas clavadas en su sitio.
+  moveAnnotations: (docId, ids, dx, dy) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (!doc || ids.length === 0 || (dx === 0 && dy === 0)) return state
+      const idSet = new Set(ids)
+      const now = Date.now()
+      const newAnns = doc.annotations.map((a) => (idSet.has(a.id)
+        ? {
+            ...a,
+            x: a.x + dx,
+            y: a.y + dy,
+            points: a.points?.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+            modifiedAt: now,
+          }
+        : a))
+      return { docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: newAnns, dirty: true } : d)) }
+    })
+  },
+
+  deleteAnnotations: (docId, ids) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (!doc || ids.length === 0) return state
+      const idSet = new Set(ids)
+      const before = doc.annotations
+      const after = before.filter((a) => !idSet.has(a.id))
+      if (after.length === before.length) return state
+      return {
+        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: after, dirty: true } : d)),
+        selectedAnnotationIds: state.selectedAnnotationIds.filter((id) => !idSet.has(id)),
+        selectedAnnotationId: state.selectedAnnotationId && idSet.has(state.selectedAnnotationId) ? null : state.selectedAnnotationId,
+        undoStack: [...state.undoStack, { docId, before, after }].slice(-100),
+        redoStack: [],
+      }
+    })
+  },
+
+  copyAnnotations: (docId, ids) => {
+    const doc = get().docs.find((d) => d.doc_id === docId)
+    if (!doc) return 0
+    const idSet = new Set(ids)
+    const copied = doc.annotations.filter((a) => idSet.has(a.id))
+    if (copied.length === 0) return 0
+    set({ annotationClipboard: copied.map((a) => ({ ...a })) })
+    return copied.length
+  },
+
+  // Pega en la página indicada del documento activo (sirve entre documentos: las
+  // coordenadas son puntos PDF). Ids y metadatos de revisión se regeneran.
+  pasteAnnotations: (docId, page, offset = 12) => {
+    const state = get()
+    const clip = state.annotationClipboard
+    const doc = state.docs.find((d) => d.doc_id === docId)
+    if (!doc || clip.length === 0) return 0
+    const now = Date.now()
+    const author = state.annotationAuthor || undefined
+    const pasted: Annotation[] = clip.map((a) => ({
+      ...a,
+      id: crypto.randomUUID(),
+      page,
+      x: a.x + offset,
+      y: a.y + offset,
+      points: a.points?.map((p) => ({ x: p.x + offset, y: p.y + offset })),
+      ...(author ? { author } : {}),
+      createdAt: now,
+      modifiedAt: undefined,
+    }))
+    const before = doc.annotations
+    const after = [...before, ...pasted]
+    set({
+      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: after, dirty: true } : d)),
+      selectedAnnotationIds: pasted.map((a) => a.id),
+      selectedAnnotationId: pasted[pasted.length - 1].id,
+      undoStack: [...state.undoStack, { docId, before, after }].slice(-100),
+      redoStack: [],
+    })
+    return pasted.length
   },
 
   undo: () => {
@@ -844,6 +1196,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
         undoStack: state.undoStack.slice(0, -1),
         redoStack: [...state.redoStack, cmd],
         selectedAnnotationId: null,
+  selectedAnnotationIds: [],
       }
     })
   },
@@ -857,6 +1210,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
         redoStack: state.redoStack.slice(0, -1),
         undoStack: [...state.undoStack, cmd],
         selectedAnnotationId: null,
+  selectedAnnotationIds: [],
       }
     })
   },

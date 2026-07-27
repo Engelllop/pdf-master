@@ -9,13 +9,17 @@ const api = {
   restartBackend: () => ipcRenderer.invoke('backend:restart'),
   newWindow: () => ipcRenderer.invoke('window:new'),
   logError: (message: string) => ipcRenderer.invoke('log:error', message),
+  osUsername: (): Promise<string> => ipcRenderer.invoke('os:username'),
+  setUiZoom: (factor: number): Promise<void> => ipcRenderer.invoke('window:set-ui-zoom', factor),
   showInFolder: (path: string) => ipcRenderer.invoke('shell:showInFolder', path),
   openFolder: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number }) => ipcRenderer.invoke('pdf:print', docId, opts),
-  aiChat: (payload: { requestId: string; docId: string | null; apiKey: string; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => ipcRenderer.send('ai:chat', payload),
+  aiChat: (payload: { requestId: string; docId: string | null; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => ipcRenderer.send('ai:chat', payload),
   aiAbort: (requestId: string) => ipcRenderer.send('ai:abort', requestId),
+  aiSetKey: (key: string | null): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('ai:set-key', key),
+  aiHasKey: (): Promise<boolean> => ipcRenderer.invoke('ai:has-key'),
   onAiChunk: (cb: (d: { requestId: string; text: string }) => void) => {
     const h = (_e: unknown, d: { requestId: string; text: string }) => cb(d)
     ipcRenderer.on('ai:chunk', h)

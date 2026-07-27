@@ -1,48 +1,138 @@
-import { useThemeClasses } from '../../hooks/useThemeClasses'
+import { useState } from 'react'
+import { FolderOpen, FileText, Folder, History, Ruler, Tally5, GitCompare, Pin } from 'lucide-react'
 import { openDocument } from '../../lib/openDocument'
-import { loadRecents } from '../../lib/recents'
+import { loadRecents, frequentFolders, type RecentEntry } from '../../lib/recents'
+import { loadLastSession, reopenLastSession } from '../../lib/session'
+import { formatWhen } from '../../lib/format'
+import { usePdfStore } from '../../store/usePdfStore'
 
-/** Pantalla de bienvenida del visor cuando no hay documento abierto: zona de
- * arrastre + lista de archivos recientes. */
+/** Portada del visor cuando no hay documento abierto: zona de arrastre, acciones de
+ * apertura, recientes con miniatura y progreso, carpetas frecuentes y un recordatorio
+ * de las funciones que de otro modo nadie descubre. */
 export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
   containerRef: React.RefObject<HTMLDivElement | null>
   onDragOver: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
 }) {
-  const tc = useThemeClasses()
-  const recentFiles = loadRecents().slice(0, 8).map((e) => e.path)
+  const [recents] = useState<RecentEntry[]>(() => loadRecents())
+  const [folders] = useState(() => frequentFolders())
+  const [lastSession] = useState(() => loadLastSession())
+
+  const handleOpen = async () => {
+    const paths = await window.api.openFiles()
+    if (!paths?.length) return
+    let lastId: string | null = null
+    for (const p of paths) lastId = (await openDocument(p, { activate: false })) ?? lastId
+    if (lastId) usePdfStore.getState().setActiveDoc(lastId)
+  }
+
+  const handleOpenRecent = async (entry: RecentEntry) => {
+    const id = await openDocument(entry.path)
+    if (id && entry.lastPage && entry.lastPage > 0) usePdfStore.getState().setPage(id, entry.lastPage)
+  }
+
+  const handleOpenFolder = async (dir: string) => {
+    const paths = await window.api.openFiles(undefined, dir)
+    if (!paths?.length) return
+    let lastId: string | null = null
+    for (const p of paths) lastId = (await openDocument(p, { activate: false })) ?? lastId
+    if (lastId) usePdfStore.getState().setActiveDoc(lastId)
+  }
+
+  const visibleRecents = recents.slice(0, 6)
+
+  const CAPABILITIES: Array<{ icon: typeof Ruler; title: string; text: string }> = [
+    { icon: Ruler, title: 'Mide sobre planos', text: 'Calibra la escala y mide distancias y áreas reales.' },
+    { icon: Tally5, title: 'Cuenta símbolos', text: 'Marca por categorías y exporta la tabla a Excel.' },
+    { icon: GitCompare, title: 'Compara revisiones', text: 'Dos versiones lado a lado con las diferencias de texto.' },
+  ]
 
   return (
-    <div ref={containerRef} className={`flex-1 flex flex-col items-center justify-center overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}
+    <div ref={containerRef} className="flex-1 flex flex-col items-center justify-center overflow-auto bg-surface p-6"
       onDragOver={onDragOver} onDrop={onDrop}>
-      <div className="text-center space-y-4">
-        <div className={`w-20 h-20 mx-auto rounded-2xl flex items-center justify-center border border-dashed ${tc('bg-slate-800 border-slate-700', 'bg-gray-200 border-gray-400')}`}>
-          <svg className={`w-10 h-10 ${tc('text-slate-500', 'text-gray-500')}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-          </svg>
+      <div className="w-full max-w-3xl space-y-6">
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center border border-dashed border-border bg-active">
+            <FileText size={28} className="text-muted" strokeWidth={1.5} />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold text-fg">PDF Master</h2>
+            <p className="mt-1 text-sm text-muted">Arrastra un PDF aquí para abrirlo</p>
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={handleOpen}
+              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity">
+              <FolderOpen size={15} /> Abrir PDF
+            </button>
+            {lastSession && (
+              <button onClick={() => { reopenLastSession() }}
+                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border border-border text-fg hover:bg-hover transition-colors">
+                <History size={15} /> Reabrir última sesión ({lastSession.docs.length})
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-muted">Ctrl+O abrir · Ctrl+rueda zoom · F1 atajos</p>
         </div>
-        <div>
-          <h2 className={`text-xl font-semibold ${tc('text-slate-200', 'text-gray-800')}`}>PDF Master</h2>
-          <p className={`mt-1 ${tc('text-slate-400', 'text-gray-500')}`}>Arrastra un PDF aquí o usa el botón Abrir</p>
-        </div>
-        <p className="text-xs text-slate-600">Ctrl+rueda: zoom | Rueda: cambiar página</p>
-        {recentFiles.length > 0 && (
-          <div className="text-left max-w-xs mx-auto">
-            <p className={`text-xs uppercase tracking-wider mb-2 ${tc('text-slate-500', 'text-gray-500')}`}>Recientes</p>
-            <div className="space-y-1">
-              {recentFiles.map((path, i) => (
-                <button
-                  key={i}
-                  onClick={() => { openDocument(path) }}
-                  className={`w-full text-left text-xs rounded px-2 py-1 transition-colors truncate ${tc('text-slate-300 hover:text-white hover:bg-slate-800', 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
-                  title={path}
-                >
-                  {path.split(/[\\/]/).pop()}
+
+        {visibleRecents.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider mb-2 text-muted">Recientes</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {visibleRecents.map((entry) => {
+                const name = entry.path.split(/[\\/]/).pop()
+                const progress = entry.lastPage != null && entry.pageCount && entry.lastPage > 0
+                  ? `pág. ${entry.lastPage + 1}/${entry.pageCount}`
+                  : entry.pageCount ? `${entry.pageCount} pág.` : null
+                return (
+                  <button key={entry.path} onClick={() => handleOpenRecent(entry)} title={entry.path}
+                    className="flex items-center gap-2.5 p-2 rounded-lg border border-border bg-panel hover:bg-hover transition-colors text-left">
+                    <div className="w-9 h-11 shrink-0 rounded border border-border bg-white overflow-hidden flex items-center justify-center">
+                      {entry.thumb
+                        ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
+                        : <FileText size={15} className="text-accent" strokeWidth={1.5} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[13px] text-fg truncate leading-tight">{name}</div>
+                      <div className="text-[10px] text-muted truncate mt-0.5">
+                        {formatWhen(entry.lastOpened)}
+                        {progress && <> · <span className="text-accent">{progress}</span></>}
+                      </div>
+                    </div>
+                    {entry.pinned && <Pin size={11} className="text-accent shrink-0" />}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {folders.length > 0 && (
+          <div>
+            <p className="text-[11px] uppercase tracking-wider mb-2 text-muted">Carpetas frecuentes</p>
+            <div className="flex flex-wrap gap-2">
+              {folders.map((f) => (
+                <button key={f.dir} onClick={() => handleOpenFolder(f.dir)} title={f.dir}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs text-fg hover:bg-hover transition-colors">
+                  <Folder size={13} className="text-accent" />
+                  <span className="truncate max-w-[180px]">{f.name}</span>
+                  <span className="text-muted">{f.count}</span>
                 </button>
               ))}
             </div>
           </div>
         )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border">
+          {CAPABILITIES.map(({ icon: Icon, title, text }) => (
+            <div key={title} className="flex gap-2.5 p-2">
+              <Icon size={15} className="text-accent shrink-0 mt-0.5" strokeWidth={1.75} />
+              <div>
+                <div className="text-xs font-medium text-fg">{title}</div>
+                <div className="text-[11px] text-muted leading-snug mt-0.5">{text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

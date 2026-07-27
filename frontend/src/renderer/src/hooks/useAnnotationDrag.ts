@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
 
@@ -12,12 +12,15 @@ export function useAnnotationDrag(
   getAnnotationBounds: (ann: Annotation, pageData: { width: number; height: number; originalWidth: number; originalHeight: number }, toScreen: (x: number, y: number) => { x: number; y: number }) => { x: number; y: number; w: number; h: number } | null,
 ) {
   const store = useStoreSlice(
-    'selectedAnnotationId', 'selectAnnotation', 'updateAnnotation',
-    'activeTool', 'docs', 'getAnnotationsForPage',
+    'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotation', 'updateAnnotation',
+    'moveAnnotations', 'activeTool', 'docs', 'getAnnotationsForPage',
   )
-  const { selectedAnnotationId, selectAnnotation, updateAnnotation } = store
+  const { selectAnnotation, updateAnnotation, moveAnnotations } = store
 
   const [draggingAnn, setDraggingAnn] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
+  // Arrastre en grupo: se aplican deltas incrementales a todas las marcas
+  // seleccionadas (mover solo x/y de una no serviría para dibujos ni polígonos).
+  const groupDragRef = useRef<{ ids: string[]; lastX: number; lastY: number } | null>(null)
   const [resizingAnn, setResizingAnn] = useState<{
     id: string; corner: ResizeCorner;
     startX: number; startY: number;
@@ -49,10 +52,19 @@ export function useAnnotationDrag(
       if (!doc) return
       const ann = doc.annotations.find((a) => a.id === draggingAnn.id)
       if (!ann) return
-      updateAnnotation(doc.doc_id, draggingAnn.id, { x: pdfX, y: pdfY })
+
+      const group = groupDragRef.current
+      if (group) {
+        moveAnnotations(doc.doc_id, group.ids, pdfX - group.lastX, pdfY - group.lastY)
+        group.lastX = pdfX
+        group.lastY = pdfY
+        return
+      }
+      moveAnnotations(doc.doc_id, [draggingAnn.id], pdfX - ann.x, pdfY - ann.y)
     }
     const handleUp = () => {
       setDraggingAnn(null)
+      groupDragRef.current = null
     }
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
@@ -149,19 +161,31 @@ export function useAnnotationDrag(
 
   const handleMouseDown = (_e: React.MouseEvent, svgPoint: { x: number; y: number }) => {
     if (!activeDoc || !pageData) return false
-    if (store.activeTool) return false
+    // La herramienta Seleccionar también arrastra; el resto dibujan.
+    if (store.activeTool && store.activeTool !== 'select') return false
 
-    if (selectedAnnotationId) {
-      const ann = annotations.find((a) => a.id === selectedAnnotationId)
-      if (ann) {
-        const bounds = getAnnotationBounds(ann, pageData, toScreenCoords)
-        if (bounds && svgPoint.x >= bounds.x && svgPoint.x <= bounds.x + bounds.w && svgPoint.y >= bounds.y && svgPoint.y <= bounds.y + bounds.h) {
-          setDraggingAnn({ id: ann.id, offsetX: svgPoint.x - bounds.x, offsetY: svgPoint.y - bounds.y })
-          return true
+    const selectedIds = store.selectedAnnotationIds
+    if (selectedIds.length > 0) {
+      // Basta con pinchar dentro de CUALQUIERA de las seleccionadas para mover el grupo.
+      const hit = annotations.find((a) => {
+        if (!selectedIds.includes(a.id)) return false
+        const b = getAnnotationBounds(a, pageData, toScreenCoords)
+        return !!b && svgPoint.x >= b.x && svgPoint.x <= b.x + b.w && svgPoint.y >= b.y && svgPoint.y <= b.y + b.h
+      })
+      if (hit) {
+        const bounds = getAnnotationBounds(hit, pageData, toScreenCoords)!
+        if (selectedIds.length > 1) {
+          groupDragRef.current = {
+            ids: selectedIds,
+            lastX: svgPoint.x * (pageData.originalWidth / pageData.width),
+            lastY: svgPoint.y * (pageData.originalHeight / pageData.height),
+          }
         }
+        setDraggingAnn({ id: hit.id, offsetX: svgPoint.x - bounds.x, offsetY: svgPoint.y - bounds.y })
+        return true
       }
-      // Click outside selected annotation -> deselect
-      selectAnnotation(activeDoc.doc_id, null)
+      // Clic fuera de la selección -> deseleccionar (la marquesina lo gestiona aparte)
+      if (store.activeTool !== 'select') selectAnnotation(activeDoc.doc_id, null)
     }
     return false
   }

@@ -99,6 +99,17 @@ export function openDocument(filePath: string, opts: OpenDocumentOptions = {}): 
  */
 async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Promise<string | null> {
   const { addDoc, setAnnotations, setOutline, showToast } = usePdfStore.getState()
+  // Ya abierto: activar su pestaña en vez de duplicarla. En modo silent (recovery
+  // tras reinicio del motor) sí se reabre, porque el doc_id viejo está muerto.
+  if (!opts.silent) {
+    const { docs, setActiveDoc } = usePdfStore.getState()
+    const existing = docs.find((d) => d.file_path === filePath)
+    if (existing) {
+      if (opts.activate !== false) setActiveDoc(existing.doc_id)
+      touchRecent(filePath)
+      return existing.doc_id
+    }
+  }
   try {
     const res = await apiFetch(`/pdf/open`, {
       method: 'POST',

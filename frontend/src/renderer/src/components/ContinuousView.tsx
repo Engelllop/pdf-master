@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useThemeClasses } from '../hooks/useThemeClasses'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { usePdfStore } from '../store/usePdfStore'
 import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
 
 const GAP = 16
@@ -11,7 +11,6 @@ const MAX_WIDTH = 1000
 // only pages near the viewport are rendered; the rest are sized placeholders so the
 // scrollbar stays correct. Shares the page bitmap cache with the single-page viewer.
 export default function ContinuousView() {
-  const tc = useThemeClasses()
   const store = useStoreSlice('docs', 'activeDocId', 'setPage')
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -49,6 +48,10 @@ export default function ContinuousView() {
     return { heights: h, offsets: o, total: Math.max(0, acc - GAP) }
   }, [pageCount, width, activeDoc?.doc_id, activeDoc?.docVersion])
 
+  // Página cuyo cambio nació aquí (scroll o clic): el efecto de auto-scroll la
+  // ignora para no pelear con el scroll del usuario.
+  const internalPageRef = useRef<number | null>(null)
+
   const recomputeRange = () => {
     const el = containerRef.current
     if (!el || pageCount === 0) return
@@ -59,6 +62,18 @@ export default function ContinuousView() {
     let end = start
     while (end < pageCount && offsets[end] <= bottom) end++
     setRange({ start, end: Math.max(end, start + 1) })
+
+    // Sincroniza currentPage con la página en el centro del viewport, para que la
+    // barra de estado y las miniaturas sigan el scroll (antes quedaban clavadas).
+    const center = el.scrollTop + el.clientHeight / 2
+    let cur = 0
+    while (cur < pageCount - 1 && offsets[cur + 1] <= center) cur++
+    const state = usePdfStore.getState()
+    const doc = state.docs.find((d) => d.doc_id === state.activeDocId)
+    if (doc && doc.currentPage !== cur) {
+      internalPageRef.current = cur
+      state.setPage(doc.doc_id, cur)
+    }
   }
 
   useEffect(() => {
@@ -73,6 +88,10 @@ export default function ContinuousView() {
   useEffect(() => {
     const el = containerRef.current
     if (!el || !activeDoc) return
+    if (internalPageRef.current === activeDoc.currentPage) {
+      internalPageRef.current = null
+      return
+    }
     el.scrollTo({ top: offsets[activeDoc.currentPage] ?? 0, behavior: 'auto' })
   }, [activeDoc?.currentPage, activeDoc?.doc_id])
 
@@ -110,7 +129,7 @@ export default function ContinuousView() {
   }, [activeDoc?.doc_id, activeDoc?.docVersion, width])
 
   if (!activeDoc) {
-    return <div className={`flex-1 flex items-center justify-center ${tc('bg-slate-900 text-slate-500', 'bg-gray-100 text-gray-500')}`}>Abre un PDF</div>
+    return <div className="flex-1 flex items-center justify-center bg-surface text-muted">Abre un PDF</div>
   }
 
   const topSpacer = offsets[range.start] ?? 0
@@ -122,21 +141,21 @@ export default function ContinuousView() {
   for (let i = range.start; i < range.end && i < pageCount; i++) pages.push(i)
 
   return (
-    <div ref={containerRef} className={`flex-1 overflow-auto ${tc('bg-slate-900', 'bg-gray-100')}`}>
+    <div ref={containerRef} className="flex-1 overflow-auto bg-surface">
       <div style={{ height: topSpacer }} />
       <div className="flex flex-col items-center" style={{ gap: GAP }}>
         {pages.map((i) => (
           <div
             key={i}
             data-page={i}
-            onClick={() => store.setPage(activeDoc.doc_id, i)}
-            className={`relative shadow-lg ${tc('bg-white', 'bg-white')}`}
+            onClick={() => { internalPageRef.current = i; store.setPage(activeDoc.doc_id, i) }}
+            className="relative shadow-lg bg-white"
             style={{ width, height: heights[i] }}
           >
             {loaded[i] ? (
               <img src={loaded[i]} alt={`Página ${i + 1}`} className="w-full h-full block rounded-sm" draggable={false} />
             ) : (
-              <div className={`w-full h-full flex items-center justify-center ${tc('bg-slate-800 text-slate-600', 'bg-gray-200 text-gray-400')}`}>
+              <div className="w-full h-full flex items-center justify-center bg-active text-muted">
                 {i + 1}
               </div>
             )}
