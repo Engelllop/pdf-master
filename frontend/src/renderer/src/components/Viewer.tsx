@@ -57,7 +57,7 @@ export default function Viewer() {
 
   // Page loading
   const {
-    loading, pageData, loadingRight, pageDataRight, pageText, pageTextRight,
+    loading, pageData, loadingRight, pageDataRight, pageText,
   } = usePageLoader()
 
   // Pan & zoom
@@ -574,7 +574,8 @@ export default function Viewer() {
               <FormFieldsLayer fields={formFields} pageData={pageData} onChange={updateFormField} />
 
               {/* Selectable text layer */}
-              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} version={activeDoc.docVersion} pageData={pageData} active={!store.activeTool} />
+              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} version={activeDoc.docVersion} pageData={pageData}
+                active={!store.activeTool || store.activeTool === 'textselect'} />
 
               {/* Annotation SVG Layer */}
 
@@ -886,28 +887,6 @@ export default function Viewer() {
                   onStyle={(s) => store.updateAnnotation(activeDoc.doc_id, ann.id, s)} />
               )
             })()}
-            {/* Text selection overlay */}
-            {pageText.length > 0 && (
-              <div className="absolute top-0 left-0" style={{ width: displayWidth, height: displayHeight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>
-                {pageText.map((block, idx) => {
-                  const sx = pageData.width / pageData.originalWidth
-                  const sy = pageData.height / pageData.originalHeight
-                  return (
-                    <span key={idx} className="absolute text-transparent hover:text-black/20" style={{
-                      left: block.x * sx * scale,
-                      top: block.y * sy * scale,
-                      width: block.width * sx * scale,
-                      height: block.height * sy * scale,
-                      fontSize: Math.max(8, block.height * sy * scale * 0.85),
-                      lineHeight: `${block.height * sy * scale}px`,
-                      overflow: 'hidden',
-                    }}>
-                      {block.text}
-                    </span>
-                  )
-                })}
-              </div>
-            )}
           </div>
         )}
 
@@ -925,7 +904,9 @@ export default function Viewer() {
                 className="rounded shadow-lg bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
                 onError={(e) => recoverImage(e.currentTarget, pageDataRight.image)} />
 
-
+              {/* Selectable text layer (right page) */}
+              <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage + 1} version={activeDoc.docVersion} pageData={pageDataRight}
+                active={!store.activeTool || store.activeTool === 'textselect'} />
 
               {/* Annotation SVG Layer for right page */}
               <svg ref={svgRightRef} width={pageDataRight.width} height={pageDataRight.height}
@@ -969,28 +950,6 @@ export default function Viewer() {
             {selectedAnnRight && (
               <FloatingSelectionBar ann={selectedAnnRight} docId={activeDoc.doc_id}
                 pageData={pageDataRight} toScreen={toScreenCoordsRight} scale={scaleRight} wrapperWidth={displayWidthRight} />
-            )}
-            {/* Text selection overlay for right page */}
-            {pageTextRight.length > 0 && (
-              <div className="absolute top-0 left-0" style={{ width: displayWidthRight, height: displayHeightRight, zIndex: 15, pointerEvents: store.activeTool === 'textselect' ? 'auto' : 'none', userSelect: 'text' }}>
-                {pageTextRight.map((block, idx) => {
-                  const sx = pageDataRight.width / pageDataRight.originalWidth
-                  const sy = pageDataRight.height / pageDataRight.originalHeight
-                  return (
-                    <span key={idx} className="absolute text-transparent hover:text-black/20" style={{
-                      left: block.x * sx * scaleRight,
-                      top: block.y * sy * scaleRight,
-                      width: block.width * sx * scaleRight,
-                      height: block.height * sy * scaleRight,
-                      fontSize: Math.max(8, block.height * sy * scaleRight * 0.85),
-                      lineHeight: `${block.height * sy * scaleRight}px`,
-                      overflow: 'hidden',
-                    }}>
-                      {block.text}
-                    </span>
-                  )
-                })}
-              </div>
             )}
           </div>
         )}
