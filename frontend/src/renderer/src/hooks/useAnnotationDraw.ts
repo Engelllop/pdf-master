@@ -43,8 +43,7 @@ export function useAnnotationDraw(
   const [drawing, setDrawing] = useState(false)
   const [drawPreview, setDrawPreview] = useState<DrawPreview | null>(null)
   const [drawPoints, setDrawPoints] = useState<Array<{ x: number; y: number }>>([])
-  const [noteText, setNoteText] = useState('')
-  const [notePos, setNotePos] = useState<{ x: number; y: number } | null>(null)
+  const [pendingNoteId, setPendingNoteId] = useState<string | null>(null)
   const [textInput, setTextInput] = useState('')
   const [textPos, setTextPos] = useState<{ x: number; y: number } | null>(null)
   const [areaPoints, setAreaPoints] = useState<Array<{ x: number; y: number }>>([])
@@ -118,7 +117,19 @@ export function useAnnotationDraw(
     setDrawing(true)
 
     if (activeTool === 'note') {
-      setNotePos({ x: pdf.x, y: pdf.y })
+      // La nota se crea vacía y se abre su globo: se escribe ahí y se guarda al
+      // hacer clic fuera (si queda vacía, el globo la descarta).
+      const id = crypto.randomUUID()
+      addAnnotation(activeDoc.doc_id, {
+        id,
+        type: 'note',
+        page: activeDoc.currentPage,
+        x: pdf.x,
+        y: pdf.y,
+        color: annotationColor,
+        text: '',
+      })
+      setPendingNoteId(id)
       setDrawing(false)
       return true
     }
@@ -377,7 +388,13 @@ export function useAnnotationDraw(
           showToast('Firma guardada', 'success')
         }
       }
-    } else if (isMarkupTool && markupRects.length > 0) {
+    } else if (isMarkupTool && markupRects.length === 0) {
+      // Resaltar/subrayar/tachar SOLO marcan texto: sin texto debajo no se deja una
+      // marca suelta en medio del plano (antes caía al rect libre de más abajo).
+      if (Math.abs(drawPreview.width || 0) > 2 || Math.abs(drawPreview.height || 0) > 2) {
+        showToast('Resaltar, subrayar y tachar se anclan al texto. Para marcar un área usá Rectángulo.', 'info')
+      }
+    } else if (isMarkupTool) {
       // Marcado anclado al texto: una anotación por línea con el rect real de la
       // línea (el render pinta subrayado abajo / tachado al centro, y el embed
       // usa add_*_annot con el quad correcto). Un solo paso de undo.
@@ -397,7 +414,7 @@ export function useAnnotationDraw(
       store.setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...anns])
       store.setDocDirty(activeDoc.doc_id, true)
       setMarkupRects([])
-    } else if ((activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' ||
+    } else if ((activeTool === 'rect' || activeTool === 'circle' ||
       activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud') &&
       drawPreview.width && Math.abs(drawPreview.width) > 2) {
       let finalPreview = { ...drawPreview }
@@ -414,8 +431,7 @@ export function useAnnotationDraw(
         finalPreview.height = size
       }
       addAnnotation(activeDoc.doc_id, finalPreview as Annotation)
-    } else if ((activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' ||
-      activeTool === 'line') && (drawPreview.width || 0) !== 0) {
+    } else if ((activeTool === 'arrow' || activeTool === 'line') && (drawPreview.width || 0) !== 0) {
       addAnnotation(activeDoc.doc_id, drawPreview as Annotation)
     } else if (activeTool === 'callout' && (Math.abs(drawPreview.width || 0) > 2 || Math.abs(drawPreview.height || 0) > 2)) {
       // Se arrastra desde el punto señalado hasta donde va la caja de texto.
@@ -557,21 +573,6 @@ export function useAnnotationDraw(
     showToast(`Área medida: ${label}`, 'success')
   }
 
-  const saveNote = () => {
-    if (!notePos || !activeDoc || !activeTool) return
-    addAnnotation(activeDoc.doc_id, {
-      id: crypto.randomUUID(),
-      type: 'note',
-      page: activeDoc.currentPage,
-      x: notePos.x,
-      y: notePos.y,
-      color: annotationColor,
-      text: noteText || 'Nota',
-    })
-    setNotePos(null)
-    setNoteText('')
-  }
-
   const saveText = () => {
     if (!textPos || !activeDoc || !activeTool) return
     addAnnotation(activeDoc.doc_id, {
@@ -598,7 +599,6 @@ export function useAnnotationDraw(
     setDrawing(false)
     setDrawPreview(null)
     setDrawPoints([])
-    setNotePos(null)
     setTextPos(null)
     setDrawingArea(false)
     setAreaPoints([])
@@ -610,10 +610,8 @@ export function useAnnotationDraw(
     drawing,
     drawPreview,
     drawPoints,
-    noteText,
-    setNoteText,
-    notePos,
-    setNotePos,
+    pendingNoteId,
+    setPendingNoteId,
     textInput,
     setTextInput,
     textPos,
@@ -621,7 +619,6 @@ export function useAnnotationDraw(
     handleMouseDown,
     handleMouseMove,
     handleMouseUp,
-    saveNote,
     saveText,
     cancelDraw,
     toPdfCoords,

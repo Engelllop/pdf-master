@@ -53,9 +53,8 @@ describe('edición de la anotación seleccionada', () => {
     })
     usePdfStore.getState().selectAnnotation(docId, 'a1')
     const defaultWidthBefore = usePdfStore.getState().annotationLineWidth
-    const { container } = render(<PropertiesBar />)
-    const range = container.querySelector('input[type="range"]') as HTMLInputElement
-    fireEvent.change(range, { target: { value: '8' } })
+    render(<PropertiesBar />)
+    fireEvent.click(screen.getByLabelText('Grosor 8'))
     const ann = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'a1')
     expect(ann?.lineWidth).toBe(8)
     expect(usePdfStore.getState().annotationLineWidth).toBe(defaultWidthBefore)

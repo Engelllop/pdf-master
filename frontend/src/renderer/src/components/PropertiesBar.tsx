@@ -1,8 +1,29 @@
 import { type Annotation, type LineStyle } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { X, Bold, Italic, AlignLeft, AlignCenter, AlignRight } from 'lucide-react'
+import {
+  X, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
+  PenTool, Square, Circle, Minus, ArrowUpRight, MessageSquareQuote, Hexagon, Cloud, Check, Star,
+} from 'lucide-react'
 import { FONT_OPTIONS } from '../lib/fonts'
 import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
+
+// Todo el dibujo en un solo sitio: el lápiz y las formas son lo mismo (un trazo),
+// así que la galería vive aquí en vez de en un desplegable aparte de la cinta.
+const DRAW_TOOLS: Array<{ id: string; icon: any; label: string }> = [
+  { id: 'draw', icon: PenTool, label: 'Lápiz' },
+  { id: 'line', icon: Minus, label: 'Línea' },
+  { id: 'arrow', icon: ArrowUpRight, label: 'Flecha' },
+  { id: 'rect', icon: Square, label: 'Rectángulo' },
+  { id: 'circle', icon: Circle, label: 'Círculo' },
+  { id: 'polygon', icon: Hexagon, label: 'Polígono' },
+  { id: 'cloud', icon: Cloud, label: 'Nube' },
+  { id: 'callout', icon: MessageSquareQuote, label: 'Llamada' },
+  { id: 'check', icon: Check, label: 'Check' },
+  { id: 'cross', icon: X, label: 'Cruz' },
+  { id: 'star', icon: Star, label: 'Estrella' },
+]
+const WIDTH_PRESETS = [0.5, 1, 2, 4, 8]
+const OPACITY_PRESETS = [25, 50, 75, 100]
 
 const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
 const SHAPE_IDS = ['check', 'cross', 'star', 'cloud', 'polygon']
@@ -25,7 +46,7 @@ export default function PropertiesBar() {
     'annotationFillColor', 'setAnnotationFillColor', 'annotationFillOpacity', 'setAnnotationFillOpacity',
     'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize', 'textStyle', 'setTextStyle',
     'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'updateAnnotation',
-    'annotationAuthor',
+    'annotationAuthor', 'setActiveTool',
   )
   const { activeTool, activeDocId, docs } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -58,13 +79,28 @@ export default function PropertiesBar() {
   const changeFillColor = (c: string | null) => strokeSel ? applyToSel({ fillColor: c ?? undefined }) : store.setAnnotationFillColor(c)
   const changeFillOpacity = (o: number) => strokeSel ? applyToSel({ fillOpacity: o }) : store.setAnnotationFillOpacity(o)
 
-  const Sep = () => <div className="w-px h-5 bg-border shrink-0" />
   const Label = ({ children }: { children: React.ReactNode }) => <span className="text-[11px] text-muted shrink-0">{children}</span>
+  // Grupo con fondo propio: separa visualmente cada ajuste en vez de una fila plana
+  const Group = ({ children }: { children: React.ReactNode }) => (
+    <div className="flex items-center gap-1.5 rounded-lg border border-border bg-panel px-2 py-1 shrink-0">{children}</div>
+  )
+  const isDrawCtx = !!activeTool && DRAW_TOOLS.some((t) => t.id === activeTool)
 
   return (
-    <div className="min-h-10 border-b border-border bg-toolbar flex items-center gap-3 px-3 py-1.5 flex-wrap text-fg">
+    <div className="min-h-10 border-b border-border bg-toolbar flex items-center gap-2 px-3 py-1.5 flex-wrap text-fg">
+      {isDrawCtx && (
+        <Group>
+          {DRAW_TOOLS.map((t) => (
+            <button key={t.id} onClick={() => store.setActiveTool(t.id)} title={t.label} aria-label={t.label}
+              className={`p-1.5 rounded-md transition-colors ${activeTool === t.id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+              <t.icon size={15} strokeWidth={1.75} />
+            </button>
+          ))}
+        </Group>
+      )}
+
       {(showColor || isStamp) && (
-        <div className="flex items-center gap-1.5">
+        <Group>
           <Label>Color</Label>
           {COLORS.map((c) => {
             const current = isStamp ? store.stampColor : colorVal
@@ -78,14 +114,12 @@ export default function PropertiesBar() {
           <input type="color" value={isStamp ? store.stampColor : colorVal}
             onChange={(e) => (isStamp ? store.setStampColor(e.target.value) : applyColor(e.target.value))}
             className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color personalizado" />
-        </div>
+        </Group>
       )}
 
       {isTextCtx && (
-        <>
-          <Sep />
-          <div className="flex items-center gap-2">
-            <Label>Fuente</Label>
+        <Group>
+          <Label>Fuente</Label>
             <select value={selAnn?.type === 'text' ? (selAnn.fontFamily || store.textFontFamily) : store.textFontFamily}
               onChange={(e) => { store.setTextFontFamily(e.target.value); if (selAnn?.type === 'text') applyToSel({ fontFamily: e.target.value }) }}
               className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
@@ -131,81 +165,98 @@ export default function PropertiesBar() {
                 </>
               )
             })()}
-          </div>
-        </>
+        </Group>
       )}
 
       {showStroke && (
         <>
-          <Sep />
-          <div className="flex items-center gap-2">
+          {/* Grosor: pesos visibles (se ve el trazo antes de dibujarlo) + ajuste fino */}
+          <Group>
             <Label>Grosor</Label>
-            <input type="range" min={0.5} max={12} step={0.5} value={lineWidthVal}
-              onChange={(e) => changeWidth(parseFloat(e.target.value))} className="w-20" />
-            <span className="text-[11px] text-muted w-6">{lineWidthVal}</span>
-          </div>
-          <div className="flex items-center gap-1">
+            {WIDTH_PRESETS.map((w) => (
+              <button key={w} onClick={() => changeWidth(w)} title={`${w} pt`} aria-label={`Grosor ${w}`}
+                className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${
+                  lineWidthVal === w ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
+                }`}>
+                <span className="rounded-full bg-current block" style={{ width: Math.max(2, w * 1.6), height: Math.max(2, w * 1.6) }} />
+              </button>
+            ))}
+            <input type="number" min={0.5} max={24} step={0.5} value={lineWidthVal}
+              onChange={(e) => changeWidth(Math.min(24, Math.max(0.5, parseFloat(e.target.value) || 1)))}
+              className="w-12 border border-border rounded px-1 py-0.5 text-[11px] text-center bg-surface text-fg focus:outline-none focus:border-accent"
+              title="Grosor exacto (pt)" />
+          </Group>
+
+          <Group>
+            <Label>Estilo</Label>
             {LINE_STYLES.map((ls) => (
               <button key={ls.id} onClick={() => changeStyle(ls.id)} title={ls.label} aria-label={`Línea ${ls.label}`}
-                className={`h-7 w-9 rounded border flex items-center justify-center transition-colors ${
-                  lineStyleVal === ls.id ? 'border-accent bg-active text-accent' : 'border-border text-muted hover:bg-hover'
+                className={`h-7 w-9 rounded-md flex items-center justify-center transition-colors ${
+                  lineStyleVal === ls.id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>
                 <svg width="26" height="8" aria-hidden="true"><line x1="2" y1="4" x2="24" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
               </button>
             ))}
-          </div>
-          <div className="flex items-center gap-2">
+          </Group>
+
+          <Group>
             <Label>Opacidad</Label>
+            {OPACITY_PRESETS.map((o) => (
+              <button key={o} onClick={() => changeOpacity(o / 100)} title={`${o}%`}
+                className={`h-7 px-1.5 rounded-md text-[11px] tabular-nums transition-colors ${
+                  Math.round(opacityVal * 100) === o ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
+                }`}>{o}</button>
+            ))}
             <input type="range" min={10} max={100} step={5} value={Math.round(opacityVal * 100)}
-              onChange={(e) => changeOpacity(parseInt(e.target.value) / 100)} className="w-20" />
-            <span className="text-[11px] text-muted w-8">{Math.round(opacityVal * 100)}%</span>
-          </div>
+              onChange={(e) => changeOpacity(parseInt(e.target.value) / 100)} className="w-16" aria-label="Opacidad" />
+          </Group>
+
           {fillCapable && (
-            <div className="flex items-center gap-2">
+            <Group>
               <Label>Relleno</Label>
-              <input type="color" value={fillColorVal || '#ffffff'} onChange={(e) => changeFillColor(e.target.value)}
-                className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color de relleno" />
               {fillColorVal ? (
                 <>
+                  <input type="color" value={fillColorVal} onChange={(e) => changeFillColor(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color de relleno" />
                   <input type="range" min={5} max={100} step={5} value={Math.round(fillOpacityVal * 100)}
                     onChange={(e) => changeFillOpacity(parseInt(e.target.value) / 100)} className="w-16" title="Opacidad del relleno" />
+                  <span className="text-[11px] text-muted w-8 tabular-nums">{Math.round(fillOpacityVal * 100)}%</span>
                   <button onClick={() => changeFillColor(null)} title="Quitar relleno"
-                    className="p-1 rounded border border-border text-muted hover:bg-hover"><X size={12} /></button>
+                    className="p-1 rounded-md text-muted hover:bg-hover hover:text-fg"><X size={12} /></button>
                 </>
-              ) : <Label>sin relleno</Label>}
-            </div>
+              ) : (
+                <button onClick={() => changeFillColor(colorVal)} title="Rellenar con el color actual"
+                  className="px-2 h-6 rounded-md text-[11px] text-muted hover:bg-hover hover:text-fg border border-dashed border-border">
+                  sin relleno
+                </button>
+              )}
+            </Group>
           )}
         </>
       )}
 
       {isStamp && (
-        <>
-          <Sep />
-          <div className="flex items-center gap-2">
-            <Label>Sello</Label>
+        <Group>
+          <Label>Sello</Label>
             <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
               className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-            <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-stamps'))}
-              className="px-2 py-1 text-[11px] rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
-              Gestionar…
-            </button>
-          </div>
-        </>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-stamps'))}
+            className="px-2 py-1 text-[11px] rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
+            Gestionar…
+          </button>
+        </Group>
       )}
 
       {rotAnn && (
-        <>
-          <Sep />
-          <div className="flex items-center gap-2">
-            <Label>Rotación</Label>
-            <input type="range" min={0} max={360} step={1} value={rotAnn.rotation || 0}
-              onChange={(e) => applyToSel({ rotation: parseInt(e.target.value) })} className="w-24" />
-            <span className="text-[11px] text-muted w-8">{rotAnn.rotation || 0}°</span>
-          </div>
-        </>
+        <Group>
+          <Label>Rotación</Label>
+          <input type="range" min={0} max={360} step={1} value={rotAnn.rotation || 0}
+            onChange={(e) => applyToSel({ rotation: parseInt(e.target.value) })} className="w-24" />
+          <span className="text-[11px] text-muted w-8 tabular-nums">{rotAnn.rotation || 0}°</span>
+        </Group>
       )}
     </div>
   )

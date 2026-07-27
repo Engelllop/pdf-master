@@ -15,6 +15,7 @@ import { useContextMenu } from '../hooks/useContextMenu'
 import { useFormFields } from '../hooks/useFormFields'
 import DetailTile from './DetailTile'
 import TextLayer from './viewer/TextLayer'
+import NoteBubble from './viewer/NoteBubble'
 import SelectionOverlay from './viewer/SelectionOverlay'
 import FloatingSelectionBar from './viewer/FloatingSelectionBar'
 import MultiSelectionBar from './viewer/MultiSelectionBar'
@@ -102,10 +103,10 @@ export default function Viewer() {
   // Annotation drawing
   const {
     drawPreview, drawPoints,
-    noteText, setNoteText, notePos, setNotePos,
+    pendingNoteId, setPendingNoteId,
     textInput, setTextInput, textPos, setTextPos,
     handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp,
-    saveNote, saveText, cancelDraw,
+    saveText, cancelDraw,
     drawingArea, closeArea, snapPoint, markupRects,
   } = useAnnotationDraw(activeDoc, pageData)
 
@@ -475,8 +476,7 @@ export default function Viewer() {
   }, [drawingArea, closeArea])
 
   // Sticky note popup
-  const [notePopup, setNotePopup] = useState<{ annId: string; x: number; y: number } | null>(null)
-  const [notePopupText, setNotePopupText] = useState('')
+  const [notePopup, setNotePopup] = useState<{ annId: string } | null>(null)
 
   const startEditText = (ann: Annotation) => {
     setEditingTextAnn(ann.id)
@@ -507,10 +507,14 @@ export default function Viewer() {
   const annotationsRight = activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []
 
   const textDefaults = { fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }
-  const openNotePopup = (ann: Annotation, screen: { x: number; y: number }) => {
-    setNotePopup({ annId: ann.id, x: screen.x, y: screen.y })
-    setNotePopupText(ann.text || '')
-  }
+  const openNotePopup = (ann: Annotation) => setNotePopup({ annId: ann.id })
+
+  // Una nota recién colocada abre su globo para escribir de una
+  useEffect(() => {
+    if (!pendingNoteId) return
+    setNotePopup({ annId: pendingNoteId })
+    setPendingNoteId(null)
+  }, [pendingNoteId])
 
   const selectedAnnLeft = store.selectedAnnotationId ? annotations.find((a) => a.id === store.selectedAnnotationId) : undefined
   const selectedAnnRight = store.selectedAnnotationId ? annotationsRight.find((a) => a.id === store.selectedAnnotationId) : undefined
@@ -734,19 +738,6 @@ export default function Viewer() {
                 )}
               </svg>
 
-              {/* Note input popup */}
-              {notePos && (
-                <div className={`absolute z-30 border rounded shadow-xl p-2 bg-panel border-border`}
-                  style={{ left: toScreenCoords(notePos.x, notePos.y).x, top: toScreenCoords(notePos.x, notePos.y).y }}>
-                  <input autoFocus className={`border rounded px-2 py-1 text-sm w-40 bg-surface border-border text-fg`}
-                    placeholder="Escribe nota..." value={noteText} onChange={(e) => setNoteText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && saveNote()} />
-                  <div className="flex gap-1 mt-1">
-                    <button onClick={saveNote} className="px-2 py-0.5 bg-accent text-toolbar text-xs rounded">Guardar</button>
-                    <button onClick={() => { setNotePos(null); setNoteText('') }} className={`px-2 py-0.5 text-xs rounded bg-active text-fg`}>Cancelar</button>
-                  </div>
-                </div>
-              )}
-
               {/* Acciones de la imagen seleccionada */}
               {store.activeTool === 'editimage' && selImg != null && pageImages[selImg] && (() => {
                 const im = pageImages[selImg]
@@ -816,28 +807,19 @@ export default function Viewer() {
                 </div>
               )}
 
-              {/* Sticky note popup */}
-              {notePopup && pageData && activeDoc && (() => {
-                const ann = annotations.find((a) => a.id === notePopup.annId)
-                if (!ann) return null
-                return (
-                  <div className="absolute z-30 bg-yellow-100 border border-yellow-300 rounded shadow-xl p-3"
-                    style={{ left: notePopup.x, top: notePopup.y, width: 220 }}>
-                    <textarea autoFocus className="w-full bg-white border border-yellow-400 rounded px-2 py-1 text-sm text-black h-20 resize-none"
-                      value={notePopupText} onChange={(e) => setNotePopupText(e.target.value)} />
-                    <div className="flex gap-1 mt-2">
-                      <button onClick={() => {
-                        store.updateAnnotation(activeDoc.doc_id, notePopup.annId, { text: notePopupText })
-                        setNotePopup(null)
-                      }} className="px-2 py-0.5 bg-accent text-toolbar text-xs rounded">Guardar</button>
-                      <button onClick={() => { setNotePopup(null) }} className="px-2 py-0.5 bg-active text-fg text-xs rounded">Cerrar</button>
-                    </div>
-                  </div>
-                )
-              })()}
-
               {/* In-place transparent text editor (edit existing) */}
             </div>
+
+            {/* Globo de la nota: fuera del wrapper escalado para que no haga zoom */}
+            {notePopup && pageData && activeDoc && (() => {
+              const ann = annotations.find((a) => a.id === notePopup.annId)
+              if (!ann) return null
+              return (
+                <NoteBubble ann={ann} docId={activeDoc.doc_id} pageData={pageData} toScreen={toScreenCoords}
+                  scale={scale} wrapperWidth={displayWidth} wrapperHeight={displayHeight}
+                  onClose={() => setNotePopup(null)} />
+              )
+            })()}
 
             {/* Barra contextual de la anotación seleccionada (no escala con el zoom) */}
             {selectedAnnLeft && store.selectedAnnotationIds.length <= 1 && !editingTextAnn && !textPos && (

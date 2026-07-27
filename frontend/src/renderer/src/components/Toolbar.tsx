@@ -11,7 +11,7 @@ import {
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
   FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree, MoveVertical,
   ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
-  Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Shapes, Pin, PinOff,
+  Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
 } from 'lucide-react'
 import { type CountSymbol } from '../store/usePdfStore'
@@ -77,7 +77,6 @@ export default function Toolbar() {
   const [searchAllDocs, setSearchAllDocs] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
-  const [shapesMenuOpen, setShapesMenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
@@ -395,7 +394,6 @@ export default function Toolbar() {
     { id: 'cloud', icon: CloudIcon, label: 'Nube (revisión)' },
     { id: 'polygon', icon: Hexagon, label: 'Polígono (clic por vértice, doble clic cierra)' },
   ]
-  const activeShape = SHAPE_TOOLS.find((t) => t.id === activeTool)
 
   const renderRibbon = () => {
     if (!activeDoc) return null
@@ -447,26 +445,8 @@ export default function Toolbar() {
                 shortcut={TOOL_SHORTCUTS[t.id]}
                 onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
             ))}
-            <div className="relative">
-              <TBtn icon={activeShape?.icon || Shapes} label={activeShape ? activeShape.label.split(' ')[0] : 'Formas'}
-                tip="Galería de formas" onClick={() => setShapesMenuOpen((o) => !o)}
-                active={!!activeShape || shapesMenuOpen} />
-              {shapesMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-[60]" onClick={() => setShapesMenuOpen(false)} />
-                  <div className="menu-pop absolute top-full left-1/2 -translate-x-1/2 z-[61] mt-1 p-2 grid grid-cols-4 gap-1 w-52 border border-border rounded-lg shadow-xl bg-panel">
-                    {SHAPE_TOOLS.map((t) => (
-                      <button key={t.id} title={TOOL_SHORTCUTS[t.id] ? `${t.label} (${TOOL_SHORTCUTS[t.id]})` : t.label}
-                        onClick={() => { handleToolClick(t.id); setShapesMenuOpen(false) }}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-md text-[11px] transition-colors ${activeTool === t.id ? 'bg-hover text-accent' : 'text-muted hover:bg-hover hover:text-fg'}`}>
-                        <t.icon size={18} strokeWidth={1.75} />
-                        {t.label.split(' ')[0]}
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
+            {/* Las formas ya no son un menú aparte: al activar Dibujar aparecen todas
+                en la barra de propiedades, junto al color, grosor y estilo. */}
             {activeTool === 'count' && (
               <>
                 <Sep />
