@@ -318,7 +318,11 @@ class AnnotationsMixin:
                         img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
                         rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
                         rotate = int(round((ann.rotation or 0) / 90.0) * 90) % 360
-                        page.insert_image(rect, stream=img_bytes, rotate=rotate)
+                        # keep_proportion=False: la app dibuja la imagen estirada al
+                        # rectángulo de la marca, y por defecto insert_image la
+                        # encajaría centrada respetando su proporción — el PDF salía
+                        # con la imagen en otro sitio y más pequeña que en pantalla.
+                        page.insert_image(rect, stream=img_bytes, rotate=rotate, keep_proportion=False)
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':

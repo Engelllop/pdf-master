@@ -13,7 +13,6 @@ import {
 } from '../lib/recents'
 import { loadLastSession, reopenLastSession, type SessionSnapshot } from '../lib/session'
 import { formatWhen } from '../lib/format'
-import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
 import { saveDocument } from '../lib/saveDocument'
 
@@ -93,18 +92,8 @@ export default function FileMenu() {
     const { docs, activeDocId } = usePdfStore.getState()
     const doc = docs.find((d) => d.doc_id === activeDocId)
     if (!doc) return
-    // `embed_annotations` no tiene rama para el tipo `image`: esas marcas se ven en
-    // la app y viven en el sidecar, pero NO quedan dentro del PDF. Avisar antes de
-    // guardar en vez de perderlas en silencio.
-    const imageAnns = doc.annotations.filter((a) => a.type === 'image').length
-    if (imageAnns > 0) {
-      const ok = await askConfirm(
-        'Imágenes no incrustadas',
-        `Este documento tiene ${imageAnns} imagen(es) añadida(s) que todavía no se pueden incrustar en el PDF.\n\nSe guardarán junto al archivo (sidecar .pdfmaster.json) y las verás al reabrirlo en PDF Master, pero NO aparecerán en otros lectores.\n\n¿Guardar de todos modos?`,
-        'Guardar',
-      )
-      if (!ok) return
-    }
+    // Las imágenes SÍ se incrustan desde 28ce2e2 (`embed_annotations` tiene rama
+    // `image`); el aviso que pedía confirmación aquí llevaba tiempo mintiendo.
     setSaveStatus('saving')
     try {
       if (await saveDocument(doc.doc_id)) {
