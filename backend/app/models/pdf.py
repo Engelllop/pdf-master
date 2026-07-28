@@ -103,14 +103,6 @@ class MergeRequest(BaseModel):
 class SplitRequest(BaseModel):
     pages: List[int]
 
-class InsertTextRequest(BaseModel):
-    page_num: int
-    x: float
-    y: float
-    text: str
-    color: str = "#000000"
-    fontsize: float = 12.0
-
 class InsertImageRequest(BaseModel):
     page_num: int
     x: float

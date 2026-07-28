@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.models.pdf import (
-    HeaderFooterRequest, InsertImageRequest, InsertTextRequest, MetadataRequest,
+    HeaderFooterRequest, InsertImageRequest, MetadataRequest,
     RedactRequest, ReplaceTextRequest, SaveResult, WatermarkRequest,
 )
 from app.routers.pdf_routes._shared import _IMAGE_EXTS, _validate_input_file
@@ -40,13 +40,6 @@ def add_header_footer(doc_id: str, req: HeaderFooterRequest):
     ok = pdf_service.add_header_footer(doc_id, req.header, req.footer, req.fontsize, req.color)
     if not ok:
         raise HTTPException(status_code=404, detail="Document not found")
-    return SaveResult(success=True)
-
-@router.post("/insert-text/{doc_id}", response_model=SaveResult)
-def insert_text(doc_id: str, req: InsertTextRequest):
-    ok = pdf_service.insert_text(doc_id, req.page_num, req.x, req.y, req.text, req.color, req.fontsize)
-    if not ok:
-        raise HTTPException(status_code=404, detail="Page not found")
     return SaveResult(success=True)
 
 @router.post("/insert-image/{doc_id}", response_model=SaveResult)

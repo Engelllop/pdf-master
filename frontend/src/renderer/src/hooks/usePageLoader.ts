@@ -57,7 +57,6 @@ export function usePageLoader() {
   const [loadingRight, setLoadingRight] = useState(false)
   const [pageDataRight, setPageDataRight] = useState<PageData | null>(null)
   const [pageText, setPageText] = useState<TextBlock[]>([])
-  const [pageTextRight, setPageTextRight] = useState<TextBlock[]>([])
   const [searchHighlight, setSearchHighlight] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
 
   // Recompute fit zoom when viewer size or panels change
@@ -76,7 +75,6 @@ export function usePageLoader() {
       setPageData(null)
       setPageDataRight(null)
       setPageText([])
-      setPageTextRight([])
       setSearchHighlight(null)
       return
     }
@@ -151,15 +149,6 @@ export function usePageLoader() {
       .then((res) => res.ok ? res.json() : null)
       .then((data) => { if (data?.blocks) setPageText(data.blocks) })
       .catch(() => {})
-
-    if (store.viewMode === 'double' && rightPage < activeDoc.page_count) {
-      apiFetch(`/pdf/text/${docId}/${rightPage}`, { signal })
-        .then((res) => res.ok ? res.json() : null)
-        .then((data) => { if (data?.blocks) setPageTextRight(data.blocks) })
-        .catch(() => {})
-    } else {
-      setPageTextRight([])
-    }
 
     // Preload adjacent pages in background (non-blocking): warm the page cache
     const preloadPage = (p: number) => {
@@ -241,7 +230,6 @@ export function usePageLoader() {
     loadingRight,
     pageDataRight,
     pageText,
-    pageTextRight,
     searchHighlight,
   }
 }

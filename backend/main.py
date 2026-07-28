@@ -1,6 +1,9 @@
 import logging
+import os
+import tempfile
 import uvicorn
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -15,6 +18,46 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
 
+log = logging.getLogger("engine")
+
+
+def _breadcrumb_path() -> Path:
+    """Junto a los logs que escribe Electron, para encontrarlo sin adivinar."""
+    appdata = os.environ.get("APPDATA")
+    base = Path(appdata) / "pdf-master" / "logs" if appdata else Path(tempfile.gettempdir())
+    try:
+        base.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        base = Path(tempfile.gettempdir())
+    return base / "inflight.txt"
+
+
+BREADCRUMB = _breadcrumb_path()
+
+
+def _write_breadcrumb(text: str) -> None:
+    """Un segfault de MuPDF mata el proceso sin traza y uvicorn solo loguea la
+    petición AL TERMINAR, así que la que lo mata no deja ni una línea: había que
+    adivinar. Aquí queda escrita ANTES de ejecutarla; al arrancar de nuevo se
+    reporta y se borra. Sin fsync a propósito: el fichero lo cierra el SO aunque el
+    proceso muera, y hacerlo en cada petición costaría más que el diagnóstico."""
+    try:
+        BREADCRUMB.write_text(text, encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _report_previous_crash() -> None:
+    try:
+        if not BREADCRUMB.exists():
+            return
+        pending = BREADCRUMB.read_text(encoding="utf-8").strip()
+        if pending:
+            log.error("EL MOTOR ANTERIOR MURIO mientras atendia: %s", pending)
+        BREADCRUMB.unlink(missing_ok=True)
+    except OSError:
+        pass
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,7 +71,10 @@ async def lifespan(app: FastAPI):
     # event loop, not the threadpool), so it stays responsive even while a long render
     # is holding the single worker.
     to_thread.current_default_thread_limiter().total_tokens = 1
+    _report_previous_crash()
+    log.info("Motor listo (pid %s)", os.getpid())
     yield
+    _write_breadcrumb("")
 
 
 app = FastAPI(title="PDF Master Engine", version="1.0.0", lifespan=lifespan)
@@ -42,6 +88,19 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def track_inflight_request(request: Request, call_next):
+    # El health-check corre en el event loop y se repite cada 10 s: no aporta y
+    # pisaría la miga de pan de la petición que sí está tocando MuPDF.
+    if request.url.path.endswith("/health"):
+        return await call_next(request)
+    _write_breadcrumb(f"{request.method} {request.url.path}?{request.url.query}")
+    try:
+        return await call_next(request)
+    finally:
+        _write_breadcrumb("")
 
 
 @app.exception_handler(DocumentNotFoundError)

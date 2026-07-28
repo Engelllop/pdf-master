@@ -125,10 +125,10 @@ Todas las anotaciones se renderizan como elementos SVG sobre un `<img>` de la p�
 ### 4.4 Inserción de Contenido
 | Feature | Backend | Frontend |
 |---------|---------|----------|
-| Texto editable | `/insert-text/{doc_id}` | Tool `text` + popup input. Fuentes configurables vía store. |
+| Texto | Anotación `text` embebida al guardar | Tool `text` + editor in-situ (TextBoxEditor). |
 | Imagen | `/insert-image/{doc_id}` | Tool `image` + `window.api.openFile(filters)`. Posición por click. |
-| Sello (Stamp) | Reusa `/insert-text` con fontsize=24 | Tool `stamp` + selector de 7 sellos + color picker. |
-| Watermark | `add_watermark(text, color, fontsize, angle)` | Texto centrado con rotación en todas las páginas. |
+| Sello (Stamp) | Anotación `text` en cursiva+negrita | Tool `stamp` + fantasma al cursor, vista previa y tamaño (`stampSize`). |
+| Watermark | `add_watermark(text, color, fontsize, angle, opacity, tiled)` | Mosaico al tresbolillo en todas las páginas (tope 400/pág.); `tiled=False` = línea única centrada. |
 | Header/Footer | `add_header_footer(header?, footer?, fontsize, color)` | Prompt para header y footer. Centrado horizontalmente. |
 | **Find & Replace** | `replace_text(query, replace, page_num?, case_sensitive?, replace_all?)` | Busca con `search_for`, redacta e inserta nuevo texto. UI expandible en Toolbar con opciones "Todo el doc" y "Distinguir mayúsculas". |
 | **Editar metadatos** | `set_metadata(title?, author?, subject?, keywords?)` | Diálogo de prompts para título, autor, asunto y palabras clave. |
@@ -193,7 +193,6 @@ POST   /pdf/crop/{doc_id}           → CropRequest {page_num, top, right, botto
 
 ### Edición de Contenido
 ```
-POST   /pdf/insert-text/{doc_id}    → InsertTextRequest
 POST   /pdf/insert-image/{doc_id}   → InsertImageRequest
 POST   /pdf/watermark/{doc_id}      → WatermarkRequest
 POST   /pdf/header-footer/{doc_id}  → HeaderFooterRequest

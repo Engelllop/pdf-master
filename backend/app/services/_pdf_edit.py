@@ -79,18 +79,6 @@ class EditMixin:
         self._invalidate_render_cache(doc_id)
         return True
 
-    def insert_text(self, doc_id: str, page_num: int, x: float, y: float, text: str, color: str = "#000000", fontsize: float = 12) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return False
-        page = doc.load_page(page_num)
-        # Parse hex color
-        rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0, 0, 0)
-        page.insert_text((x, y), text, fontsize=fontsize, color=rgb)
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
-
     def insert_image(self, doc_id: str, page_num: int, x: float, y: float, width: float, height: float, image_path: str) -> bool:
         doc = self._acquire(doc_id)
         if not doc or page_num < 0 or page_num >= len(doc) or not os.path.exists(image_path):
