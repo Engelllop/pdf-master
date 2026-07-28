@@ -21,7 +21,7 @@ function TextWidget({ field, style, onCommit }: {
         if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
         else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
       }}
-      className="bg-blue-500/10 hover:bg-blue-500/20 focus:bg-white text-black text-xs border border-blue-400/70 focus:border-blue-500 rounded px-1 outline-none transition-colors"
+      className="bg-info/10 hover:bg-info/20 focus:bg-white text-black text-mini border border-info/70 focus:border-info rounded px-1 outline-none transition-colors"
       style={style}
       title={field.field_name}
     />
@@ -53,7 +53,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
             <input key={field.field_name} type="checkbox"
               checked={field.value === 'Yes' || field.value === 'On'}
               onChange={(e) => onChange(field.field_name, e.target.checked ? 'Yes' : 'Off')}
-              className="accent-blue-600"
+              className="accent-[rgb(var(--info))]"
               style={style}
               title={field.field_name}
             />
@@ -64,7 +64,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
             <select key={field.field_name}
               value={field.value}
               onChange={(e) => onChange(field.field_name, e.target.value)}
-              className="bg-white text-black text-xs border border-blue-400 rounded"
+              className="bg-white text-black text-mini border border-info rounded"
               style={style}
               title={field.field_name}
             >

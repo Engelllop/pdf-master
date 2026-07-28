@@ -81,11 +81,11 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
     setReplyText('')
   }
 
-  const selectCls = 'flex-1 min-w-0 border border-border rounded px-1.5 py-1 text-[11px] bg-surface text-fg focus:outline-none focus:border-accent'
+  const selectCls = 'flex-1 min-w-0 border border-border rounded px-1.5 py-1 text-micro bg-surface text-fg focus:outline-none focus:border-accent'
   const resolvedCount = anns.filter((a) => a.status === 'resolved').length
 
   if (anns.length === 0) {
-    return <p className="text-xs text-center mt-4 text-muted">Sin anotaciones</p>
+    return <p className="text-mini text-center mt-4 text-muted">Sin anotaciones</p>
   }
 
   return (
@@ -94,7 +94,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
         <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-hover">
           <Search size={12} className="text-muted shrink-0" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar en las marcas…"
-            className="flex-1 min-w-0 bg-transparent text-[11px] text-fg placeholder:text-muted focus:outline-none" />
+            className="flex-1 min-w-0 bg-transparent text-micro text-fg placeholder:text-muted focus:outline-none" />
           {query && <button onClick={() => setQuery('')} className="text-muted hover:text-fg shrink-0"><X size={11} /></button>}
         </div>
         <div className="flex items-center gap-1.5">
@@ -112,13 +112,13 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
         <div className="flex items-center gap-1">
           {([['all', 'Todas'], ['open', 'Abiertas'], ['resolved', 'Resueltas']] as const).map(([id, label]) => (
             <button key={id} onClick={() => setStatus(id)}
-              className={`px-2 py-0.5 rounded text-[10px] border transition-colors ${
-                status === id ? 'border-accent text-accent bg-active' : 'border-border text-muted hover:bg-hover'
+              className={`px-2 py-0.5 rounded text-micro border transition-colors ${
+                status === id ? 'border-accent bg-accent text-toolbar' : 'border-border text-muted hover:bg-hover'
               }`}>
               {label}
             </button>
           ))}
-          <label className="flex items-center gap-1 text-[10px] text-muted cursor-pointer ml-auto" title="Solo la página actual">
+          <label className="flex items-center gap-1 text-micro text-muted cursor-pointer ml-auto" title="Solo la página actual">
             <input type="checkbox" checked={onlyThisPage} onChange={(e) => setOnlyThisPage(e.target.checked)}
               className="w-3 h-3" style={{ accentColor: 'rgb(var(--accent))' }} />
             Esta pág.
@@ -128,12 +128,12 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
 
       <div className="flex-1 overflow-y-auto p-1.5 space-y-2">
         {byPage.length === 0 && (
-          <p className="text-xs text-center mt-4 text-muted">Ninguna marca coincide con el filtro</p>
+          <p className="text-mini text-center mt-4 text-muted">Ninguna marca coincide con el filtro</p>
         )}
         {byPage.map(([page, list]) => (
           <div key={page}>
             <button onClick={() => togglePage(page)}
-              className="w-full flex items-center gap-1 px-1 py-0.5 text-[10px] uppercase tracking-wider text-muted hover:text-fg">
+              className="w-full flex items-center gap-1 px-1 py-0.5 text-micro uppercase tracking-wider text-muted hover:text-fg">
               {collapsed.has(page) ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
               Página {page + 1}
               <span className="ml-auto normal-case tracking-normal">{list.length}</span>
@@ -155,13 +155,13 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                           style={{ backgroundColor: ann.color || 'transparent' }} />
                         <button onClick={() => goTo(ann)} className="flex-1 min-w-0 text-left">
                           <div className="flex items-center gap-1.5">
-                            <span className={`text-[11px] font-medium ${isResolved ? 'line-through text-muted' : 'text-fg'}`}>
+                            <span className={`text-micro font-medium ${isResolved ? 'line-through text-muted' : 'text-fg'}`}>
                               {annotationLabel(ann.type)}
                             </span>
-                            {ann.measurement && <span className="text-[10px] text-accent tabular-nums">{ann.measurement.label}</span>}
+                            {ann.measurement && <span className="text-micro text-accent tabular-nums">{ann.measurement.label}</span>}
                           </div>
-                          {ann.text && <div className="text-[11px] text-muted truncate mt-0.5">{ann.text}</div>}
-                          <div className="text-[10px] text-muted mt-0.5 truncate"
+                          {ann.text && <div className="text-micro text-muted truncate mt-0.5">{ann.text}</div>}
+                          <div className="text-micro text-muted mt-0.5 truncate"
                             title={ann.createdAt ? formatDateTime(ann.createdAt) : undefined}>
                             {ann.author || 'Sin autor'}
                             {ann.createdAt ? ` · ${formatWhen(ann.createdAt)}` : ''}
@@ -172,15 +172,15 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                             title={replies.length ? `${replies.length} respuesta(s)` : 'Responder'}
                             className={`p-1 rounded transition-colors ${replies.length ? 'text-accent' : 'text-muted'} hover:bg-hover`}>
                             <MessageSquare size={12} />
-                            {replies.length > 0 && <span className="text-[9px] ml-0.5 tabular-nums">{replies.length}</span>}
+                            {replies.length > 0 && <span className="text-micro ml-0.5 tabular-nums">{replies.length}</span>}
                           </button>
                           <button onClick={() => setAnnotationStatus(activeDoc.doc_id, ann.id, isResolved ? 'open' : 'resolved')}
                             title={isResolved ? 'Marcar como abierta' : 'Marcar como resuelta'}
-                            className={`p-1 rounded transition-colors hover:bg-hover ${isResolved ? 'text-emerald-500' : 'text-muted'}`}>
+                            className={`p-1 rounded transition-colors hover:bg-hover ${isResolved ? 'text-success' : 'text-muted'}`}>
                             <Check size={12} />
                           </button>
                           <button onClick={() => deleteAnnotation(activeDoc.doc_id, ann.id)} aria-label="Eliminar anotación"
-                            className="p-1 rounded text-muted hover:text-red-500 hover:bg-hover transition-colors">
+                            className="p-1 rounded text-muted hover:text-danger hover:bg-hover transition-colors">
                             <Trash2 size={12} />
                           </button>
                         </div>
@@ -189,15 +189,15 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                       {isOpen && (
                         <div className="px-1.5 pb-1.5 space-y-1 border-t border-border pt-1.5">
                           {replies.map((r) => (
-                            <div key={r.id} className="group flex items-start gap-1 text-[11px]">
+                            <div key={r.id} className="group flex items-start gap-1 text-micro">
                               <div className="flex-1 min-w-0">
-                                <div className="text-muted text-[10px]" title={formatDateTime(r.at)}>
+                                <div className="text-muted text-micro" title={formatDateTime(r.at)}>
                                   {r.author || 'Sin autor'} · {formatWhen(r.at)}
                                 </div>
                                 <div className="text-fg whitespace-pre-wrap break-words">{r.text}</div>
                               </div>
                               <button onClick={() => deleteReply(activeDoc.doc_id, ann.id, r.id)} aria-label="Eliminar respuesta"
-                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-red-500">
+                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted hover:text-danger">
                                 <X size={11} />
                               </button>
                             </div>
@@ -206,7 +206,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                             <input value={isOpen ? replyText : ''} onChange={(e) => setReplyText(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') sendReply(ann.id) }}
                               placeholder={annotationAuthor ? `Responder como ${annotationAuthor}…` : 'Responder…'}
-                              className="flex-1 min-w-0 border border-border rounded px-1.5 py-1 text-[11px] bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+                              className="flex-1 min-w-0 border border-border rounded px-1.5 py-1 text-micro bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
                             <button onClick={() => sendReply(ann.id)} disabled={!replyText.trim()} aria-label="Enviar respuesta"
                               className="p-1 rounded text-accent disabled:opacity-30 hover:bg-hover transition-colors">
                               <Send size={12} />
@@ -223,7 +223,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 px-2 py-1.5 border-t border-border text-[10px] text-muted shrink-0">
+      <div className="flex items-center gap-2 px-2 py-1.5 border-t border-border text-micro text-muted shrink-0">
         <span className="tabular-nums">{filtered.length} de {anns.length} · {resolvedCount} resuelta(s)</span>
         <button onClick={() => window.dispatchEvent(new CustomEvent('app:markup-summary'))}
           title="Exportar resumen de marcas a PDF"

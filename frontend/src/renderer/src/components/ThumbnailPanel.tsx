@@ -15,7 +15,7 @@ function OutlineTree({ items, depth = 0, onJump }: { items: OutlineItem[]; depth
         <div key={idx}>
           <button
             onClick={() => onJump(item.page)}
-            className={`w-full text-left text-xs rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
+            className={`w-full text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
             style={{ paddingLeft: `${8 + depth * 12}px` }}
             title={item.title}
           >
@@ -294,13 +294,13 @@ export default function ThumbnailPanel() {
         {sidebarOpen && (
           <div className={`w-56 border-r flex flex-col bg-panel border-border`}>
             <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
-              <span className={`text-xs font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+              <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
               <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
                 <PanelLeftClose size={14} />
               </button>
             </div>
             <div className="flex-1 flex items-center justify-center">
-              <p className={`text-sm text-center px-4 text-muted`}>Abre un PDF</p>
+              <p className={`text-base text-center px-4 text-muted`}>Abre un PDF</p>
             </div>
           </div>
         )}
@@ -316,7 +316,7 @@ export default function ThumbnailPanel() {
       // El panel de revisión necesita más ancho que las miniaturas (filtros + hilos).
       <div className={`${tab === 'annotations' || tab === 'counts' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
-        <span className={`text-xs font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+        <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
         <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
           <PanelLeftClose size={14} />
         </button>
@@ -361,7 +361,7 @@ export default function ThumbnailPanel() {
                   }}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   onClick={(e) => handleThumbClick(i, e)}
-                  className={`w-full rounded border transition-all cursor-pointer relative ${
+                  className={`w-full rounded border transition-colors cursor-pointer relative ${
                     activeDoc.currentPage === i
                       ? isSelected ? 'border-accent bg-accent/10' : 'border-accent bg-black/5 dark:bg-white/10'
                       : isSelected ? 'border-accent bg-accent/10' : 'border-border hover:border-muted bg-surface/50'
@@ -370,8 +370,8 @@ export default function ThumbnailPanel() {
                   {isVisible && activeDoc.thumbnails.has(i) ? (
                     <img src={activeDoc.thumbnails.get(i)} alt={`Pagina ${i + 1}`} className="w-full h-auto rounded pointer-events-none" />
                   ) : (
-                    <div className={`w-full aspect-[3/4] flex items-center justify-center rounded bg-surface`}>
-                      <span className={`text-xs text-muted`}>{i + 1}</span>
+                    <div className="skeleton w-full aspect-[3/4] flex items-center justify-center rounded">
+                      <span className={`text-mini text-muted`}>{i + 1}</span>
                     </div>
                   )}
                   {activeDoc.currentPage === i && viewerScroll.scrollWidth > 0 && (
@@ -391,7 +391,7 @@ export default function ThumbnailPanel() {
                       </svg>
                     </div>
                   )}
-                  <div className={`text-center text-[10px] py-1 text-muted`}>{i + 1}</div>
+                  <div className={`text-center text-micro py-1 text-muted`}>{i + 1}</div>
                 </div>
               </div>
             )
@@ -399,7 +399,7 @@ export default function ThumbnailPanel() {
           {selectedPages.size > 0 && (
             <div className={`sticky bottom-2 z-10 mx-1 rounded-xl border shadow-xl bg-panel/95 border-border`}>
               <div className={`flex items-center justify-between px-2.5 pt-2 pb-1.5 border-b border-border`}>
-                <span className={`text-[11px] font-medium text-muted`}>{selectedPages.size} seleccionada(s)</span>
+                <span className={`text-micro font-medium text-muted`}>{selectedPages.size} seleccionada(s)</span>
                 <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors text-muted hover:text-fg hover:bg-hover`}><X size={15} /></button>
               </div>
               <div className="flex flex-wrap gap-1.5 justify-center p-2.5">
@@ -408,7 +408,7 @@ export default function ThumbnailPanel() {
                 <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página"><Copy size={15} /></button>
                 <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después"><FilePlus2 size={15} /></button>
                 <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-colors" title="Extraer a nuevo PDF"><Scissors size={15} /></button>
-                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-red-600 hover:bg-red-500 text-white transition-colors" title="Eliminar página(s)"><Trash2 size={15} /></button>
+                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-danger hover:bg-danger text-white transition-colors" title="Eliminar página(s)"><Trash2 size={15} /></button>
               </div>
             </div>
           )}
@@ -419,7 +419,7 @@ export default function ThumbnailPanel() {
           {activeDoc.outline.length > 0 ? (
             <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} />
           ) : (
-            <p className={`text-xs text-center mt-4 text-muted`}>Este PDF no tiene outline</p>
+            <p className={`text-mini text-center mt-4 text-muted`}>Este PDF no tiene outline</p>
           )}
         </div>
       )}
@@ -428,12 +428,12 @@ export default function ThumbnailPanel() {
           {bookmarks.filter((b) => b.docId === activeDoc.doc_id).length > 0 ? (
             bookmarks.filter((b) => b.docId === activeDoc.doc_id).map((b) => (
               <div key={b.id} className="flex items-center gap-1 group">
-                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-xs rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
-                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 text-red-600 dark:text-red-400 transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
+                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
+                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
               </div>
             ))
           ) : (
-            <p className={`text-xs text-center mt-4 text-muted`}>Sin marcadores</p>
+            <p className={`text-mini text-center mt-4 text-muted`}>Sin marcadores</p>
           )}
         </div>
       )}
@@ -441,27 +441,27 @@ export default function ThumbnailPanel() {
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {activeDoc.searchResults.length > 0 ? (
             <>
-              <div className={`text-[10px] px-1 pb-1 text-muted`}>
+              <div className={`text-micro px-1 pb-1 text-muted`}>
                 {activeDoc.searchResults.length} resultado(s) para "{activeDoc.searchQuery}"
               </div>
               {activeDoc.searchResults.map((r, i) => (
                 <button
                   key={i}
                   onClick={() => goToSearchResult(activeDoc.doc_id, i)}
-                  className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors ${
+                  className={`w-full text-left text-mini rounded px-2 py-1.5 transition-colors ${
                     i === activeDoc.searchIndex
                       ? 'bg-black/5 dark:bg-white/10 border border-accent'
                       : 'hover:bg-hover border border-transparent'
                   }`}
                   title={r.snippet || ''}
                 >
-                  <span className={`block text-[10px] mb-0.5 text-muted`}>Pág. {r.page + 1}</span>
+                  <span className={`block text-micro mb-0.5 text-muted`}>Pág. {r.page + 1}</span>
                   <span className={`block truncate text-fg`}>{r.snippet || '(sin texto)'}</span>
                 </button>
               ))}
             </>
           ) : (
-            <p className={`text-xs text-center mt-4 text-muted`}>Sin resultados de búsqueda</p>
+            <p className={`text-mini text-center mt-4 text-muted`}>Sin resultados de búsqueda</p>
           )}
           {(() => {
             // Resultados de la misma búsqueda en los demás documentos abiertos
@@ -470,15 +470,15 @@ export default function ThumbnailPanel() {
             if (others.length === 0) return null
             return (
               <>
-                <div className={`text-[10px] px-1 pt-3 pb-1 border-t mt-2 text-muted border-border`}>
+                <div className={`text-micro px-1 pt-3 pb-1 border-t mt-2 text-muted border-border`}>
                   En otros documentos
                 </div>
                 {others.map((d) => (
                   <button key={d.doc_id} onClick={() => { setActiveDoc(d.doc_id); goToSearchResult(d.doc_id, 0) }}
-                    className={`w-full text-left text-xs rounded px-2 py-1.5 transition-colors hover:bg-hover`}
+                    className={`w-full text-left text-mini rounded px-2 py-1.5 transition-colors hover:bg-hover`}
                     title={d.file_path}>
                     <span className={`block truncate font-medium text-fg`}>{d.file_name}</span>
-                    <span className={`block text-[10px] text-muted`}>{d.searchResults.length} resultado(s)</span>
+                    <span className={`block text-micro text-muted`}>{d.searchResults.length} resultado(s)</span>
                   </button>
                 ))}
               </>

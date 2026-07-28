@@ -34,7 +34,7 @@ export default function StatusBar() {
   const iconBtn = 'p-1 rounded hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-30'
 
   return (
-    <div className="h-8 border-t border-border bg-toolbar text-muted flex items-center px-3 text-xs select-none gap-3">
+    <div className="h-8 border-t border-border bg-toolbar text-muted flex items-center px-3 text-mini select-none gap-3">
       {activeDoc ? (
         <span className="flex items-center gap-1">
           Pág.
@@ -49,12 +49,12 @@ export default function StatusBar() {
       {dims && <span className="text-muted">{dims}</span>}
 
       {activeDoc && scale && (
-        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400" title="Escala de medición calibrada">
+        <span className="flex items-center gap-1 text-success" title="Escala de medición calibrada">
           <Ruler size={12} /> 1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
         </span>
       )}
       {activeDoc && !scale && measuring && (
-        <span className="flex items-center gap-1 text-amber-500" title="Usa Calibrar escala antes de medir">
+        <span className="flex items-center gap-1 text-warning" title="Usa Calibrar escala antes de medir">
           <Ruler size={12} /> Sin calibrar
         </span>
       )}
@@ -63,7 +63,7 @@ export default function StatusBar() {
         <span className="flex items-center gap-1.5 text-accent" title="Herramienta activa">
           <Pointer size={12} /> {toolLabel(activeTool)}
           {stickyTools && <span className="text-muted">(fija)</span>}
-          <kbd className="px-1 py-px rounded border border-border text-[10px] text-muted">Esc</kbd>
+          <kbd className="px-1 py-px rounded border border-border text-micro text-muted">Esc</kbd>
         </span>
       )}
 
@@ -73,7 +73,7 @@ export default function StatusBar() {
         <span className="flex items-center gap-1 text-accent"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
       )}
       {saveStatus === 'saved' && (
-        <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><CheckCircle2 size={12} /> Guardado</span>
+        <span className="flex items-center gap-1 text-success"><CheckCircle2 size={12} /> Guardado</span>
       )}
 
       {activeDoc && (
@@ -97,13 +97,13 @@ export default function StatusBar() {
                 <div className="absolute bottom-full right-0 mb-1 z-50 w-32 border border-border rounded-token shadow-token py-1 bg-panel">
                   {ZOOM_PRESETS.map((z) => (
                     <button key={z} onClick={() => { setZoom(activeDoc.doc_id, z); setFitMode(activeDoc.doc_id, 'custom'); setZoomMenuOpen(false) }}
-                      className={`w-full text-left px-3 py-1 text-xs hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'text-accent' : 'text-fg'}`}>
+                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'text-accent' : 'text-fg'}`}>
                       {Math.round(z * 100)}%
                     </button>
                   ))}
                   <div className="h-px my-1 bg-border" />
-                  <button onClick={() => { applyFit('fit-width'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-xs text-fg hover:bg-hover">Ajustar al ancho</button>
-                  <button onClick={() => { applyFit('fit-page'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-xs text-fg hover:bg-hover">Ajustar página</button>
+                  <button onClick={() => { applyFit('fit-width'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-mini text-fg hover:bg-hover">Ajustar al ancho</button>
+                  <button onClick={() => { applyFit('fit-page'); setZoomMenuOpen(false) }} className="w-full text-left px-3 py-1 text-mini text-fg hover:bg-hover">Ajustar página</button>
                 </div>
               </>
             )}

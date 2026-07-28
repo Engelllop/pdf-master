@@ -392,7 +392,7 @@ function App() {
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden transition-colors bg-surface">
       {!backendOk && (
-        <div className="bg-red-600 text-white text-xs text-center py-1 px-3 font-medium flex items-center justify-center gap-1.5">
+        <div className="bg-danger text-white text-mini text-center py-1 px-3 font-medium flex items-center justify-center gap-1.5">
           <AlertTriangle size={13} className="shrink-0" />
           Motor PDF desconectado — Guarda tu trabajo y reinicia la aplicación
         </div>

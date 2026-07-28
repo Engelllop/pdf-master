@@ -13,12 +13,12 @@ export default function ViewerContextMenu({
   onExportImage: () => void
   onCopyText: () => void
 }) {
-  const item = 'w-full text-left px-3 py-1.5 text-sm text-fg hover:bg-hover'
+  const item = 'w-full text-left px-3 py-1.5 text-base text-fg hover:bg-hover'
   return (
     <div className="fixed z-50 border border-border rounded shadow-xl py-1 min-w-[160px] bg-panel"
       style={{ left: x, top: y }}>
       {hasSelection && (
-        <button className="w-full text-left px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-hover"
+        <button className="w-full text-left px-3 py-1.5 text-base text-danger hover:bg-hover"
           onClick={onDeleteAnnotation}>
           Eliminar anotación
         </button>

@@ -50,7 +50,7 @@ export default function PresentationView() {
       {/* Controls */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/60 rounded-full px-5 py-2 text-white/90 backdrop-blur">
         <button onClick={() => store.prevPage(activeDoc.doc_id)} disabled={activeDoc.currentPage <= 0} className="disabled:opacity-30 hover:text-white"><ChevronLeft size={20} /></button>
-        <span className="text-sm tabular-nums">{activeDoc.currentPage + 1} / {activeDoc.page_count}</span>
+        <span className="text-base tabular-nums">{activeDoc.currentPage + 1} / {activeDoc.page_count}</span>
         <button onClick={() => store.nextPage(activeDoc.doc_id)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1} className="disabled:opacity-30 hover:text-white"><ChevronRight size={20} /></button>
       </div>
 

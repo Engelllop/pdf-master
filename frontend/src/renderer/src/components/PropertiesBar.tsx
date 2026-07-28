@@ -79,7 +79,7 @@ export default function PropertiesBar() {
   const changeFillColor = (c: string | null) => strokeSel ? applyToSel({ fillColor: c ?? undefined }) : store.setAnnotationFillColor(c)
   const changeFillOpacity = (o: number) => strokeSel ? applyToSel({ fillOpacity: o }) : store.setAnnotationFillOpacity(o)
 
-  const Label = ({ children }: { children: React.ReactNode }) => <span className="text-[11px] text-muted shrink-0">{children}</span>
+  const Label = ({ children }: { children: React.ReactNode }) => <span className="text-micro text-muted shrink-0">{children}</span>
   // Grupo con fondo propio: separa visualmente cada ajuste en vez de una fila plana
   const Group = ({ children }: { children: React.ReactNode }) => (
     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-panel px-2 py-1 shrink-0">{children}</div>
@@ -122,13 +122,13 @@ export default function PropertiesBar() {
           <Label>Fuente</Label>
             <select value={selAnn?.type === 'text' ? (selAnn.fontFamily || store.textFontFamily) : store.textFontFamily}
               onChange={(e) => { store.setTextFontFamily(e.target.value); if (selAnn?.type === 'text') applyToSel({ fontFamily: e.target.value }) }}
-              className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
+              className="border border-border rounded px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
               {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
             </select>
             <input type="number" min={4} max={72}
               value={selAnn?.type === 'text' ? (selAnn.fontSize || store.textFontSize) : store.textFontSize}
               onChange={(e) => { const v = parseInt(e.target.value) || 14; store.setTextFontSize(v); if (selAnn?.type === 'text') applyToSel({ fontSize: v }) }}
-              className="w-14 border border-border rounded px-2 py-1 text-xs text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" />
+              className="w-14 border border-border rounded px-2 py-1 text-mini text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" />
             <Label>px</Label>
             {(() => {
               const isTextSel = selAnn?.type === 'text'
@@ -143,7 +143,7 @@ export default function PropertiesBar() {
                 store.setTextStyle(u)
                 if (isTextSel) applyToSel(u)
               }
-              const tBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+              const tBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
               return (
                 <>
                   <button title="Negrita" className={tBtn(sv.bold)} onClick={() => setStyle({ bold: !sv.bold })}><Bold size={13} /></button>
@@ -153,11 +153,11 @@ export default function PropertiesBar() {
                     return <button key={a} title={`Alinear ${a}`} className={tBtn(sv.align === a)} onClick={() => setStyle({ align: a })}><Icon size={13} /></button>
                   })}
                   <select title="Interlineado" value={sv.lineHeight} onChange={(e) => setStyle({ lineHeight: parseFloat(e.target.value) })}
-                    className="border border-border rounded px-1 py-1 text-xs bg-panel text-fg focus:outline-none">
+                    className="border border-border rounded px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
                     {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
                   </select>
                   <select title="Lista" value={sv.listStyle} onChange={(e) => setStyle({ listStyle: e.target.value as typeof sv.listStyle })}
-                    className="border border-border rounded px-1 py-1 text-xs bg-panel text-fg focus:outline-none">
+                    className="border border-border rounded px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
                     <option value="none">Sin lista</option>
                     <option value="bullet">• Viñetas</option>
                     <option value="number">1. Numerada</option>
@@ -183,7 +183,7 @@ export default function PropertiesBar() {
             ))}
             <input type="number" min={0.5} max={24} step={0.5} value={lineWidthVal}
               onChange={(e) => changeWidth(Math.min(24, Math.max(0.5, parseFloat(e.target.value) || 1)))}
-              className="w-12 border border-border rounded px-1 py-0.5 text-[11px] text-center bg-surface text-fg focus:outline-none focus:border-accent"
+              className="w-12 border border-border rounded px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-accent"
               title="Grosor exacto (pt)" />
           </Group>
 
@@ -203,7 +203,7 @@ export default function PropertiesBar() {
             <Label>Opacidad</Label>
             {OPACITY_PRESETS.map((o) => (
               <button key={o} onClick={() => changeOpacity(o / 100)} title={`${o}%`}
-                className={`h-7 px-1.5 rounded-md text-[11px] tabular-nums transition-colors ${
+                className={`h-7 px-1.5 rounded-md text-micro tabular-nums transition-colors ${
                   Math.round(opacityVal * 100) === o ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>{o}</button>
             ))}
@@ -220,13 +220,13 @@ export default function PropertiesBar() {
                     className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color de relleno" />
                   <input type="range" min={5} max={100} step={5} value={Math.round(fillOpacityVal * 100)}
                     onChange={(e) => changeFillOpacity(parseInt(e.target.value) / 100)} className="w-16" title="Opacidad del relleno" />
-                  <span className="text-[11px] text-muted w-8 tabular-nums">{Math.round(fillOpacityVal * 100)}%</span>
+                  <span className="text-micro text-muted w-8 tabular-nums">{Math.round(fillOpacityVal * 100)}%</span>
                   <button onClick={() => changeFillColor(null)} title="Quitar relleno"
                     className="p-1 rounded-md text-muted hover:bg-hover hover:text-fg"><X size={12} /></button>
                 </>
               ) : (
                 <button onClick={() => changeFillColor(colorVal)} title="Rellenar con el color actual"
-                  className="px-2 h-6 rounded-md text-[11px] text-muted hover:bg-hover hover:text-fg border border-dashed border-border">
+                  className="px-2 h-6 rounded-md text-micro text-muted hover:bg-hover hover:text-fg border border-dashed border-border">
                   sin relleno
                 </button>
               )}
@@ -239,7 +239,7 @@ export default function PropertiesBar() {
         <Group>
           <Label>Sello</Label>
           <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
-            className="border border-border rounded px-2 py-1 text-xs bg-panel text-fg focus:outline-none focus:border-accent">
+            className="border border-border rounded px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -252,9 +252,9 @@ export default function PropertiesBar() {
           <Label>Tamaño</Label>
           <input type="range" min={8} max={72} step={2} value={store.stampSize}
             onChange={(e) => store.setStampSize(parseInt(e.target.value))} className="w-20" aria-label="Tamaño del sello" />
-          <span className="text-[11px] text-muted w-6 tabular-nums">{store.stampSize}</span>
+          <span className="text-micro text-muted w-6 tabular-nums">{store.stampSize}</span>
           <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-stamps'))}
-            className="px-2 py-1 text-[11px] rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
+            className="px-2 py-1 text-micro rounded border border-border text-muted hover:bg-hover hover:text-fg transition-colors">
             Gestionar…
           </button>
         </Group>
@@ -265,7 +265,7 @@ export default function PropertiesBar() {
           <Label>Rotación</Label>
           <input type="range" min={0} max={360} step={1} value={rotAnn.rotation || 0}
             onChange={(e) => applyToSel({ rotation: parseInt(e.target.value) })} className="w-24" />
-          <span className="text-[11px] text-muted w-8 tabular-nums">{rotAnn.rotation || 0}°</span>
+          <span className="text-micro text-muted w-8 tabular-nums">{rotAnn.rotation || 0}°</span>
         </Group>
       )}
     </div>

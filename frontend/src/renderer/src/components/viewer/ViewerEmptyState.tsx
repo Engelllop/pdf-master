@@ -57,26 +57,26 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
           </div>
           <div>
             <h2 className="text-xl font-semibold text-fg">PDF Master</h2>
-            <p className="mt-1 text-sm text-muted">Arrastra un PDF aquí para abrirlo</p>
+            <p className="mt-1 text-base text-muted">Arrastra un PDF aquí para abrirlo</p>
           </div>
           <div className="flex items-center justify-center gap-2">
             <button onClick={handleOpen}
-              className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity">
+              className="flex items-center gap-2 px-4 py-2 text-base rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity">
               <FolderOpen size={15} /> Abrir PDF
             </button>
             {lastSession && (
               <button onClick={() => { reopenLastSession() }}
-                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg border border-border text-fg hover:bg-hover transition-colors">
+                className="flex items-center gap-2 px-4 py-2 text-base rounded-lg border border-border text-fg hover:bg-hover transition-colors">
                 <History size={15} /> Reabrir última sesión ({lastSession.docs.length})
               </button>
             )}
           </div>
-          <p className="text-xs text-muted">Ctrl+O abrir · Ctrl+rueda zoom · F1 atajos</p>
+          <p className="text-mini text-muted">Ctrl+O abrir · Ctrl+rueda zoom · F1 atajos</p>
         </div>
 
         {visibleRecents.length > 0 && (
           <div>
-            <p className="text-[11px] uppercase tracking-wider mb-2 text-muted">Recientes</p>
+            <p className="text-micro uppercase tracking-wider mb-2 text-muted">Recientes</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {visibleRecents.map((entry) => {
                 const name = entry.path.split(/[\\/]/).pop()
@@ -92,8 +92,8 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
                         : <FileText size={15} className="text-accent" strokeWidth={1.5} />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[13px] text-fg truncate leading-tight">{name}</div>
-                      <div className="text-[10px] text-muted truncate mt-0.5">
+                      <div className="text-ui text-fg truncate leading-tight">{name}</div>
+                      <div className="text-micro text-muted truncate mt-0.5">
                         {formatWhen(entry.lastOpened)}
                         {progress && <> · <span className="text-accent">{progress}</span></>}
                       </div>
@@ -108,11 +108,11 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
 
         {folders.length > 0 && (
           <div>
-            <p className="text-[11px] uppercase tracking-wider mb-2 text-muted">Carpetas frecuentes</p>
+            <p className="text-micro uppercase tracking-wider mb-2 text-muted">Carpetas frecuentes</p>
             <div className="flex flex-wrap gap-2">
               {folders.map((f) => (
                 <button key={f.dir} onClick={() => handleOpenFolder(f.dir)} title={f.dir}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs text-fg hover:bg-hover transition-colors">
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-mini text-fg hover:bg-hover transition-colors">
                   <Folder size={13} className="text-accent" />
                   <span className="truncate max-w-[180px]">{f.name}</span>
                   <span className="text-muted">{f.count}</span>
@@ -127,8 +127,8 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
             <div key={title} className="flex gap-2.5 p-2">
               <Icon size={15} className="text-accent shrink-0 mt-0.5" strokeWidth={1.75} />
               <div>
-                <div className="text-xs font-medium text-fg">{title}</div>
-                <div className="text-[11px] text-muted leading-snug mt-0.5">{text}</div>
+                <div className="text-mini font-medium text-fg">{title}</div>
+                <div className="text-micro text-muted leading-snug mt-0.5">{text}</div>
               </div>
             </div>
           ))}

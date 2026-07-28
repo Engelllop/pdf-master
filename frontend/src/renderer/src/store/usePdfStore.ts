@@ -130,6 +130,8 @@ interface Toast {
   id: string
   message: string
   type: 'success' | 'error' | 'info'
+  /** en su animación de salida; se retira del array al terminar */
+  leaving?: boolean
 }
 
 /** Operación larga en curso. `total` 0 = progreso indeterminado. */
@@ -1228,16 +1230,19 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     })
   },
 
+  // El aviso se marca como saliente y se retira 120 ms después (lo que dura
+  // `toast-out`): antes entraba animado y desaparecía de golpe.
   showToast: (message, type = 'info') => {
     const id = crypto.randomUUID()
     set((state) => ({ toasts: [...state.toasts, { id, message, type }] }))
-    setTimeout(() => {
-      set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
-    }, 3000)
+    setTimeout(() => get().removeToast(id), 3000)
   },
 
   removeToast: (id) => {
-    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
+    set((state) => ({ toasts: state.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) }))
+    setTimeout(() => {
+      set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
+    }, 120)
   },
 
   setCompareDoc: (docId) => set({ compareDocId: docId, compareZoom: 1 }),

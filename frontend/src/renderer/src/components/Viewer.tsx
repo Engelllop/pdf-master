@@ -27,7 +27,7 @@ import ViewerEmptyState from './viewer/ViewerEmptyState'
 import ViewerContextMenu from './viewer/ViewerContextMenu'
 import { recoverImage } from '../lib/recoverImage'
 import { loadSignatures, signatureAtPoint } from '../lib/signatures'
-import { Loader2 } from 'lucide-react'
+import { Loader2, X } from 'lucide-react'
 
 import { apiFetch } from '../lib/api'
 
@@ -774,10 +774,10 @@ export default function Viewer() {
                 return (
                   <div className="absolute z-30 flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
                     <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
-                      className="px-2 py-1 text-xs rounded bg-red-600 text-white shadow hover:bg-red-500">Eliminar</button>
+                      className="px-2 py-1 text-mini rounded bg-danger text-white shadow hover:bg-danger">Eliminar</button>
                     <button onMouseDown={(e) => e.stopPropagation()}
                       onClick={async () => { const p = await window.api.openFile([{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
-                      className="px-2 py-1 text-xs rounded bg-fg text-toolbar shadow hover:opacity-90">Reemplazar</button>
+                      className="px-2 py-1 text-mini rounded bg-fg text-toolbar shadow hover:opacity-90">Reemplazar</button>
                   </div>
                 )
               })()}
@@ -827,10 +827,10 @@ export default function Viewer() {
               {/* Area measurement floating controls */}
               {drawingArea && (
                 <div className="absolute z-30 bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-toolbar text-xs rounded shadow-lg hover:opacity-90">
+                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-toolbar text-mini rounded shadow-lg hover:opacity-90">
                     {store.activeTool === 'measure_perimeter' ? 'Terminar medición (Enter)' : 'Cerrar polígono (Enter)'}
                   </button>
-                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-xs rounded shadow-lg bg-active text-fg hover:bg-hover`}>
+                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-mini rounded shadow-lg bg-active text-fg hover:bg-hover`}>
                     Cancelar
                   </button>
                 </div>
@@ -850,13 +850,16 @@ export default function Viewer() {
               )
             })()}
 
-            {/* Los campos rellenables no se distinguían del fondo: aviso de que los hay */}
+            {/* Los campos rellenables no se distinguían del fondo: aviso de que los
+                hay, con la misma forma que el de calibración (mismo tipo de mensaje) */}
             {formFields.length > 0 && !formHintOff && (
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full border border-blue-500/50 bg-panel/95 shadow-token text-xs text-fg">
-                <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-info/60 bg-panel shadow-token text-mini text-fg">
+                <span className="w-2 h-2 rounded-full bg-info shrink-0" />
                 Formulario: {formFields.length} campo(s) rellenable(s) en esta página
                 <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
-                  className="p-1 rounded-full text-muted hover:text-fg hover:bg-hover transition-colors">✕</button>
+                  className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
+                  <X size={14} />
+                </button>
               </div>
             )}
 

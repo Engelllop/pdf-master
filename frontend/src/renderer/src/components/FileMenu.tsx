@@ -158,15 +158,15 @@ export default function FileMenu() {
     disabled?: boolean
   }) => (
     <button onClick={() => { onClick(); setOpen(false) }} disabled={disabled}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-left rounded-md transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'text-fg hover:bg-hover'}`}>
+      className={`w-full flex items-center gap-2.5 px-3 py-2 text-ui text-left rounded-md transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'text-fg hover:bg-hover'}`}>
       <Icon size={15} className="text-muted shrink-0" strokeWidth={1.75} />
       <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-[10px] text-muted">{shortcut}</span>}
+      {shortcut && <span className="text-micro text-muted">{shortcut}</span>}
     </button>
   )
 
   const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-    <div className="px-2 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted">{children}</div>
+    <div className="px-2 pt-2 pb-1 text-micro font-medium uppercase tracking-wider text-muted">{children}</div>
   )
 
   const RecentRow = ({ entry }: { entry: RecentEntry }) => {
@@ -185,8 +185,8 @@ export default function FileMenu() {
             : <FileText size={16} className="text-accent" strokeWidth={1.5} />}
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-[13px] text-fg truncate leading-tight">{name}</div>
-          <div className="text-[10px] text-muted truncate mt-0.5">
+          <div className="text-ui text-fg truncate leading-tight">{name}</div>
+          <div className="text-micro text-muted truncate mt-0.5">
             {dirName} · {formatWhen(entry.lastOpened)}
             {pageBadge && <> · <span className="text-accent">{pageBadge}</span></>}
           </div>
@@ -204,7 +204,7 @@ export default function FileMenu() {
           </button>
           <button title="Quitar de recientes"
             onClick={(e) => { e.stopPropagation(); removeRecent(entry.path); setRecents(loadRecents()); setFolders(frequentFolders()) }}
-            className="p-1 rounded text-muted hover:text-red-400 hover:bg-hover">
+            className="p-1 rounded text-muted hover:text-danger hover:bg-hover">
             <X size={12} />
           </button>
         </div>
@@ -221,8 +221,8 @@ export default function FileMenu() {
         <Folder size={15} className="text-accent" strokeWidth={1.75} />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-fg truncate leading-tight">{folder.name}</div>
-        <div className="text-[10px] text-muted truncate mt-0.5">{folder.count} PDF{folder.count === 1 ? '' : 's'} abiertos desde aquí</div>
+        <div className="text-ui text-fg truncate leading-tight">{folder.name}</div>
+        <div className="text-micro text-muted truncate mt-0.5">{folder.count} PDF{folder.count === 1 ? '' : 's'} abiertos desde aquí</div>
       </div>
       <button title="Abrir en el Explorador"
         onClick={(e) => { e.stopPropagation(); window.api.openFolder(folder.dir) }}
@@ -242,7 +242,7 @@ export default function FileMenu() {
   return (
     <div className="relative h-full" ref={menuRef}>
       <button onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-1 px-3 h-full text-[13px] font-medium transition-colors ${open ? 'text-accent bg-hover' : 'text-fg hover:bg-hover'}`}>
+        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'text-accent bg-hover' : 'text-fg hover:bg-hover'}`}>
         Archivo <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -269,7 +269,7 @@ export default function FileMenu() {
                 <Search size={13} className="text-muted shrink-0" />
                 <input ref={searchRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar en recientes…"
-                  className="flex-1 min-w-0 bg-transparent text-[12px] text-fg placeholder:text-muted focus:outline-none" />
+                  className="flex-1 min-w-0 bg-transparent text-mini text-fg placeholder:text-muted focus:outline-none" />
                 {query && (
                   <button onClick={() => setQuery('')} className="text-muted hover:text-fg shrink-0"><X size={12} /></button>
                 )}
@@ -286,18 +286,18 @@ export default function FileMenu() {
                 <SectionLabel>Recientes</SectionLabel>
                 {unpinned.length > 0 && !q && (
                   <button onClick={() => { clearUnpinnedRecents(); setRecents(loadRecents()); setFolders(frequentFolders()) }}
-                    className="flex items-center gap-1 text-[10px] text-muted hover:text-red-400">
+                    className="flex items-center gap-1 text-micro text-muted hover:text-danger">
                     <Trash2 size={10} /> Limpiar
                   </button>
                 )}
               </div>
               {recents.length === 0 && (
-                <div className="px-2 py-6 text-center text-xs text-muted">
+                <div className="px-2 py-6 text-center text-mini text-muted">
                   Aún no hay archivos recientes.<br />También puedes arrastrar PDFs a la ventana.
                 </div>
               )}
               {nothingFound && (
-                <div className="px-2 py-6 text-center text-xs text-muted">Sin resultados para “{query}”.</div>
+                <div className="px-2 py-6 text-center text-mini text-muted">Sin resultados para “{query}”.</div>
               )}
               {unpinned.map((r) => <RecentRow key={r.path} entry={r} />)}
               {visibleFolders.length > 0 && (

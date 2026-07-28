@@ -75,14 +75,14 @@ function ComparePagePanel({
 
   return (
     <div className={`flex-1 flex flex-col min-w-0 bg-surface`}>
-      <div className={`px-3 py-1.5 border-b text-xs flex items-center justify-between shrink-0 bg-panel border-border text-muted`}>
+      <div className={`px-3 py-1.5 border-b text-mini flex items-center justify-between shrink-0 bg-panel border-border text-muted`}>
         <span className="truncate" title={label}>{label} — Pág. {page + 1}</span>
         {loading && <span className="text-muted animate-pulse shrink-0 ml-2">Cargando…</span>}
       </div>
       <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-auto">
         <div className="min-h-full flex items-start justify-center p-4">
           {error ? (
-            <div className={`self-center text-sm text-muted`}>Error al cargar página</div>
+            <div className={`self-center text-base text-muted`}>Error al cargar página</div>
           ) : (
             <div className="rounded shadow-lg bg-white" style={{ width: dispW, height: dispH }}>
               {url && (
@@ -196,11 +196,11 @@ function CompareOverlayPanel({
     <div ref={hostRef} className={`flex-1 overflow-auto bg-surface`}>
       <div className="min-h-full flex items-start justify-center p-4">
         {error ? (
-          <div className={`self-center text-sm text-muted`}>Error al componer el overlay</div>
+          <div className={`self-center text-base text-muted`}>Error al componer el overlay</div>
         ) : (
           <div className="relative">
             {loading && (
-              <div className={`absolute inset-0 flex items-center justify-center text-xs text-muted`}>Componiendo…</div>
+              <div className={`absolute inset-0 flex items-center justify-center text-mini text-muted`}>Componiendo…</div>
             )}
             <canvas ref={canvasRef} className="rounded shadow-lg bg-white"
               style={dims && fit > 0
@@ -293,7 +293,7 @@ export default function ComparisonView() {
     return (
       <div className={`flex-1 flex flex-col items-center justify-center bg-surface text-muted`}>
         <p>Documento de comparación no disponible</p>
-        <button onClick={clearCompare} className="mt-2 px-3 py-1 bg-accent text-toolbar rounded text-sm">Salir</button>
+        <button onClick={clearCompare} className="mt-2 px-3 py-1 bg-accent text-toolbar rounded text-base">Salir</button>
       </div>
     )
   }
@@ -302,14 +302,14 @@ export default function ComparisonView() {
     <div className={`flex-1 flex flex-col bg-surface`}>
       {/* Toolbar de comparación */}
       <div className={`h-11 border-b flex items-center px-3 gap-2 shrink-0 bg-panel border-border`}>
-        <span className={`text-xs font-semibold uppercase tracking-wider mr-2 text-muted`}>Comparar</span>
+        <span className={`text-mini font-semibold uppercase tracking-wider mr-2 text-muted`}>Comparar</span>
 
         <Tooltip content="Página anterior">
           <button onClick={goPrev} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ChevronLeft size={16} />
           </button>
         </Tooltip>
-        <span className={`text-xs w-24 text-center font-mono text-fg`}>
+        <span className={`text-mini w-24 text-center font-mono text-fg`}>
           {leftPage + 1} / {activeDoc.page_count}
         </span>
         <Tooltip content="Página siguiente">
@@ -325,7 +325,7 @@ export default function ComparisonView() {
             <ZoomOut size={16} />
           </button>
         </Tooltip>
-        <span className={`text-xs w-12 text-center font-mono text-fg`}>{Math.round(zoom * 100)}%</span>
+        <span className={`text-mini w-12 text-center font-mono text-fg`}>{Math.round(zoom * 100)}%</span>
         <Tooltip content="Acercar">
           <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomIn size={16} />
@@ -362,7 +362,7 @@ export default function ComparisonView() {
         </Tooltip>
 
         {overlayMode && (
-          <span className={`text-xs flex items-center gap-2 ml-1 text-muted`}>
+          <span className={`text-mini flex items-center gap-2 ml-1 text-muted`}>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#ff2222' }} />{activeDoc.file_name}</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#2244ff' }} />{compareDoc.file_name}</span>
           </span>
@@ -371,7 +371,7 @@ export default function ComparisonView() {
         <div className="flex-1" />
 
         <Tooltip content="Salir de comparación">
-          <button onClick={clearCompare} className="p-1.5 rounded transition-colors flex items-center gap-1 text-xs text-red-600 dark:text-red-400 hover:bg-red-500/10">
+          <button onClick={clearCompare} className="p-1.5 rounded transition-colors flex items-center gap-1 text-mini text-danger hover:bg-danger/10">
             <X size={16} /> Salir
           </button>
         </Tooltip>
@@ -379,7 +379,7 @@ export default function ComparisonView() {
 
       {/* Panel de diferencias de texto */}
       {(diff !== null || diffLoading) && (
-        <div className={`max-h-48 overflow-y-auto border-b text-xs bg-panel border-border`}>
+        <div className={`max-h-48 overflow-y-auto border-b text-mini bg-panel border-border`}>
           {diffLoading ? (
             <div className={`p-2 text-muted`}>Comparando texto…</div>
           ) : diff && diff.length > 0 ? (
@@ -389,8 +389,8 @@ export default function ComparisonView() {
                 <button key={d.page} onClick={() => { setLeftPage(d.page); setRightPage(d.page) }}
                   className={`block w-full text-left px-3 py-1.5 border-t border-border hover:bg-hover`}>
                   <span className={`font-mono mr-2 text-muted`}>Pág {d.page + 1}</span>
-                  {d.removed && <span className="text-red-600 dark:text-red-400 line-through mr-2">{d.removed}</span>}
-                  {d.added && <span className="text-emerald-600 dark:text-emerald-400">{d.added}</span>}
+                  {d.removed && <span className="text-danger line-through mr-2">{d.removed}</span>}
+                  {d.added && <span className="text-success">{d.added}</span>}
                 </button>
               ))}
             </>

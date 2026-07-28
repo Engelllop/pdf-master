@@ -77,7 +77,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
         <>
           <button title="Línea más fina" className={btn}
             onClick={() => apply({ lineWidth: Math.max(0.5, (ann.lineWidth ?? 2) - 0.5) })}><Minus size={13} /></button>
-          <span className="text-[11px] text-fg w-6 text-center tabular-nums">{ann.lineWidth ?? 2}</span>
+          <span className="text-micro text-fg w-6 text-center tabular-nums">{ann.lineWidth ?? 2}</span>
           <button title="Línea más gruesa" className={btn}
             onClick={() => apply({ lineWidth: Math.min(20, (ann.lineWidth ?? 2) + 0.5) })}><Plus size={13} /></button>
           <div className="w-px h-4 mx-1 bg-border" />
@@ -86,13 +86,13 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       {isText && (
         <>
           <select value={ann.fontFamily || 'Arial'} onChange={(e) => apply({ fontFamily: e.target.value })}
-            className="border border-border rounded px-1 py-0.5 text-[11px] bg-panel text-fg focus:outline-none w-28">
+            className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-28">
             {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
           </select>
-          <button title="Reducir tamaño" className={`${btn} text-[10px] font-semibold`}
+          <button title="Reducir tamaño" className={`${btn} text-micro font-semibold`}
             onClick={() => apply({ fontSize: Math.max(4, (ann.fontSize || 14) - 2) })}>A</button>
-          <span className="text-[11px] text-fg w-6 text-center tabular-nums">{ann.fontSize || 14}</span>
-          <button title="Aumentar tamaño" className={`${btn} text-[14px] font-semibold`}
+          <span className="text-micro text-fg w-6 text-center tabular-nums">{ann.fontSize || 14}</span>
+          <button title="Aumentar tamaño" className={`${btn} text-base font-semibold`}
             onClick={() => apply({ fontSize: Math.min(72, (ann.fontSize || 14) + 2) })}>A</button>
           <button title="Negrita" className={`p-1.5 rounded transition-colors ${ann.bold ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}
             onClick={() => apply({ bold: !ann.bold })}><Bold size={13} /></button>
@@ -106,7 +106,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
         </>
       )}
       <button title="Duplicar" className={btn} onClick={duplicate}><Copy size={14} /></button>
-      <button title="Eliminar (Supr)" className={`${btn} hover:text-red-400`}
+      <button title="Eliminar (Supr)" className={`${btn} hover:text-danger`}
         onClick={() => deleteAnnotation(docId, ann.id)}><Trash2 size={14} /></button>
     </div>
   )

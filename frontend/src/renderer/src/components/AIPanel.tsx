@@ -114,14 +114,14 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         <Header onClose={onClose} onKey={() => {}} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <KeyRound size={28} className="text-muted" />
-          <p className="text-sm text-fg font-medium">Conecta tu cuenta de Anthropic</p>
-          <p className="text-xs text-muted">Usa tu suscripción (Claude Pro/Max): instala Claude Code y ejecuta <code className="px-1 rounded bg-surface border border-border">claude setup-token</code> en una terminal. Copia el token (empieza por <code className="px-1 rounded bg-surface border border-border">sk-ant-oat…</code>) y pégalo aquí.</p>
-          <p className="text-[11px] text-muted">También sirve una API key de pago (<code className="px-1 rounded bg-surface border border-border">sk-ant-api…</code>). Se guarda solo en este equipo.</p>
+          <p className="text-base text-fg font-medium">Conecta tu cuenta de Anthropic</p>
+          <p className="text-mini text-muted">Usa tu suscripción (Claude Pro/Max): instala Claude Code y ejecuta <code className="px-1 rounded bg-surface border border-border">claude setup-token</code> en una terminal. Copia el token (empieza por <code className="px-1 rounded bg-surface border border-border">sk-ant-oat…</code>) y pégalo aquí.</p>
+          <p className="text-micro text-muted">También sirve una API key de pago (<code className="px-1 rounded bg-surface border border-border">sk-ant-api…</code>). Se guarda solo en este equipo.</p>
           <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && saveKey()} placeholder="sk-ant-oat… o sk-ant-api…"
-            className="w-full border border-border rounded px-2 py-1.5 text-sm bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="w-full border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
           <button onClick={saveKey} disabled={!keyInput.trim()}
-            className="w-full px-3 py-1.5 text-sm rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40">Conectar</button>
+            className="w-full px-3 py-1.5 text-base rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40">Conectar</button>
         </div>
       </div>
     )
@@ -132,13 +132,13 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
       <Header onClose={onClose} onKey={() => { setKeyInput(''); setEditingKey(true) }} />
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
-          <div className="text-xs text-muted text-center mt-6 px-4">
+          <div className="text-mini text-muted text-center mt-6 px-4">
             {emptyHint(activeDoc?.file_name)}
           </div>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
+            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-base whitespace-pre-wrap ${
               m.role === 'user' ? 'bg-fg text-toolbar' : 'bg-surface text-fg border border-border'
             }`}>
               {m.text || (streaming && reqKeyRef.current === convKey && i === messages.length - 1 ? <Loader2 size={14} className="animate-spin" /> : '')}
@@ -147,7 +147,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="border-t border-border p-2">
-        <div className="flex items-center gap-1 mb-1.5 text-[11px]">
+        <div className="flex items-center gap-1 mb-1.5 text-micro">
           <span className="text-muted">Contexto:</span>
           {(['doc', 'page'] as const).map((s) => (
             <button key={s} onClick={() => setScope(s)}
@@ -160,7 +160,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder={activeDoc ? `Pregunta sobre ${activeDoc.file_name}…` : 'Abre un PDF para preguntar…'}
-            className="flex-1 resize-none border border-border rounded px-2 py-1.5 text-sm bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="flex-1 resize-none border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
           <button onClick={() => (streaming ? stop() : send(input))} disabled={!streaming && !input.trim()}
             title={streaming ? 'Detener' : 'Enviar'}
             className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0">
@@ -168,7 +168,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         {messages.length > 0 && (
-          <button onClick={() => setMsgsFor(convKey, () => [])} className="mt-1 text-[11px] text-muted hover:text-fg flex items-center gap-1">
+          <button onClick={() => setMsgsFor(convKey, () => [])} className="mt-1 text-micro text-muted hover:text-fg flex items-center gap-1">
             <Eraser size={11} /> Limpiar conversación
           </button>
         )}
@@ -185,7 +185,7 @@ function Header({ onClose, onKey }: { onClose: () => void; onKey: () => void }) 
   return (
     <div className="h-10 flex items-center gap-2 px-3 border-b border-border shrink-0">
       <Sparkles size={16} className="text-fg" />
-      <span className="text-sm font-semibold flex-1">Asistente IA</span>
+      <span className="text-base font-semibold flex-1">Asistente IA</span>
       <button onClick={onKey} title="Cambiar API key" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={15} /></button>
       <button onClick={onClose} title="Cerrar" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
     </div>

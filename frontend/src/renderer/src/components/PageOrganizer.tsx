@@ -189,19 +189,19 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
   }
 
   const allSelected = selected.size === pageCount && pageCount > 0
-  const action = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[12px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
+  const action = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded text-mini transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
 
   return (
-    <div className="fixed inset-0 z-[93] flex flex-col bg-surface" role="dialog" aria-modal="true" aria-label="Organizar páginas">
+    <div className="overlay-in fixed inset-0 z-[93] flex flex-col bg-surface" role="dialog" aria-modal="true" aria-label="Organizar páginas">
       {/* pr-36: los botones de la ventana (minimizar/cerrar) flotan sobre esta barra
           y tapaban "Eliminar" y la ✕. flex-wrap evita que se corten si no cabe. */}
       <div className="flex flex-wrap items-center gap-2 px-4 pl-4 pr-36 py-2.5 border-b border-border bg-panel shrink-0">
         <button onClick={onClose} className={`${action} text-fg hover:bg-hover border border-border`} title="Volver (Esc)">
           <ArrowLeft size={13} /> Volver
         </button>
-        <h2 className="text-sm font-semibold text-fg">Organizar páginas</h2>
-        <span className="text-[11px] text-muted truncate max-w-[280px]" title={doc.file_path}>{doc.file_name}</span>
-        <span className="text-[11px] text-muted tabular-nums">· {pageCount} pág.</span>
+        <h2 className="text-base font-semibold text-fg">Organizar páginas</h2>
+        <span className="text-micro text-muted truncate max-w-[280px]" title={doc.file_path}>{doc.file_name}</span>
+        <span className="text-micro text-muted tabular-nums">· {pageCount} pág.</span>
 
         <div className="flex-1" />
 
@@ -210,7 +210,7 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
           {allSelected ? <CheckSquare size={13} /> : <Square size={13} />}
           {allSelected ? 'Ninguna' : 'Todas'}
         </button>
-        <span className="text-[11px] text-muted tabular-nums w-24 text-right">
+        <span className="text-micro text-muted tabular-nums w-24 text-right">
           {selected.size > 0 ? `${selected.size} seleccionada(s)` : ''}
         </span>
         <div className="w-px h-5 bg-border mx-1" />
@@ -219,7 +219,7 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
         <button onClick={duplicate} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><Copy size={13} /> Duplicar</button>
         <button onClick={insertBlank} disabled={busy} className={`${action} text-fg hover:bg-hover`}><FilePlus2 size={13} /> En blanco</button>
         <button onClick={extract} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><Scissors size={13} /> Extraer</button>
-        <button onClick={remove} disabled={busy || selected.size === 0} className={`${action} text-red-500 hover:bg-red-500/10`}><Trash2 size={13} /> Eliminar</button>
+        <button onClick={remove} disabled={busy || selected.size === 0} className={`${action} text-danger hover:bg-danger/10`}><Trash2 size={13} /> Eliminar</button>
         <div className="w-px h-5 bg-border mx-1" />
         <button onClick={onClose} aria-label="Cerrar"
           className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
@@ -240,15 +240,15 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
                 onClick={(e) => click(i, e)}
                 onDoubleClick={() => { setPage(doc.doc_id, i); onClose() }}
                 title={`Página ${i + 1} — doble clic para ir`}
-                className={`relative rounded-lg border-2 cursor-pointer transition-all bg-panel ${
+                className={`relative rounded-lg border-2 cursor-pointer transition-colors bg-panel ${
                   isSel ? 'border-accent ring-2 ring-accent/30' : 'border-border hover:border-muted'
                 } ${dragIndex === i ? 'opacity-40' : ''} ${dragOver === i ? 'ring-2 ring-accent' : ''}`}>
-                <div className="aspect-[3/4] flex items-center justify-center overflow-hidden rounded-t-md bg-white">
+                <div className={`aspect-[3/4] flex items-center justify-center overflow-hidden rounded-t-md ${thumb ? 'bg-white' : 'skeleton'}`}>
                   {thumb
                     ? <img src={thumb} alt={`Página ${i + 1}`} className="w-full h-full object-contain pointer-events-none" />
-                    : <span className="text-xs text-muted">{i + 1}</span>}
+                    : <span className="text-mini text-muted">{i + 1}</span>}
                 </div>
-                <div className="text-center text-[11px] py-1 text-muted tabular-nums">{i + 1}</div>
+                <div className="text-center text-micro py-1 text-muted tabular-nums">{i + 1}</div>
                 {isSel && <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-accent" />}
               </div>
             )

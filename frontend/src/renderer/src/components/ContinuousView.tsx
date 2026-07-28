@@ -182,11 +182,11 @@ export default function ContinuousView() {
             {loaded[i] ? (
               <img src={loaded[i]} alt={`Página ${i + 1}`} className="w-full h-full block rounded-sm" draggable={false} />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-active text-muted">
+              <div className="skeleton w-full h-full flex items-center justify-center text-muted">
                 {i + 1}
               </div>
             )}
-            <div className="absolute bottom-1 right-2 text-[10px] px-1 rounded bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
+            <div className="absolute bottom-1 right-2 text-micro px-1 rounded bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
           </div>
         ))}
         </div>

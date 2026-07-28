@@ -82,17 +82,17 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
 
 export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Atajos de teclado"
         onClick={(e) => e.stopPropagation()}
-        className="menu-pop w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
+        className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">
           <Keyboard size={18} className="text-accent" />
-          <h2 className="text-sm font-semibold flex-1">Atajos de teclado</h2>
+          <h2 className="text-base font-semibold flex-1">Atajos de teclado</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="p-1 rounded transition-colors text-muted hover:bg-hover">
             <X size={16} />
@@ -101,14 +101,14 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
         <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
           {SECTIONS.map((section) => (
             <div key={section.title}>
-              <h3 className="text-[11px] uppercase tracking-wider mb-1.5 text-muted">
+              <h3 className="text-micro uppercase tracking-wider mb-1.5 text-muted">
                 {section.title}
               </h3>
               <ul className="space-y-1">
                 {section.items.map(([keys, label]) => (
-                  <li key={keys + label} className="flex items-center justify-between gap-3 text-xs">
+                  <li key={keys + label} className="flex items-center justify-between gap-3 text-mini">
                     <span className="text-fg">{label}</span>
-                    <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-border font-sans text-[10px] bg-surface text-muted">
+                    <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-border font-sans text-micro bg-surface text-muted">
                       {keys}
                     </kbd>
                   </li>
@@ -117,7 +117,7 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
             </div>
           ))}
         </div>
-        <div className="px-4 py-2 border-t border-border text-[11px] text-muted">
+        <div className="px-4 py-2 border-t border-border text-micro text-muted">
           Pulsa F1 para abrir este panel en cualquier momento
         </div>
       </div>

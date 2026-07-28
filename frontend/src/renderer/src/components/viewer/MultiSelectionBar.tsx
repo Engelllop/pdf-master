@@ -22,11 +22,11 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
     if (n > 0) showToast(`${n} marca(s) duplicada(s)`, 'success')
   }
 
-  const btn = 'flex items-center gap-1 px-2 py-1 rounded text-[11px] text-fg hover:bg-hover transition-colors'
+  const btn = 'flex items-center gap-1 px-2 py-1 rounded text-micro text-fg hover:bg-hover transition-colors'
 
   return (
     <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5 rounded-xl border border-border bg-panel shadow-token">
-      <span className="text-[11px] text-muted px-1 tabular-nums">{ids.length} seleccionadas</span>
+      <span className="text-micro text-muted px-1 tabular-nums">{ids.length} seleccionadas</span>
       <div className="w-px h-4 bg-border mx-0.5" />
       <button title="Color" onClick={() => colorRef.current?.click()}
         className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-110 transition-transform"
@@ -38,7 +38,7 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
         <Check size={13} /> {resolvedAll ? 'Reabrir' : 'Resolver'}
       </button>
       <button className={btn} onClick={duplicate}><Copy size={13} /> Duplicar</button>
-      <button className={`${btn} hover:text-red-400`} onClick={() => deleteAnnotations(docId, ids)}>
+      <button className={`${btn} hover:text-danger`} onClick={() => deleteAnnotations(docId, ids)}>
         <Trash2 size={13} /> Eliminar
       </button>
       <div className="w-px h-4 bg-border mx-0.5" />

@@ -36,20 +36,20 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
   }
 
   const radio = (val: typeof mode, label: string) => (
-    <label className="flex items-center gap-2 text-sm cursor-pointer text-fg">
+    <label className="flex items-center gap-2 text-base cursor-pointer text-fg">
       <input type="radio" name="print-mode" checked={mode === val} onChange={() => setMode(val)} />
       {label}
     </label>
   )
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Imprimir" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
-        className="menu-pop w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel border-border text-fg">
+        className="panel-in w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel border-border text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Printer size={18} className="text-fg" />
-          <h2 className="text-sm font-semibold flex-1">Imprimir</h2>
+          <h2 className="text-base font-semibold flex-1">Imprimir</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="p-1 rounded transition-colors hover:bg-hover text-muted">
             <X size={16} />
@@ -64,11 +64,11 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
               {radio('range', 'Rango:')}
               <input type="text" value={range} placeholder="ej. 1-5, 8"
                 onChange={(e) => { setRange(e.target.value); setMode('range') }}
-                className="flex-1 border border-border rounded px-2 py-1 text-sm bg-panel text-fg focus:outline-none focus:border-accent" />
+                className="flex-1 border border-border rounded px-2 py-1 text-base bg-panel text-fg focus:outline-none focus:border-accent" />
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-base">
             <span className="text-muted">Copias</span>
             <input type="number" min={1} max={99} value={copies}
               onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
@@ -77,9 +77,9 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
         </div>
 
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
-          <button onClick={onClose} className="px-3 py-1.5 text-sm rounded text-fg hover:bg-hover transition-colors">Cancelar</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-base rounded text-fg hover:bg-hover transition-colors">Cancelar</button>
           <button onClick={handlePrint} disabled={printing}
-            className="px-4 py-1.5 text-sm rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
+            className="px-4 py-1.5 text-base rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
             <Printer size={14} /> {printing ? 'Imprimiendo…' : 'Imprimir'}
           </button>
         </div>

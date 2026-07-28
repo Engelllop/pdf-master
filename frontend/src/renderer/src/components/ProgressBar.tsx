@@ -15,10 +15,10 @@ export default function ProgressBar() {
       className="absolute bottom-16 left-1/2 -translate-x-1/2 z-40 w-[380px] max-w-[92vw] px-3 py-2.5 rounded-xl border border-border bg-panel shadow-token">
       <div className="flex items-center gap-2">
         <Loader2 size={14} className="text-accent animate-spin shrink-0" />
-        <span className="text-[12px] text-fg flex-1 truncate">
+        <span className="text-mini text-fg flex-1 truncate">
           {canceled ? `Cancelando ${label.toLowerCase()}…` : label}
         </span>
-        {pct !== null && <span className="text-[11px] text-muted tabular-nums">{current}/{total}</span>}
+        {pct !== null && <span className="text-micro text-muted tabular-nums">{current}/{total}</span>}
         {cancelable && !canceled && (
           <button onClick={requestCancel} title="Cancelar" aria-label="Cancelar operación"
             className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors">
@@ -27,10 +27,10 @@ export default function ProgressBar() {
         )}
       </div>
       <div className="mt-1.5 h-1 rounded-full bg-hover overflow-hidden">
-        <div className={`h-full bg-accent transition-all ${pct === null ? 'w-1/3 animate-pulse' : ''}`}
+        <div className={`h-full bg-accent transition-[width] duration-token ease-token ${pct === null ? 'w-1/3 animate-pulse' : ''}`}
           style={pct !== null ? { width: `${pct}%` } : undefined} />
       </div>
-      {detail && <div className="mt-1 text-[10px] text-muted truncate">{detail}</div>}
+      {detail && <div className="mt-1 text-micro text-muted truncate">{detail}</div>}
     </div>
   )
 }

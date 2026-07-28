@@ -71,7 +71,7 @@ export default function RibbonTabs() {
                 const el = e.currentTarget.parentElement?.children[TABS.indexOf(next)] as HTMLElement | undefined
                 el?.focus()
               }}
-              className={`relative px-3 h-full text-[13px] whitespace-nowrap transition-colors ${
+              className={`relative px-3 h-full text-ui whitespace-nowrap transition-colors ${
                 active ? 'text-accent font-medium' : 'text-muted hover:text-fg'
               }`}
             >

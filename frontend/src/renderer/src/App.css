@@ -5,6 +5,9 @@
 /* Design tokens (claro por defecto). El tema oscuro los sobreescribe en .dark.
    Los colores van como canales RGB "r g b" para que Tailwind pueda aplicar
    opacidad (bg-accent/10, bg-surface/80…) vía rgb(var(--x) / <alpha-value>). */
+/* La interfaz es deliberadamente neutra: el color lo ponen las marcas del usuario
+   sobre el plano. Los estados (peligro, éxito…) usan versiones apagadas, no los
+   rojos y verdes saturados de Tailwind, para no competir con el documento. */
 :root {
   --surface: 243 244 246;   /* fondo del área de documento */
   --panel: 255 255 255;     /* paneles laterales */
@@ -12,11 +15,25 @@
   --border: 227 229 233;
   --fg: 31 35 41;           /* texto / iconos (casi negro) */
   --muted: 87 96 106;
-  --accent: 31 35 41;       /* indicadores activos en negro (no azul) */
-  --hover: 238 240 243;     /* hover de botones */
-  --active: 232 233 236;    /* fondo de herramienta/pestaña activa */
+  --accent: 31 35 41;       /* tinta de selección: SIEMPRE como relleno con texto claro
+                               (bg-accent text-toolbar), nunca como color de texto —
+                               es el mismo valor que --fg y no se distinguiría */
+  --hover: 233 236 240;     /* hover de botones */
+  --active: 226 229 234;    /* superficie elevada (kbd, chips, filas) */
+  --danger: 158 61 54;
+  --success: 47 105 74;
+  --warning: 140 94 20;
+  --info: 51 84 122;
   --radius: 8px;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --scroll-track: 229 231 235;
+  --scroll-thumb: 156 163 175;
+  --scroll-thumb-hover: 107 114 128;
+  /* Movimiento: una curva y tres duraciones para toda la app */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 260ms;
 }
 
 html.dark {
@@ -29,7 +46,14 @@ html.dark {
   --accent: 241 245 249;
   --hover: 51 65 85;
   --active: 42 47 58;
+  --danger: 226 138 130;
+  --success: 134 196 162;
+  --warning: 224 176 100;
+  --info: 150 186 226;
   --shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --scroll-track: 30 41 59;
+  --scroll-thumb: 71 85 105;
+  --scroll-thumb-hover: 100 116 139;
 }
 
 html, body, #root {
@@ -53,29 +77,19 @@ body {
   height: 8px;
 }
 
+/* Las barras de scroll salen del sistema de tokens: antes eran hex fijos del tema
+   oscuro y en claro el track casi coincidía con el fondo. */
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: rgb(var(--scroll-track));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: rgb(var(--scroll-thumb));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
-
-html:not(.dark) ::-webkit-scrollbar-track {
-  background: #e5e7eb;
-}
-
-html:not(.dark) ::-webkit-scrollbar-thumb {
-  background: #9ca3af;
-}
-
-html:not(.dark) ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: rgb(var(--scroll-thumb-hover));
 }
 
 /* Foco visible al navegar con teclado (no aparece con clic de ratón) */
@@ -100,7 +114,7 @@ a:focus-visible,
 }
 
 .menu-pop {
-  animation: menu-in 120ms ease-out;
+  animation: menu-in var(--dur-fast) var(--ease);
 }
 
 @keyframes toast-in {
@@ -108,8 +122,67 @@ a:focus-visible,
   to { opacity: 1; transform: none; }
 }
 
+@keyframes toast-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(6px) scale(0.98); }
+}
+
 .toast-pop {
-  animation: toast-in 150ms ease-out;
+  animation: toast-in var(--dur) var(--ease);
+}
+
+.toast-leaving {
+  animation: toast-out var(--dur-fast) var(--ease) forwards;
+}
+
+/* Capas que aparecen encima del documento: modales, hojas y sus fondos */
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.overlay-in { animation: overlay-in var(--dur-fast) var(--ease); }
+.panel-in { animation: panel-in var(--dur) var(--ease); }
+
+/* Hueco de una página que todavía no se ha rasterizado: comunica la forma de lo
+   que viene, en vez del rectángulo gris muerto de antes. */
+@keyframes skeleton-sheen {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.skeleton {
+  background-image: linear-gradient(
+    100deg,
+    rgb(var(--active)) 40%,
+    rgb(var(--hover)) 50%,
+    rgb(var(--active)) 60%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sheen 1.6s linear infinite;
+}
+
+/* Números que no bailan al cambiar de valor (zoom, páginas, contadores, medidas) */
+.tabular, input[type='number'], kbd {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Respetar "reducir movimiento" del sistema: sin esto la app ignoraba la
+   preferencia de accesibilidad de Windows en las 111 transiciones y 4 keyframes. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* Capa de texto seleccionable: las letras van transparentes sobre el bitmap de la

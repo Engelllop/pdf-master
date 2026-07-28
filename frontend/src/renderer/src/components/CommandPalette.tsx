@@ -45,20 +45,20 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[94] flex items-start justify-center pt-[12vh] bg-black/40" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-[94] flex items-start justify-center pt-[12vh] bg-black/40" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Paleta de comandos" onClick={(e) => e.stopPropagation()}
-        className="menu-pop w-[560px] max-w-[92vw] rounded-lg border border-border shadow-2xl bg-panel overflow-hidden">
+        className="panel-in w-[560px] max-w-[92vw] rounded-lg border border-border shadow-2xl bg-panel overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
           <Search size={15} className="text-muted shrink-0" />
           <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
             placeholder="Buscar una acción… (p. ej. medir, XFDF, comprimir)"
-            className="flex-1 min-w-0 bg-transparent text-[13px] text-fg placeholder:text-muted focus:outline-none" />
-          <kbd className="px-1.5 py-0.5 rounded border border-border text-[10px] text-muted">Esc</kbd>
+            className="flex-1 min-w-0 bg-transparent text-ui text-fg placeholder:text-muted focus:outline-none" />
+          <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted">Esc</kbd>
         </div>
 
         <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1">
           {results.length === 0 && (
-            <div className="px-3 py-6 text-center text-xs text-muted">Sin coincidencias para “{query}”.</div>
+            <div className="px-3 py-6 text-center text-mini text-muted">Sin coincidencias para “{query}”.</div>
           )}
           {results.map((cmd, i) => (
             <button key={cmd.id} data-active={i === index}
@@ -66,10 +66,10 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
               className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
                 i === index ? 'bg-hover' : ''
               }`}>
-              <span className="text-[10px] uppercase tracking-wider text-muted w-20 shrink-0 truncate">{cmd.group}</span>
-              <span className="flex-1 text-[13px] text-fg truncate">{cmd.label}</span>
+              <span className="text-micro uppercase tracking-wider text-muted w-20 shrink-0 truncate">{cmd.group}</span>
+              <span className="flex-1 text-ui text-fg truncate">{cmd.label}</span>
               {cmd.shortcut && (
-                <kbd className="px-1.5 py-0.5 rounded border border-border text-[10px] text-muted shrink-0">{cmd.shortcut}</kbd>
+                <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted shrink-0">{cmd.shortcut}</kbd>
               )}
               {i === index && <CornerDownLeft size={12} className="text-muted shrink-0" />}
             </button>

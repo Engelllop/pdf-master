@@ -343,8 +343,8 @@ export default function Toolbar() {
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label}
         className={`flex items-center justify-center gap-1.5 rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-          compact ? 'px-2 h-8 text-[12px]' : 'px-2.5 h-8 text-[13px]'
-        } ${active ? 'bg-active text-accent' : 'text-fg hover:bg-hover'}`}>
+          compact ? 'px-2 h-8 text-mini' : 'px-2.5 h-8 text-ui'
+        } ${active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'}`}>
         <Icon size={compact ? 15 : 16} strokeWidth={1.75} />
         <span>{label}</span>
       </button>
@@ -406,7 +406,7 @@ export default function Toolbar() {
                 tocando el zoom del visor oculto parecerían rotos (pasó en pruebas). */}
             <TBtn icon={ZoomOut} label="Alejar" tip="Alejar"
               onClick={() => compareMode ? setCompareZoom(compareZoom - 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
-            <span className="font-mono text-xs text-fg w-10 text-center tabular-nums">
+            <span className="font-mono text-mini text-fg w-10 text-center tabular-nums">
               {Math.round((compareMode ? compareZoom : activeDoc.zoom) * 100)}%
             </span>
             <TBtn icon={ZoomIn} label="Acercar" tip="Acercar"
@@ -436,7 +436,7 @@ export default function Toolbar() {
               ? 'Herramienta fija: se queda activa hasta pulsar Esc'
               : 'Herramienta de un solo uso: se suelta tras cada marca'}>
               <button onClick={() => setStickyTools(!stickyTools)} aria-label="Fijar herramienta"
-                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-active text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}>
                 {stickyTools ? <Pin size={15} strokeWidth={1.75} /> : <PinOff size={15} strokeWidth={1.75} />}
               </button>
             </Tooltip>
@@ -453,17 +453,17 @@ export default function Toolbar() {
                 <Sep />
                 <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
                   placeholder="Categoría" title="Categoría del conteo"
-                  className="w-28 px-2 py-1 text-xs rounded border border-border bg-surface text-fg shrink-0" />
+                  className="w-28 px-2 py-1 text-mini rounded border border-border bg-surface text-fg shrink-0" />
                 {/* Cada categoría se distingue por símbolo, no solo por color */}
                 <div className="flex items-center gap-0.5 shrink-0">
                   {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon }) => (
                     <button key={id} onClick={() => setCountSymbol(id)} title={`Símbolo: ${id}`} aria-label={`Símbolo ${id}`}
-                      className={`p-1 rounded transition-colors ${countSymbol === id ? 'bg-active text-accent' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+                      className={`p-1 rounded transition-colors ${countSymbol === id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'}`}>
                       <Icon size={14} />
                     </button>
                   ))}
                 </div>
-                <span className="text-xs text-muted shrink-0 tabular-nums" title="Marcas de esta categoría en el documento">
+                <span className="text-mini text-muted shrink-0 tabular-nums" title="Marcas de esta categoría en el documento">
                   = {activeDoc.annotations.filter((a) => a.type === 'count' && (a.text || 'General') === (countCategory || 'General')).length}
                 </span>
               </>
@@ -514,7 +514,7 @@ export default function Toolbar() {
                 <div className="menu-pop absolute top-full left-0 z-50 mt-1 w-44 border border-border rounded-token shadow-token py-1 bg-panel">
                   {([['even', 'Páginas pares'], ['odd', 'Páginas impares'], ['range', 'Rango personalizado...'], ['from-current', 'Desde página actual']] as const).map(([m, lbl]) => (
                     <button key={m} onClick={() => { handleSplit(m); setSplitSubmenuOpen(false) }}
-                      className="w-full text-left px-3 py-1.5 text-xs text-fg hover:bg-hover">{lbl}</button>
+                      className="w-full text-left px-3 py-1.5 text-mini text-fg hover:bg-hover">{lbl}</button>
                   ))}
                 </div>
               )}
@@ -552,7 +552,7 @@ export default function Toolbar() {
             {docs.length > 1 && (
               <>
                 <Sep />
-                <span className="text-xs text-muted px-1 shrink-0 self-center tabular-nums">Todos ({docs.length}):</span>
+                <span className="text-mini text-muted px-1 shrink-0 self-center tabular-nums">Todos ({docs.length}):</span>
                 <TBtn icon={Minimize2} label="Comprimir" tip="Comprimir todos los documentos abiertos" onClick={handleBatchCompress} />
                 <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua en todos los abiertos" onClick={handleBatchWatermark} />
                 <TBtn icon={FileDown} label="A Word" tip="Exportar todos los abiertos a Word" onClick={handleBatchExportWord} />
@@ -595,34 +595,34 @@ export default function Toolbar() {
                   <Search size={14} className="text-muted" />
                   <input ref={searchRef} type="text" placeholder="Buscar..." value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
-                    className="bg-transparent text-sm focus:outline-none w-28 text-fg placeholder:text-muted" />
+                    className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                   <input ref={replaceRef} type="text" placeholder="Reemplazar..." value={replaceInput}
                     onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
-                    className="bg-transparent text-sm focus:outline-none w-28 text-fg placeholder:text-muted" />
+                    className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                   {activeDoc.searchResults.length > 0 && (
-                    <span className="text-xs text-muted tabular-nums">{activeDoc.searchIndex + 1}/{activeDoc.searchResults.length}</span>
+                    <span className="text-mini text-muted tabular-nums">{activeDoc.searchIndex + 1}/{activeDoc.searchResults.length}</span>
                   )}
                   <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
                   <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
                   <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1 text-[11px] cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
+                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
                     <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Aa
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
+                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
                     <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Todos los docs
                   </label>
-                  <label className="flex items-center gap-1 text-[11px] cursor-pointer text-muted">
+                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
                     <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Todo el doc
                   </label>
                   <button onClick={handleReplace} disabled={!searchInput.trim()}
-                    className={`text-[11px] px-2 py-0.5 rounded border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
+                    className={`text-micro px-2 py-0.5 rounded border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
                   <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
-                    className={`text-[11px] px-2 py-0.5 rounded ${searchInput.trim() ? 'bg-fg text-toolbar hover:opacity-90' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
+                    className={`text-micro px-2 py-0.5 rounded ${searchInput.trim() ? 'bg-fg text-toolbar hover:opacity-90' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
                 </div>
               </div>
             ) : (

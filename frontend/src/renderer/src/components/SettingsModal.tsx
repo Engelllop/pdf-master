@@ -22,8 +22,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const Row = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-3 py-2.5">
       <div className="flex-1 min-w-0">
-        <div className="text-[13px] text-fg">{label}</div>
-        {hint && <div className="text-[11px] text-muted mt-0.5 leading-snug">{hint}</div>}
+        <div className="text-ui text-fg">{label}</div>
+        {hint && <div className="text-micro text-muted mt-0.5 leading-snug">{hint}</div>}
       </div>
       <div className="shrink-0 pt-0.5">{children}</div>
     </div>
@@ -37,8 +37,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     <div className="flex items-center gap-1">
       {options.map(([id, label]) => (
         <button key={id} onClick={() => onChange(id)}
-          className={`px-2.5 py-1 rounded text-[11px] border transition-colors ${
-            value === id ? 'border-accent text-accent bg-active' : 'border-border text-muted hover:bg-hover'
+          className={`px-2.5 py-1 rounded text-micro border transition-colors ${
+            value === id ? 'border-accent bg-accent text-toolbar' : 'border-border text-muted hover:bg-hover'
           }`}>
           {label}
         </button>
@@ -47,13 +47,13 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   )
 
   return (
-    <div className="fixed inset-0 z-[92] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-[92] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Ajustes" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-        className="menu-pop w-[460px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg">
+        className="panel-in w-[460px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Settings size={16} className="text-accent" />
-          <h2 className="text-sm font-semibold flex-1">Ajustes</h2>
+          <h2 className="text-base font-semibold flex-1">Ajustes</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
         </div>
@@ -62,7 +62,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <Row label="Tu nombre" hint="Firma las marcas que crees; se usa para filtrar por autor y en las respuestas.">
             <input value={annotationAuthor} onChange={(e) => setAnnotationAuthor(e.target.value)}
               placeholder="Sin autor" autoFocus
-              className="w-40 border border-border rounded px-2 py-1 text-[12px] bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+              className="w-40 border border-border rounded px-2 py-1 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
           </Row>
 
           <Row label="Herramienta fija" hint="La herramienta se queda activa tras cada marca; Esc la suelta.">
@@ -87,7 +87,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <div className="flex items-center gap-2">
               <input type="range" min={75} max={150} step={5} value={Math.round(uiScale * 100)}
                 onChange={(e) => setUiScale(parseInt(e.target.value) / 100)} className="w-28" />
-              <span className="text-[11px] text-muted w-9 tabular-nums">{Math.round(uiScale * 100)}%</span>
+              <span className="text-micro text-muted w-9 tabular-nums">{Math.round(uiScale * 100)}%</span>
             </div>
           </Row>
 
@@ -99,7 +99,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
 
           <Row label="Unidad de medida por defecto" hint="Se propone al calibrar la escala de un plano.">
             <select value={defaultUnit} onChange={(e) => setDefaultUnit(e.target.value as typeof defaultUnit)}
-              className="border border-border rounded px-2 py-1 text-[12px] bg-surface text-fg focus:outline-none focus:border-accent">
+              className="border border-border rounded px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
               {(['mm', 'cm', 'm', 'ft', 'in'] as const).map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </Row>
@@ -118,7 +118,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </Row>
         </div>
 
-        <div className="px-4 py-2.5 border-t border-border text-[11px] text-muted">
+        <div className="px-4 py-2.5 border-t border-border text-micro text-muted">
           Los ajustes se guardan al instante en este equipo.
         </div>
       </div>

@@ -36,17 +36,17 @@ export default function ExitDialog() {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
+    <div className="overlay-in fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) setOpen(false) }}>
-      <div className="w-[440px] max-w-[92vw] rounded-2xl border border-border bg-panel shadow-2xl overflow-hidden">
+      <div className="panel-in w-[440px] max-w-[92vw] rounded-2xl border border-border bg-panel shadow-2xl overflow-hidden">
         <div className="flex items-start gap-3 p-5">
-          <span className="mt-0.5 p-2 rounded-full bg-amber-500/15 text-amber-500 shrink-0"><AlertTriangle size={18} /></span>
+          <span className="mt-0.5 p-2 rounded-full bg-warning/15 text-warning shrink-0"><AlertTriangle size={18} /></span>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-fg">
+            <h2 className="text-base font-semibold text-fg">
               {dirty.length === 1 ? 'Hay un documento sin guardar' : `Hay ${dirty.length} documentos sin guardar`}
             </h2>
-            <p className="text-xs text-muted mt-1">Si salís sin guardar, esos cambios se pierden.</p>
-            <ul className="mt-2 max-h-28 overflow-y-auto text-xs text-fg space-y-0.5">
+            <p className="text-mini text-muted mt-1">Si salís sin guardar, esos cambios se pierden.</p>
+            <ul className="mt-2 max-h-28 overflow-y-auto text-mini text-fg space-y-0.5">
               {dirty.map((d) => (
                 <li key={d.doc_id} className="truncate" title={d.file_path}>• {d.file_name}</li>
               ))}
@@ -55,15 +55,15 @@ export default function ExitDialog() {
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface">
           <button onClick={() => setOpen(false)} disabled={saving}
-            className="px-3 py-1.5 text-xs rounded-lg text-fg hover:bg-hover transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 text-mini rounded-lg text-fg hover:bg-hover transition-colors disabled:opacity-50">
             Cancelar
           </button>
           <button onClick={() => window.api.forceClose()} disabled={saving}
-            className="px-3 py-1.5 text-xs rounded-lg text-red-600 dark:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 text-mini rounded-lg text-danger hover:bg-danger/10 transition-colors disabled:opacity-50">
             Salir sin guardar
           </button>
           <button onClick={saveAndExit} disabled={saving} autoFocus
-            className="px-3 py-1.5 text-xs rounded-lg bg-accent text-toolbar hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-70">
+            className="px-3 py-1.5 text-mini rounded-lg bg-accent text-toolbar hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-70">
             {saving && <Loader2 size={13} className="animate-spin" />}
             {saving ? 'Guardando…' : 'Guardar y salir'}
           </button>

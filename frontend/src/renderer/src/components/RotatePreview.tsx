@@ -40,7 +40,7 @@ export default function RotatePreview({ degrees, all = false, children }: {
               className="max-w-full max-h-full shadow transition-transform duration-200"
               style={{ transform: `rotate(${degrees}deg)` }} />
           </div>
-          <div className="text-[10px] text-center text-muted mt-1">
+          <div className="text-micro text-center text-muted mt-1">
             {all ? 'Todas las páginas' : `Página ${page + 1}`}
           </div>
         </div>

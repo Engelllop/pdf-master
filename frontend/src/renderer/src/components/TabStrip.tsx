@@ -76,7 +76,7 @@ export default function TabStrip() {
               }}
               onContextMenu={(e) => { e.preventDefault(); setTabMenu({ docId: doc.doc_id, path: doc.file_path, x: e.clientX, y: e.clientY }) }}
               title={doc.file_path}
-              className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-1.5 my-1 h-[calc(100%-8px)] rounded-md cursor-pointer text-[13px] shrink min-w-[92px] max-w-[220px] transition-colors ${
+              className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-1.5 my-1 h-[calc(100%-8px)] rounded-md cursor-pointer text-ui shrink min-w-[92px] max-w-[220px] transition-colors ${
                 dragId === doc.doc_id ? 'opacity-50' : ''
               } ${
                 doc.doc_id === activeDocId
@@ -85,9 +85,9 @@ export default function TabStrip() {
               }`}>
               {loadingDocId === doc.doc_id
                 ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
-                : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-600 dark:text-amber-400' : doc.doc_id === activeDocId ? 'text-accent' : 'text-muted'}`} />}
+                : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : doc.doc_id === activeDocId ? 'text-accent' : 'text-muted'}`} />}
               <span className="truncate flex-1">{doc.file_name}</span>
-              {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-amber-600 dark:bg-amber-400" title="Cambios sin guardar" />}
+              {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning dark:bg-warning" title="Cambios sin guardar" />}
               <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }} aria-label="Cerrar pestaña"
                 className={`shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity hover:bg-hover`}>
                 <X size={12} />
@@ -120,7 +120,7 @@ export default function TabStrip() {
           {tabListOpen && (
             <>
               <div className="fixed inset-0 z-[60]" onClick={() => setTabListOpen(false)} />
-              <div className={`menu-pop absolute right-0 top-full z-[61] mt-0 w-72 max-h-[60vh] overflow-y-auto py-1 rounded-b-md border shadow-xl text-sm bg-panel border-border text-fg`}>
+              <div className={`menu-pop absolute right-0 top-full z-[61] mt-0 w-72 max-h-[60vh] overflow-y-auto py-1 rounded-b-md border shadow-xl text-base bg-panel border-border text-fg`}>
                 {docs.map((doc) => (
                   <button key={doc.doc_id}
                     onClick={() => { setActiveDoc(doc.doc_id); setTabListOpen(false) }}
@@ -128,9 +128,9 @@ export default function TabStrip() {
                     className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${doc.doc_id === activeDocId ? 'bg-hover' : ''} hover:bg-hover`}>
                     {loadingDocId === doc.doc_id
                       ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
-                      : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-amber-400' : 'text-muted'}`} />}
+                      : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : 'text-muted'}`} />}
                     <span className="truncate flex-1">{doc.file_name}</span>
-                    {doc.doc_id === activeDocId && <span className="text-[10px] text-accent shrink-0">activo</span>}
+                    {doc.doc_id === activeDocId && <span className="text-micro text-accent shrink-0">activo</span>}
                   </button>
                 ))}
               </div>
@@ -142,7 +142,7 @@ export default function TabStrip() {
       {tabMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setTabMenu(null)} onContextMenu={(e) => { e.preventDefault(); setTabMenu(null) }} />
-          <div className={`menu-pop fixed z-[61] min-w-[200px] py-1 rounded-md border shadow-xl text-sm bg-panel border-border text-fg`}
+          <div className={`menu-pop fixed z-[61] min-w-[200px] py-1 rounded-md border shadow-xl text-base bg-panel border-border text-fg`}
             style={{ left: Math.min(tabMenu.x, window.innerWidth - 220), top: Math.min(tabMenu.y, window.innerHeight - 120) }}>
             {docs.length >= 2 && tabMenu.docId !== activeDocId && (
               <>
@@ -175,7 +175,7 @@ export default function TabStrip() {
               <X size={14} className={'text-muted'} /> Cerrar a la derecha
             </button>
             <button onClick={() => { docs.forEach((d) => requestCloseDoc(d.doc_id)); setTabMenu(null) }}
-              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-red-400 hover:bg-hover`}>
+              className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-danger hover:bg-hover`}>
               <Trash2 size={14} /> Cerrar todas
             </button>
           </div>
