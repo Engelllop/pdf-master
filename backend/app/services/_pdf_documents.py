@@ -86,6 +86,7 @@ class DocumentsMixin:
             if not save_path:
                 return None
             temp_path = None
+            marked = None
             try:
                 import tempfile
                 # Copia de seguridad opcional (ajuste del usuario): solo al sobrescribir
@@ -99,11 +100,22 @@ class DocumentsMixin:
                 dir_name = os.path.dirname(os.path.abspath(save_path))
                 fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
                 os.close(fd)
-                doc.save(temp_path, garbage=4, deflate=True)
+                # Las marcas de la app se incrustan sobre una COPIA: el documento vivo
+                # se queda limpio, así guardar dos veces no las apila (antes cada
+                # guardado volvía a dibujar encima las del anterior).
+                pending = self._pending_annotations.get(doc_id)
+                to_save = doc
+                if pending:
+                    marked = fitz.open(stream=doc.tobytes(), filetype="pdf")
+                    self._embed_into(marked, pending)
+                    to_save = marked
+                to_save.save(temp_path, garbage=4, deflate=True)
                 # El doc se abrió por stream: el motor no tiene el archivo abierto, así
                 # que os.replace sobre el original funciona sin cerrar/reabrir el handle.
                 os.replace(temp_path, save_path)
-                self._dirty[doc_id] = False
+                # Guardar una copia (output_path) no limpia el original: sigue sucio.
+                if not output_path:
+                    self._dirty[doc_id] = False
                 return save_path
             except Exception:
                 logger.exception("save falló (doc %s → %s)", doc_id, save_path)
@@ -113,32 +125,47 @@ class DocumentsMixin:
                 except Exception:
                     pass
                 return None
+            finally:
+                if marked is not None:
+                    marked.close()
 
     def save_with_password(self, doc_id: str, output_path: Optional[str] = None, user_password: Optional[str] = None, owner_password: Optional[str] = None) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc:
             return None
         save_path = output_path or self._doc_path(doc_id)
+        marked = None
         try:
             import tempfile
             dir_name = os.path.dirname(os.path.abspath(save_path))
             fd, temp_path = tempfile.mkstemp(suffix='.pdf', dir=dir_name)
             os.close(fd)
+            # Igual que en save(): el PDF protegido también lleva las marcas.
+            pending = self._pending_annotations.get(doc_id)
+            to_save = doc
+            if pending:
+                marked = fitz.open(stream=doc.tobytes(), filetype="pdf")
+                self._embed_into(marked, pending)
+                to_save = marked
             if user_password or owner_password:
-                doc.save(temp_path, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_AES_256, user_pw=user_password or '', owner_pw=owner_password or user_password or '')
+                to_save.save(temp_path, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_AES_256, user_pw=user_password or '', owner_pw=owner_password or user_password or '')
             else:
-                doc.save(temp_path, garbage=4, deflate=True)
+                to_save.save(temp_path, garbage=4, deflate=True)
             if os.path.exists(save_path):
                 os.replace(temp_path, save_path)
             else:
                 os.rename(temp_path, save_path)
-            self._dirty[doc_id] = False
+            if not output_path:
+                self._dirty[doc_id] = False
             return save_path
         except DocumentNotFoundError:
             raise
         except Exception:
             logger.exception("save_with_password falló (doc %s)", doc_id)
             return None
+        finally:
+            if marked is not None:
+                marked.close()
 
     def remove_password(self, doc_id: str, output_path: Optional[str] = None) -> Optional[str]:
         # El doc en memoria ya está desencriptado (apertura por stream); guardarlo sin
@@ -222,5 +249,6 @@ class DocumentsMixin:
             self._infos.pop(doc_id, None)
             self._dirty.pop(doc_id, None)
             self._passwords.pop(doc_id, None)
+            self._pending_annotations.pop(doc_id, None)
             self._lru.pop(doc_id, None)
             return existed

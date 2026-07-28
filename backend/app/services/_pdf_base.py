@@ -23,6 +23,10 @@ class PdfServiceBase:
         self._docs: Dict[str, fitz.Document] = {}
         self._infos: Dict[str, PdfInfo] = {}
         self._dirty: Dict[str, bool] = {}  # Track unsaved changes
+        # Marcas de la app pendientes de incrustar. NO se aplican al documento vivo:
+        # se incrustan sobre una copia en cada guardado. Aplicarlas al vivo hacía que
+        # el segundo guardado las añadiera otra vez encima (resaltados apilados).
+        self._pending_annotations: Dict[str, list] = {}
         self._passwords: Dict[str, Optional[str]] = {}  # Kept so evicted protected docs can be reopened
         self._render_cache: OrderedDict = OrderedDict()  # (doc_id, page_num, zoom) -> PageRender
         self._thumb_cache: OrderedDict = OrderedDict()   # (doc_id, page_num) -> ThumbnailRender

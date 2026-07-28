@@ -93,11 +93,22 @@ class AnnotationsMixin:
             return False
 
     def embed_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
+        """Deja las marcas en cola para el próximo guardado. NO toca el documento
+        vivo: antes las aplicaba encima, así que un segundo guardado las volvía a
+        incrustar y los resaltados salían apilados (1 → 2 → 3…). El guardado las
+        aplica sobre una copia limpia, así el resultado no depende de cuántas veces
+        se haya guardado."""
+        self._acquire(doc_id)  # valida que el doc existe (404 si no)
+        with self._lock:
+            self._pending_annotations[doc_id] = list(annotations or [])
+            self._dirty[doc_id] = True
+        return True
+
+    def _embed_into(self, doc, annotations: List[Annotation]) -> bool:
+        """Dibuja las marcas sobre el documento que se le pase (una copia, al guardar)."""
+        if doc is None:
             return False
-        self._invalidate_render_cache(doc_id)
-        
+
         def hex_to_rgb(color: Optional[str]):
             if not color or not color.startswith('#'):
                 return (0, 0, 0)
@@ -388,7 +399,6 @@ class AnnotationsMixin:
         except Exception:
             pass
 
-        self._dirty[doc_id] = True
         return True
 
     def generate_markup_summary(self, doc_id: str, annotations: List[Annotation]) -> Optional[dict]:
