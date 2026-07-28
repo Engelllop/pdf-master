@@ -113,10 +113,12 @@ export default function FileMenu() {
     if (!activeDoc) return
     const newPath = await window.api.saveFile()
     if (!newPath) return
+    setSaveStatus('saving')
     try {
-      const res = await apiFetch(`/pdf/save/${activeDoc.doc_id}?output_path=${encodeURIComponent(newPath)}`, { method: 'POST' })
-      showToast(res.ok ? 'Guardado como ' + newPath.split(/[\\/]/).pop() : 'Error al guardar', res.ok ? 'success' : 'error')
-    } catch (err) { toastActionError(err) }
+      const ok = await saveDocument(activeDoc.doc_id, newPath)
+      setSaveStatus(ok ? 'saved' : 'idle')
+      showToast(ok ? 'Guardado como ' + newPath.split(/[\\/]/).pop() : 'Error al guardar', ok ? 'success' : 'error')
+    } catch (err) { setSaveStatus('idle'); toastActionError(err) }
   }
 
   const handleNewBlank = async () => {

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { Loader2, ChevronsUpDown, ChevronLeft, ChevronRight, FileText, FolderOpen, X, Trash2, Plus, Columns2 } from 'lucide-react'
 import Tooltip from './Tooltip'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { requestCloseDoc } from '../lib/closeDocument'
+import { requestCloseDoc, requestCloseDocs } from '../lib/closeDocument'
 
 // Tira de pestañas de documentos + desplegable "ir a pestaña" + menú contextual.
 // Las pestañas se reordenan arrastrándolas (estilo navegador).
@@ -166,15 +166,15 @@ export default function TabStrip() {
               className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-hover`}>
               <X size={14} className={'text-muted'} /> Cerrar pestaña
             </button>
-            <button disabled={docs.length < 2} onClick={() => { docs.filter((d) => d.doc_id !== tabMenu.docId).forEach((d) => requestCloseDoc(d.doc_id)); setTabMenu(null) }}
+            <button disabled={docs.length < 2} onClick={() => { requestCloseDocs(docs.filter((d) => d.doc_id !== tabMenu.docId).map((d) => d.doc_id)); setTabMenu(null) }}
               className={`w-full text-left px-3 py-1.5 flex items-center gap-2 disabled:opacity-30 hover:bg-hover`}>
               <X size={14} className={'text-muted'} /> Cerrar las demás
             </button>
-            <button onClick={() => { const i = docs.findIndex((d) => d.doc_id === tabMenu.docId); docs.slice(i + 1).forEach((d) => requestCloseDoc(d.doc_id)); setTabMenu(null) }}
+            <button onClick={() => { const i = docs.findIndex((d) => d.doc_id === tabMenu.docId); requestCloseDocs(docs.slice(i + 1).map((d) => d.doc_id)); setTabMenu(null) }}
               className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-hover`}>
               <X size={14} className={'text-muted'} /> Cerrar a la derecha
             </button>
-            <button onClick={() => { docs.forEach((d) => requestCloseDoc(d.doc_id)); setTabMenu(null) }}
+            <button onClick={() => { requestCloseDocs(docs.map((d) => d.doc_id)); setTabMenu(null) }}
               className={`w-full text-left px-3 py-1.5 flex items-center gap-2 text-danger hover:bg-hover`}>
               <Trash2 size={14} /> Cerrar todas
             </button>
