@@ -60,6 +60,15 @@ describe('campos de formulario', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
+  it('cada widget anuncia el nombre del campo', () => {
+    renderLayer([
+      field(),
+      field({ xref: 12, field_name: 'residencial', field_type: 'CheckBox', value: 'Off' }),
+    ])
+    expect(screen.getByRole('textbox', { name: 'medidores' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'residencial' })).toBeTruthy()
+  })
+
   it('las casillas guardan en el acto (son una sola acción)', () => {
     const onChange = renderLayer([field({ field_name: 'residencial', field_type: 'CheckBox', value: 'Off' })])
     fireEvent.click(screen.getByRole('checkbox'))

@@ -11,7 +11,6 @@ import Toasts from './components/Toasts'
 import ComparisonView from './components/ComparisonView'
 import PresentationView from './components/PresentationView'
 import ContinuousView from './components/ContinuousView'
-import FloatingViewBar from './components/FloatingViewBar'
 import ShortcutsModal from './components/ShortcutsModal'
 import SettingsModal from './components/SettingsModal'
 import AIPanel from './components/AIPanel'
@@ -408,7 +407,6 @@ function App() {
           )}
           {!readingMode && !compareMode && <CalibrationBanner />}
           <ProgressBar />
-          {!readingMode && !compareMode && <FloatingViewBar />}
           {!readingMode && <StatusBar />}
         </div>
         {!readingMode && aiOpen && <AIPanel onClose={() => setAiOpen(false)} />}

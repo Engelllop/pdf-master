@@ -2,26 +2,10 @@ import { type Annotation, type LineStyle } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   X, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
-  PenTool, Square, Circle, Minus, ArrowUpRight, MessageSquareQuote, Hexagon, Cloud, Check, Star,
 } from 'lucide-react'
 import { FONT_OPTIONS } from '../lib/fonts'
 import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
 
-// Todo el dibujo en un solo sitio: el lápiz y las formas son lo mismo (un trazo),
-// así que la galería vive aquí en vez de en un desplegable aparte de la cinta.
-const DRAW_TOOLS: Array<{ id: string; icon: any; label: string }> = [
-  { id: 'draw', icon: PenTool, label: 'Lápiz' },
-  { id: 'line', icon: Minus, label: 'Línea' },
-  { id: 'arrow', icon: ArrowUpRight, label: 'Flecha' },
-  { id: 'rect', icon: Square, label: 'Rectángulo' },
-  { id: 'circle', icon: Circle, label: 'Círculo' },
-  { id: 'polygon', icon: Hexagon, label: 'Polígono' },
-  { id: 'cloud', icon: Cloud, label: 'Nube' },
-  { id: 'callout', icon: MessageSquareQuote, label: 'Llamada' },
-  { id: 'check', icon: Check, label: 'Check' },
-  { id: 'cross', icon: X, label: 'Cruz' },
-  { id: 'star', icon: Star, label: 'Estrella' },
-]
 const WIDTH_PRESETS = [0.5, 1, 2, 4, 8]
 const OPACITY_PRESETS = [25, 50, 75, 100]
 
@@ -84,21 +68,9 @@ export default function PropertiesBar() {
   const Group = ({ children }: { children: React.ReactNode }) => (
     <div className="flex items-center gap-1.5 rounded-lg border border-border bg-panel px-2 py-1 shrink-0">{children}</div>
   )
-  const isDrawCtx = !!activeTool && DRAW_TOOLS.some((t) => t.id === activeTool)
 
   return (
     <div className="min-h-10 border-b border-border bg-toolbar flex items-center gap-2 px-3 py-1.5 flex-wrap text-fg">
-      {isDrawCtx && (
-        <Group>
-          {DRAW_TOOLS.map((t) => (
-            <button key={t.id} onClick={() => store.setActiveTool(t.id)} title={t.label} aria-label={t.label}
-              className={`p-1.5 rounded-md transition-colors ${activeTool === t.id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'}`}>
-              <t.icon size={15} strokeWidth={1.75} />
-            </button>
-          ))}
-        </Group>
-      )}
-
       {(showColor || isStamp) && (
         <Group>
           <Label>Color</Label>
@@ -113,7 +85,7 @@ export default function PropertiesBar() {
           })}
           <input type="color" value={isStamp ? store.stampColor : colorVal}
             onChange={(e) => (isStamp ? store.setStampColor(e.target.value) : applyColor(e.target.value))}
-            className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color personalizado" />
+            className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color personalizado" aria-label="Color personalizado" />
         </Group>
       )}
 
@@ -122,13 +94,14 @@ export default function PropertiesBar() {
           <Label>Fuente</Label>
             <select value={selAnn?.type === 'text' ? (selAnn.fontFamily || store.textFontFamily) : store.textFontFamily}
               onChange={(e) => { store.setTextFontFamily(e.target.value); if (selAnn?.type === 'text') applyToSel({ fontFamily: e.target.value }) }}
+              aria-label="Fuente"
               className="border border-border rounded px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
               {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
             </select>
             <input type="number" min={4} max={72}
               value={selAnn?.type === 'text' ? (selAnn.fontSize || store.textFontSize) : store.textFontSize}
               onChange={(e) => { const v = parseInt(e.target.value) || 14; store.setTextFontSize(v); if (selAnn?.type === 'text') applyToSel({ fontSize: v }) }}
-              className="w-14 border border-border rounded px-2 py-1 text-mini text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" />
+              className="w-14 border border-border rounded px-2 py-1 text-mini text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" aria-label="Tamaño de fuente" />
             <Label>px</Label>
             {(() => {
               const isTextSel = selAnn?.type === 'text'
@@ -146,17 +119,18 @@ export default function PropertiesBar() {
               const tBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
               return (
                 <>
-                  <button title="Negrita" className={tBtn(sv.bold)} onClick={() => setStyle({ bold: !sv.bold })}><Bold size={13} /></button>
-                  <button title="Cursiva" className={tBtn(sv.italic)} onClick={() => setStyle({ italic: !sv.italic })}><Italic size={13} /></button>
+                  <button title="Negrita" aria-label="Negrita" className={tBtn(sv.bold)} onClick={() => setStyle({ bold: !sv.bold })}><Bold size={13} /></button>
+                  <button title="Cursiva" aria-label="Cursiva" className={tBtn(sv.italic)} onClick={() => setStyle({ italic: !sv.italic })}><Italic size={13} /></button>
                   {(['left', 'center', 'right'] as const).map((a) => {
                     const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
-                    return <button key={a} title={`Alinear ${a}`} className={tBtn(sv.align === a)} onClick={() => setStyle({ align: a })}><Icon size={13} /></button>
+                    const alignLabel = a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'
+                    return <button key={a} title={`Alinear ${alignLabel}`} aria-label={`Alinear ${alignLabel}`} className={tBtn(sv.align === a)} onClick={() => setStyle({ align: a })}><Icon size={13} /></button>
                   })}
-                  <select title="Interlineado" value={sv.lineHeight} onChange={(e) => setStyle({ lineHeight: parseFloat(e.target.value) })}
+                  <select title="Interlineado" aria-label="Interlineado" value={sv.lineHeight} onChange={(e) => setStyle({ lineHeight: parseFloat(e.target.value) })}
                     className="border border-border rounded px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
                     {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
                   </select>
-                  <select title="Lista" value={sv.listStyle} onChange={(e) => setStyle({ listStyle: e.target.value as typeof sv.listStyle })}
+                  <select title="Lista" aria-label="Lista" value={sv.listStyle} onChange={(e) => setStyle({ listStyle: e.target.value as typeof sv.listStyle })}
                     className="border border-border rounded px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
                     <option value="none">Sin lista</option>
                     <option value="bullet">• Viñetas</option>
@@ -184,7 +158,7 @@ export default function PropertiesBar() {
             <input type="number" min={0.5} max={24} step={0.5} value={lineWidthVal}
               onChange={(e) => changeWidth(Math.min(24, Math.max(0.5, parseFloat(e.target.value) || 1)))}
               className="w-12 border border-border rounded px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-accent"
-              title="Grosor exacto (pt)" />
+              title="Grosor exacto (pt)" aria-label="Grosor exacto" />
           </Group>
 
           <Group>
@@ -202,7 +176,7 @@ export default function PropertiesBar() {
           <Group>
             <Label>Opacidad</Label>
             {OPACITY_PRESETS.map((o) => (
-              <button key={o} onClick={() => changeOpacity(o / 100)} title={`${o}%`}
+              <button key={o} onClick={() => changeOpacity(o / 100)} title={`${o}%`} aria-label={`Opacidad ${o}%`}
                 className={`h-7 px-1.5 rounded-md text-micro tabular-nums transition-colors ${
                   Math.round(opacityVal * 100) === o ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>{o}</button>
@@ -217,11 +191,11 @@ export default function PropertiesBar() {
               {fillColorVal ? (
                 <>
                   <input type="color" value={fillColorVal} onChange={(e) => changeFillColor(e.target.value)}
-                    className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color de relleno" />
+                    className="w-6 h-6 rounded cursor-pointer border border-border p-0 bg-transparent" title="Color de relleno" aria-label="Color de relleno" />
                   <input type="range" min={5} max={100} step={5} value={Math.round(fillOpacityVal * 100)}
-                    onChange={(e) => changeFillOpacity(parseInt(e.target.value) / 100)} className="w-16" title="Opacidad del relleno" />
+                    onChange={(e) => changeFillOpacity(parseInt(e.target.value) / 100)} className="w-16" title="Opacidad del relleno" aria-label="Opacidad del relleno" />
                   <span className="text-micro text-muted w-8 tabular-nums">{Math.round(fillOpacityVal * 100)}%</span>
-                  <button onClick={() => changeFillColor(null)} title="Quitar relleno"
+                  <button onClick={() => changeFillColor(null)} title="Quitar relleno" aria-label="Quitar relleno"
                     className="p-1 rounded-md text-muted hover:bg-hover hover:text-fg"><X size={12} /></button>
                 </>
               ) : (
@@ -239,6 +213,7 @@ export default function PropertiesBar() {
         <Group>
           <Label>Sello</Label>
           <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
+            aria-label="Sello"
             className="border border-border rounded px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}

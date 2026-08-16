@@ -7,7 +7,14 @@ import { getAnnotationBounds, renderAnnotation } from './viewer/annotationRender
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFormFields } from '../hooks/useFormFields'
 import FormFieldsLayer from './viewer/FormFieldsLayer'
+import NoteBubble from './viewer/NoteBubble'
+import FloatingSelectionBar from './viewer/FloatingSelectionBar'
+import MultiSelectionBar from './viewer/MultiSelectionBar'
+import TextBoxEditor from './viewer/TextBoxEditor'
+import ViewerEmptyState from './viewer/ViewerEmptyState'
 import { isFormTool, placeFormField } from '../lib/formFields'
+import { useFileDrop } from '../hooks/useFileDrop'
+import { X } from 'lucide-react'
 
 const GAP = 16
 const BUFFER_PX = 1200
@@ -49,12 +56,19 @@ function ContinuousPageOverlay({
     'activeTool', 'annotationColor', 'annotationLineWidth', 'annotationLineStyle',
     'annotationOpacity', 'annotationFillColor', 'annotationFillOpacity',
     'addAnnotation', 'selectAnnotation', 'selectAnnotations', 'selectedAnnotationIds',
+    'selectedAnnotationId', 'updateAnnotation', 'deleteAnnotation',
     'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory',
-    'countSymbol', 'textFontSize', 'textFontFamily',
+    'countSymbol', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
+    'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
   )
   const pageRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
   const [formRect, setFormRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [textDraft, setTextDraft] = useState<{ x: number; y: number } | null>(null)
+  const [textValue, setTextValue] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const drawPts = useRef<Array<{ x: number; y: number }>>([])
   const { fields: formFields, updateField: updateFormField, transformField } = useFormFields(doc.doc_id, page)
@@ -64,6 +78,13 @@ function ContinuousPageOverlay({
   const anns = doc.annotations.filter((a) => a.page === page)
   const countNums = useMemo(() => countNumbers(doc.annotations), [doc.annotations])
   const selected = new Set(store.selectedAnnotationIds)
+  const selectedAnn = anns.find((a) => a.id === store.selectedAnnotationId)
+  const zoom = width / pw
+
+  useEffect(() => {
+    setNoteOpen(selectedAnn?.type === 'note')
+    if (selectedAnn?.type !== 'text' && selectedAnn?.type !== 'callout') setEditingId(null)
+  }, [selectedAnn?.id, selectedAnn?.type])
 
   const style = () => ({
     color: store.annotationColor,
@@ -117,9 +138,12 @@ function ContinuousPageOverlay({
 
     if (CLICK_TOOLS.has(tool)) {
       if (tool === 'note') {
+        const id = crypto.randomUUID()
         store.addAnnotation(doc.doc_id, {
-          id: crypto.randomUUID(), type: 'note', page, x: pt.x, y: pt.y, color: store.annotationColor, text: '',
+          id, type: 'note', page, x: pt.x, y: pt.y, color: store.annotationColor, text: '',
         })
+        store.selectAnnotation(doc.doc_id, id)
+        setNoteOpen(true)
       } else if (tool === 'count') {
         store.addAnnotation(doc.doc_id, {
           id: crypto.randomUUID(), type: 'count', page, x: pt.x, y: pt.y,
@@ -135,11 +159,8 @@ function ContinuousPageOverlay({
         })
         store.releaseTool()
       } else if (tool === 'text') {
-        store.addAnnotation(doc.doc_id, {
-          id: crypto.randomUUID(), type: 'text', page, x: pt.x, y: pt.y,
-          color: store.annotationColor, text: 'Texto',
-          fontSize: store.textFontSize, fontFamily: store.textFontFamily,
-        })
+        setTextDraft({ x: pt.x, y: pt.y })
+        setTextValue('')
         store.releaseTool()
       }
       return
@@ -258,6 +279,17 @@ function ContinuousPageOverlay({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onDoubleClick={(e) => {
+        const el = pageRef.current
+        if (!el) return
+        const pt = pagePoint(e, el, pw, ph)
+        const hit = hitTest(pt.sx, pt.sy)
+        if (hit && (hit.type === 'text' || hit.type === 'callout')) {
+          e.stopPropagation()
+          setEditingId(hit.id)
+          setEditValue(hit.text || '')
+        }
+      }}
     >
       <svg className="absolute inset-0 w-full h-full overflow-visible" style={{ pointerEvents: 'none' }}>
         {anns.map((ann) => (
@@ -296,6 +328,62 @@ function ContinuousPageOverlay({
         onTransform={(xref, next) => { void transformField(xref, 'delete' in next ? { delete: true } : next) }}
         interactive={!store.activeTool}
         layoutMode={store.activeTool === 'select'} />
+      {noteOpen && selectedAnn?.type === 'note' && (
+        <NoteBubble ann={selectedAnn} docId={doc.doc_id} pageData={pd} toScreen={toScreen}
+          scale={1} wrapperWidth={width} wrapperHeight={height}
+          onClose={() => setNoteOpen(false)} />
+      )}
+      {selectedAnn && store.selectedAnnotationIds.length <= 1 && !editingId && !textDraft && selectedAnn.type !== 'note' && (
+        <FloatingSelectionBar ann={selectedAnn} docId={doc.doc_id}
+          pageData={pd} toScreen={toScreen} scale={1} wrapperWidth={width} />
+      )}
+      {textDraft && (
+        <TextBoxEditor x={toScreen(textDraft.x, textDraft.y).x} y={toScreen(textDraft.x, textDraft.y).y}
+          zoom={zoom} wrapperWidth={width} value={textValue} onChange={setTextValue}
+          onCommit={() => {
+            if (textValue.trim()) {
+              store.addAnnotation(doc.doc_id, {
+                id: crypto.randomUUID(), type: 'text', page, x: textDraft.x, y: textDraft.y,
+                color: store.annotationColor, text: textValue,
+                fontSize: store.textFontSize, fontFamily: store.textFontFamily,
+                ...store.textStyle,
+              })
+            }
+            setTextDraft(null)
+            setTextValue('')
+          }}
+          onCancel={() => { setTextDraft(null); setTextValue('') }}
+          fontFamily={store.textFontFamily} fontSize={store.textFontSize} color={store.annotationColor}
+          style={store.textStyle}
+          onFontFamily={store.setTextFontFamily} onFontSize={store.setTextFontSize} onColor={store.setAnnotationColor}
+          onStyle={store.setTextStyle} />
+      )}
+      {editingId && (() => {
+        const ann = anns.find((a) => a.id === editingId)
+        if (!ann) return null
+        const s = toScreen(ann.x, ann.y)
+        return (
+          <TextBoxEditor x={s.x} y={s.y} zoom={zoom} wrapperWidth={width}
+            value={editValue} onChange={setEditValue}
+            onCommit={() => {
+              store.updateAnnotation(doc.doc_id, ann.id, { text: editValue })
+              setEditingId(null)
+              setEditValue('')
+            }}
+            onCancel={() => { setEditingId(null); setEditValue('') }}
+            onDelete={() => { store.deleteAnnotation(doc.doc_id, ann.id); setEditingId(null); setEditValue('') }}
+            fontFamily={ann.fontFamily || store.textFontFamily} fontSize={ann.fontSize || store.textFontSize}
+            color={ann.color || store.annotationColor}
+            style={{
+              bold: !!ann.bold, italic: !!ann.italic, align: ann.align || 'left',
+              lineHeight: ann.lineHeight || 1.3, listStyle: ann.listStyle || 'none',
+            }}
+            onFontFamily={(f) => store.updateAnnotation(doc.doc_id, ann.id, { fontFamily: f })}
+            onFontSize={(v) => store.updateAnnotation(doc.doc_id, ann.id, { fontSize: v })}
+            onColor={(c) => store.updateAnnotation(doc.doc_id, ann.id, { color: c })}
+            onStyle={(s) => store.updateAnnotation(doc.doc_id, ann.id, s)} />
+        )
+      })()}
     </div>
   )
 }
@@ -306,9 +394,13 @@ export default function ContinuousView() {
   const store = useStoreSlice(
     'docs', 'activeDocId', 'setPage', 'setZoom', 'setViewerSize', 'computeFitZoom',
     'viewerWidth', 'viewerHeight', 'deleteAnnotation', 'selectedAnnotationId',
+    'selectedAnnotationIds',
   )
   const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
   const containerRef = useRef<HTMLDivElement>(null)
+  const { handleDragOver, handleDrop } = useFileDrop()
+  const [formHintOff, setFormHintOff] = useState(false)
+  const { fields: currentFormFields } = useFormFields(activeDoc?.doc_id ?? null, activeDoc?.currentPage ?? 0)
   const [range, setRange] = useState({ start: 0, end: 4 })
   const [loaded, setLoaded] = useState<Record<number, string>>({})
 
@@ -433,7 +525,7 @@ export default function ContinuousView() {
   }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, zoom])
 
   if (!activeDoc) {
-    return <div className="flex-1 flex items-center justify-center bg-surface text-muted">Abre un PDF</div>
+    return <ViewerEmptyState containerRef={containerRef} onDragOver={handleDragOver} onDrop={handleDrop} />
   }
 
   const topSpacer = offsets[range.start] ?? 0
@@ -445,7 +537,8 @@ export default function ContinuousView() {
   for (let i = range.start; i < range.end && i < pageCount; i++) pages.push(i)
 
   return (
-    <div ref={containerRef} className="flex-1 overflow-auto bg-surface">
+    <div className="relative flex-1 flex flex-col overflow-hidden bg-surface">
+    <div ref={containerRef} className="flex-1 overflow-auto">
       <div style={{ width: Math.max(maxWidth, 0), minWidth: '100%' }}>
         <div style={{ height: topSpacer }} />
         <div className="flex flex-col items-center" style={{ gap: GAP }}>
@@ -483,6 +576,20 @@ export default function ContinuousView() {
         </div>
         <div style={{ height: bottomSpacer }} />
       </div>
+    </div>
+      {currentFormFields.length > 0 && !formHintOff && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-info/60 bg-panel shadow-token text-mini text-fg">
+          <span className="w-2 h-2 rounded-full bg-info shrink-0" />
+          Formulario: {currentFormFields.length} campo(s). Seleccioná (V) para mover o borrar.
+          <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
+            className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+      {store.selectedAnnotationIds.length > 1 && (
+        <MultiSelectionBar docId={activeDoc.doc_id} ids={store.selectedAnnotationIds} />
+      )}
     </div>
   )
 }

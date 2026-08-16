@@ -17,9 +17,9 @@ export default function TopBar() {
   return (
     <div className="app-drag h-10 border-b border-border flex items-center bg-toolbar shrink-0 select-none pr-[140px]">
       <Tooltip content="Menú de PDF Master">
-        <button onClick={() => window.dispatchEvent(new CustomEvent('app:file-menu'))} aria-label="Menú"
+        <button onClick={() => window.dispatchEvent(new CustomEvent('app:file-menu'))} aria-label="Menú de PDF Master"
           className="app-no-drag flex items-center justify-center w-11 h-10 hover:bg-hover transition-colors shrink-0">
-          <img src={appIcon} alt="PDF Master" className="w-[22px] h-[22px] dark:invert" draggable={false} />
+          <img src={appIcon} alt="" className="w-[22px] h-[22px] dark:invert" draggable={false} />
         </button>
       </Tooltip>
 
@@ -27,7 +27,8 @@ export default function TopBar() {
 
       <div className="app-no-drag flex items-center h-full">
         <Tooltip content={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'}>
-          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label="Cambiar tema" className={rightBtn}>
+          <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+            aria-label={theme === 'dark' ? 'Modo claro' : 'Modo oscuro'} className={rightBtn}>
             {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         </Tooltip>
@@ -35,10 +36,11 @@ export default function TopBar() {
           <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-settings'))} aria-label="Ajustes" className={rightBtn}><Settings size={16} /></button>
         </Tooltip>
         <Tooltip content="Atajos de teclado" shortcut="F1">
-          <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-shortcuts'))} aria-label="Atajos" className={rightBtn}><HelpCircle size={16} /></button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent('app:show-shortcuts'))} aria-label="Atajos de teclado" className={rightBtn}><HelpCircle size={16} /></button>
         </Tooltip>
         <Tooltip content={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'} shortcut="Ctrl+Shift+L">
-          <button onClick={toggleSidebar} aria-label="Panel de páginas"
+          <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
+            aria-pressed={sidebarOpen}
             className={`p-2 h-full transition-colors hover:bg-hover ${sidebarOpen ? 'text-accent' : 'text-muted'}`}>
             <PanelLeft size={16} />
           </button>

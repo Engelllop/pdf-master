@@ -32,6 +32,14 @@ describe('visibilidad', () => {
     expect(screen.getByText('Grosor')).toBeTruthy()
     expect(screen.getByText('Relleno')).toBeTruthy()
   })
+
+  it('ya no relista las formas: eso vive en el menú Dibujar de la cinta', () => {
+    openDoc()
+    usePdfStore.setState({ activeTool: 'draw' })
+    render(<PropertiesBar />)
+    expect(screen.queryByLabelText('Lápiz')).toBeNull()
+    expect(screen.queryByLabelText('Polígono')).toBeNull()
+  })
 })
 
 describe('edición de defaults (sin anotación seleccionada)', () => {

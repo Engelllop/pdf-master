@@ -13,10 +13,14 @@ import {
   ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
-  TextCursorInput, CircleDot, List,
+  TextCursorInput, CircleDot, List, MoreHorizontal,
 } from 'lucide-react'
 import { type CountSymbol } from '../store/usePdfStore'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
+import {
+  DRAW_FAMILY_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
+  isDrawFamily, isMeasureFamily, isMoreTool,
+} from '../lib/commentRibbon'
 import { registerCommands } from '../lib/commands'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
@@ -24,7 +28,7 @@ import PropertiesBar from './PropertiesBar'
 import RotatePreview from './RotatePreview'
 import { useFormModal } from './FormModal'
 import { usePdfActions } from '../hooks/usePdfActions'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import Tooltip from './Tooltip'
 
 import { apiFetch } from '../lib/api'
@@ -81,12 +85,17 @@ export default function Toolbar() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
+  const [commentMenu, setCommentMenu] = useState<null | 'draw' | 'measure' | 'more' | 'export'>(null)
+  const [lastDrawTool, setLastDrawTool] = useState('draw')
+  const [lastMeasureTool, setLastMeasureTool] = useState('measure_distance')
   const searchRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (showSearch && searchRef.current) searchRef.current.focus()
   }, [showSearch])
+
+  useEffect(() => { setCommentMenu(null) }, [activeRibbon])
 
   // Atajo de búsqueda (Ctrl+F) desde App.tsx
   useEffect(() => {
@@ -141,8 +150,8 @@ export default function Toolbar() {
       { id: 'markup.stamps', group: 'Marcas', label: 'Sellos y firmas…', run: () => window.dispatchEvent(new CustomEvent('app:show-stamps')) },
       { id: 'markup.summary', group: 'Marcas', label: 'Resumen de marcas (PDF)', disabled: !hasDoc, run: handleMarkupSummary },
       { id: 'markup.measurements', group: 'Marcas', label: 'Exportar mediciones y conteos', disabled: !hasDoc, run: handleExportMeasurements },
-      { id: 'markup.xfdf', group: 'Marcas', label: 'Exportar anotaciones a XFDF', disabled: !hasDoc, run: handleExportXfdf },
-      { id: 'markup.xfdf.import', group: 'Marcas', label: 'Importar anotaciones XFDF', disabled: !hasDoc, run: handleImportXfdf },
+      { id: 'markup.xfdf', group: 'Marcas', label: 'Exportar marcas', disabled: !hasDoc, run: handleExportXfdf },
+      { id: 'markup.xfdf.import', group: 'Marcas', label: 'Importar marcas', disabled: !hasDoc, run: handleImportXfdf },
 
       { id: 'page.rotate.left', group: 'Página', label: 'Rotar a la izquierda', disabled: !hasDoc, run: () => handleRotate(-90) },
       { id: 'page.rotate.right', group: 'Página', label: 'Rotar a la derecha', disabled: !hasDoc, run: () => handleRotate(90) },
@@ -155,7 +164,7 @@ export default function Toolbar() {
 
       { id: 'edit.header', group: 'Editar', label: 'Encabezado y pie', disabled: !hasDoc, run: handleHeaderFooter },
       { id: 'edit.watermark', group: 'Editar', label: 'Marca de agua', disabled: !hasDoc, run: handleWatermark },
-      { id: 'edit.numbers', group: 'Editar', label: 'Numerar páginas / Bates', disabled: !hasDoc, run: handleAddPageNumbers },
+      { id: 'edit.numbers', group: 'Editar', label: 'Numerar páginas', disabled: !hasDoc, run: handleAddPageNumbers },
       { id: 'edit.metadata', group: 'Editar', label: 'Editar metadatos', disabled: !hasDoc, run: handleEditMetadata },
       { id: 'edit.formtext', group: 'Formulario', label: 'Campo de texto', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formtext') } },
       { id: 'edit.formcheck', group: 'Formulario', label: 'Casilla', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formcheck') } },
@@ -227,7 +236,7 @@ export default function Toolbar() {
       const text: string = (data.blocks ? data.blocks.map((b: any) => b.text).join(' ') : data.text) || ''
       if (!text.trim()) { showToast('No hay texto en esta página', 'info'); return }
       const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'es-ES'
+      u.lang = 'es-AR'
       u.onend = () => setIsSpeaking(false)
       window.speechSynthesis.cancel()
       window.speechSynthesis.speak(u)
@@ -241,6 +250,7 @@ export default function Toolbar() {
     if (searchAllDocs) {
       // Secuencial a propósito: el motor tiene un solo worker de fitz
       let total = 0
+      let failed = 0
       for (const d of docs) {
         setSearchQuery(d.doc_id, searchInput)
         try {
@@ -250,10 +260,13 @@ export default function Toolbar() {
             setSearchResults(d.doc_id, results)
             total += results.length
             if (d.doc_id === activeDoc.doc_id && results.length > 0) setPage(d.doc_id, results[0].page)
+          } else {
+            failed += 1
           }
-        } catch (e) { console.error(e) }
+        } catch { failed += 1 }
       }
-      showToast(`${total} resultado(s) en ${docs.length} documento(s)`, total > 0 ? 'success' : 'info')
+      if (failed && total === 0) showToast('No se pudo buscar', 'error')
+      else showToast(`${total} resultado(s) en ${docs.length} documento(s)`, total > 0 ? 'success' : 'info')
       return
     }
     setSearchQuery(activeDoc.doc_id, searchInput)
@@ -263,8 +276,10 @@ export default function Toolbar() {
         const results = await res.json()
         setSearchResults(activeDoc.doc_id, results)
         if (results.length > 0) setPage(activeDoc.doc_id, results[0].page)
+      } else {
+        showToast('No se pudo buscar', 'error')
       }
-    } catch (e) { console.error(e) }
+    } catch { showToast('No se pudo buscar', 'error') }
   }
 
   const handleSearchKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch() }
@@ -313,21 +328,112 @@ export default function Toolbar() {
     }
   }
 
-  // Todas las cintas muestran icono + etiqueta: Comentar es justo donde más falta
-  // hacen (14 herramientas), así que ahí se usa una densidad más compacta.
-  const compact = activeRibbon === 'comment'
   const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active = false, disabled = false }: any) => (
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label}
-        className={`flex items-center justify-center gap-1.5 rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-          compact ? 'px-2 h-8 text-mini' : 'px-2.5 h-8 text-ui'
-        } ${active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'}`}>
-        <Icon size={compact ? 15 : 16} strokeWidth={1.75} />
+        className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+          active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+        }`}>
+        <Icon size={16} strokeWidth={1.75} />
         <span>{label}</span>
       </button>
     </Tooltip>
   )
   const Sep = () => <div className="w-px h-5 mx-1 bg-border shrink-0" />
+  const closeCommentMenu = () => setCommentMenu(null)
+  const MenuItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
+    <button role="menuitem" onClick={() => {
+      if (isDrawFamily(id)) setLastDrawTool(id)
+      if (isMeasureFamily(id)) setLastMeasureTool(id)
+      handleToolClick(id)
+      closeCommentMenu()
+    }}
+      className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
+        activeTool === id ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+      }`}>
+      <Icon size={14} strokeWidth={1.75} className="shrink-0" />
+      <span className="flex-1">{TOOL_LABELS[id] || label}</span>
+      {TOOL_SHORTCUTS[id] && (
+        <kbd className="text-micro text-muted">{TOOL_SHORTCUTS[id]}</kbd>
+      )}
+    </button>
+  )
+  const SplitTool = ({
+    family, icon: Icon, label, tip, shortcut, active, onActivate, children,
+  }: {
+    family: 'draw' | 'measure'
+    icon: any
+    label: string
+    tip: string
+    shortcut?: string
+    active: boolean
+    onActivate: () => void
+    children: ReactNode
+  }) => {
+    const open = commentMenu === family
+    return (
+      <div className="relative flex items-stretch shrink-0">
+        <Tooltip content={tip} shortcut={shortcut}>
+          <button onClick={() => { onActivate(); closeCommentMenu() }} aria-label={tip}
+            className={`flex items-center gap-1.5 pl-2.5 pr-1.5 h-8 text-ui rounded-l-token whitespace-nowrap transition-colors ${
+              active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+            }`}>
+            <Icon size={16} strokeWidth={1.75} />
+            <span>{label}</span>
+          </button>
+        </Tooltip>
+        <button type="button" aria-label={`${label}: más opciones`} aria-expanded={open} aria-haspopup="menu"
+          onClick={() => setCommentMenu(open ? null : family)}
+          className={`px-1 h-8 rounded-r-token border-l transition-colors ${
+            active || open
+              ? 'bg-accent text-toolbar border-toolbar/20'
+              : 'text-muted hover:text-fg hover:bg-hover border-border'
+          }`}>
+          <ChevronDown size={12} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={closeCommentMenu} />
+            <div role="menu" className="menu-pop absolute top-full left-0 z-50 mt-1 min-w-[220px] border border-border rounded-token shadow-token py-1 bg-panel">
+              {children}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
+  const OverflowMenu = ({
+    id, icon: Icon, label, active, children,
+  }: {
+    id: 'more' | 'export'
+    icon: any
+    label: string
+    active?: boolean
+    children: ReactNode
+  }) => {
+    const open = commentMenu === id
+    return (
+      <div className="relative shrink-0">
+        <button type="button" aria-label={label} aria-expanded={open} aria-haspopup="menu"
+          onClick={() => setCommentMenu(open ? null : id)}
+          className={`flex items-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors ${
+            active || open ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+          }`}>
+          <Icon size={16} strokeWidth={1.75} />
+          <span>{label}</span>
+          <ChevronDown size={12} />
+        </button>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={closeCommentMenu} />
+            <div role="menu" className="menu-pop absolute top-full right-0 z-50 mt-1 min-w-[220px] border border-border rounded-token shadow-token py-1 bg-panel">
+              {children}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
 
   // `label` es el rótulo corto del botón; el nombre completo y el atajo van en el
   // tooltip (TOOL_LABELS/TOOL_SHORTCUTS son la fuente única, compartida con los
@@ -404,11 +510,19 @@ export default function Toolbar() {
             <TBtn icon={Printer} label="Imprimir" tip="Imprimir" onClick={() => setShowPrint(true)} />
           </>
         )
-      case 'comment':
+      case 'comment': {
+        const allTools = [...COMMENT_TOOLS, ...SHAPE_TOOLS]
+        const byId = (id: string) => allTools.find((t) => t.id === id)
+        const drawId = isDrawFamily(activeTool) ? activeTool! : lastDrawTool
+        const measureId = isMeasureFamily(activeTool) ? activeTool! : lastMeasureTool
+        const drawDef = byId(drawId) || byId('draw')!
+        const measureDef = byId(measureId) || byId('measure_distance')!
+        const moreActive = isMoreTool(activeTool)
         return (
           <>
             <input type="color" value={annotationColor} onChange={(e) => setAnnotationColor(e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer border border-border p-0 bg-transparent shrink-0" title="Color" />
+              className="w-8 h-8 rounded cursor-pointer border border-border p-0 bg-transparent shrink-0"
+              title="Color de la marca" aria-label="Color de la marca" />
             <Tooltip content={stickyTools
               ? 'Herramienta fija: se queda activa hasta pulsar Esc'
               : 'Herramienta de un solo uso: se suelta tras cada marca'}>
@@ -418,24 +532,74 @@ export default function Toolbar() {
               </button>
             </Tooltip>
             <Sep />
-            {COMMENT_TOOLS.map((t) => (
-              <TBtn key={t.id} icon={t.icon} label={t.label} tip={TOOL_LABELS[t.id] || t.label}
-                shortcut={TOOL_SHORTCUTS[t.id]}
-                onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
-            ))}
+            <TBtn icon={MousePointer2} label="Seleccionar" tip={TOOL_LABELS.select}
+              shortcut={TOOL_SHORTCUTS.select}
+              onClick={() => handleToolClick('select')} active={activeTool === 'select'} />
+            <TBtn icon={Highlighter} label="Resaltar" tip={TOOL_LABELS.highlight}
+              shortcut={TOOL_SHORTCUTS.highlight}
+              onClick={() => handleToolClick('highlight')} active={activeTool === 'highlight'} />
+            <TBtn icon={MessageSquare} label="Nota" tip={TOOL_LABELS.note}
+              shortcut={TOOL_SHORTCUTS.note}
+              onClick={() => handleToolClick('note')} active={activeTool === 'note'} />
+            <SplitTool
+              family="draw"
+              icon={drawDef.icon}
+              label={isDrawFamily(activeTool) ? (TOOL_LABELS[drawId] || drawDef.label) : 'Dibujar'}
+              tip={TOOL_LABELS[drawId] || 'Dibujar'}
+              shortcut={TOOL_SHORTCUTS[drawId]}
+              active={isDrawFamily(activeTool)}
+              onActivate={() => { setLastDrawTool(drawId); handleToolClick(drawId) }}
+            >
+              {DRAW_FAMILY_IDS.map((id) => {
+                const t = byId(id)
+                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
+              })}
+            </SplitTool>
+            <SplitTool
+              family="measure"
+              icon={measureDef.icon}
+              label={isMeasureFamily(activeTool) ? (TOOL_LABELS[measureId] || measureDef.label) : 'Medir'}
+              tip={TOOL_LABELS[measureId] || 'Medir'}
+              shortcut={TOOL_SHORTCUTS[measureId]}
+              active={isMeasureFamily(activeTool)}
+              onActivate={() => { setLastMeasureTool(measureId); handleToolClick(measureId) }}
+            >
+              {MEASURE_FAMILY_IDS.map((id) => {
+                const t = byId(id)
+                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
+              })}
+            </SplitTool>
             <Sep />
-            {SHAPE_TOOLS.map((t) => (
-              <TBtn key={t.id} icon={t.icon} label={t.label} tip={TOOL_LABELS[t.id] || t.label}
-                shortcut={TOOL_SHORTCUTS[t.id]}
-                onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
-            ))}
+            <OverflowMenu id="more" icon={MoreHorizontal} label="Más" active={moreActive}>
+              {MORE_TOOL_IDS.map((id) => {
+                const t = byId(id)
+                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
+              })}
+            </OverflowMenu>
+            <OverflowMenu id="export" icon={FileDown} label="Exportar">
+              <button role="menuitem" onClick={() => { handleMarkupSummary(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileDown size={14} /> Resumen de marcas
+              </button>
+              <button role="menuitem" onClick={() => { handleExportMeasurements(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileSpreadsheet size={14} /> Mediciones y conteos
+              </button>
+              <button role="menuitem" onClick={() => { handleExportXfdf(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileType size={14} /> Exportar marcas
+              </button>
+              <button role="menuitem" onClick={() => { handleImportXfdf(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FilePlus2 size={14} /> Importar marcas
+              </button>
+            </OverflowMenu>
             {activeTool === 'count' && (
               <>
                 <Sep />
                 <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
-                  placeholder="Categoría" title="Categoría del conteo"
+                  placeholder="Categoría" title="Categoría del conteo" aria-label="Categoría del conteo"
                   className="w-28 px-2 py-1 text-mini rounded border border-border bg-surface text-fg shrink-0" />
-                {/* Cada categoría se distingue por símbolo, no solo por color */}
                 <div className="flex items-center gap-0.5 shrink-0">
                   {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon }) => (
                     <button key={id} onClick={() => setCountSymbol(id)} title={`Símbolo: ${id}`} aria-label={`Símbolo ${id}`}
@@ -449,13 +613,9 @@ export default function Toolbar() {
                 </span>
               </>
             )}
-            <Sep />
-            <TBtn icon={FileDown} label="Resumen" tip="Resumen de marcas (PDF)" onClick={handleMarkupSummary} />
-            <TBtn icon={FileSpreadsheet} label="Mediciones" tip="Exportar tabla de mediciones y conteos (Excel/CSV)" onClick={handleExportMeasurements} />
-            <TBtn icon={FileType} label="XFDF" tip="Exportar anotaciones a XFDF (Acrobat/Bluebeam)" onClick={handleExportXfdf} />
-            <TBtn icon={FilePlus2} label="Importar" tip="Importar anotaciones desde XFDF" onClick={handleImportXfdf} />
           </>
         )
+      }
       case 'edit':
         return (
           <>
@@ -471,7 +631,7 @@ export default function Toolbar() {
             <Sep />
             <TBtn icon={AlignVerticalJustifyCenter} label="Encab/Pie" tip="Encabezado y pie" onClick={handleHeaderFooter} />
             <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua" onClick={handleWatermark} />
-            <TBtn icon={FileText} label="Numerar" tip="Numerar páginas / Bates" onClick={handleAddPageNumbers} />
+            <TBtn icon={FileText} label="Numerar" tip="Numerar páginas" onClick={handleAddPageNumbers} />
             <Sep />
             <TBtn icon={FileText} label="Metadatos" tip="Editar metadatos" onClick={handleEditMetadata} />
           </>
@@ -571,7 +731,7 @@ export default function Toolbar() {
       {activeDoc && (
         <div className="min-h-11 border-b border-border bg-toolbar grid items-center px-3 py-1 gap-2" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
           <div />
-          <div className="flex items-center justify-center gap-1 flex-wrap min-w-0">
+          <div className={`flex items-center justify-center gap-1 min-w-0 ${activeRibbon === 'comment' ? 'flex-nowrap' : 'flex-wrap'}`}>
             {renderRibbon()}
           </div>
           <div className="flex items-center gap-2 justify-end">
@@ -581,9 +741,11 @@ export default function Toolbar() {
                   <Search size={14} className="text-muted" />
                   <input ref={searchRef} type="text" placeholder="Buscar..." value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
+                    aria-label="Buscar en el documento"
                     className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                   <input ref={replaceRef} type="text" placeholder="Reemplazar..." value={replaceInput}
                     onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
+                    aria-label="Reemplazar por"
                     className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                   {activeDoc.searchResults.length > 0 && (
                     <span className="text-mini text-muted tabular-nums">{activeDoc.searchIndex + 1}/{activeDoc.searchResults.length}</span>
@@ -594,15 +756,18 @@ export default function Toolbar() {
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
-                    <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
+                      aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Aa
                   </label>
                   <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
-                    <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
+                      aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Todos los docs
                   </label>
                   <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
-                    <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)} className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
+                      aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
                     Todo el doc
                   </label>
                   <button onClick={handleReplace} disabled={!searchInput.trim()}
@@ -612,7 +777,7 @@ export default function Toolbar() {
                 </div>
               </div>
             ) : (
-              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)">
+              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)" aria-label="Buscar">
                 <Search size={16} />
               </button>
             )}

@@ -40,6 +40,7 @@ export default function StatusBar() {
           Pág.
           <input type="number" min={1} max={activeDoc.page_count} value={activeDoc.currentPage + 1}
             onChange={(e) => { const v = parseInt(e.target.value); if (v >= 1 && v <= activeDoc.page_count) setPage(activeDoc.doc_id, v - 1) }}
+            aria-label="Página actual"
             className="w-10 border border-border rounded px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
           / {activeDoc.page_count}
         </span>
@@ -72,22 +73,31 @@ export default function StatusBar() {
       {saveStatus === 'saving' && (
         <span className="flex items-center gap-1 text-accent"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
       )}
-      {saveStatus === 'saved' && (
+      {saveStatus !== 'saving' && activeDoc?.dirty && (
+        <button type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-save'))}
+          className="flex items-center gap-1 text-warning hover:text-fg transition-colors"
+          title="Guardar cambios" aria-label="Sin guardar. Guardar con Ctrl+S">
+          Sin guardar · <kbd className="px-1 py-px rounded border border-border text-micro text-muted">Ctrl+S</kbd>
+        </button>
+      )}
+      {saveStatus === 'saved' && !activeDoc?.dirty && (
         <span className="flex items-center gap-1 text-success"><CheckCircle2 size={12} /> Guardado</span>
       )}
 
       {activeDoc && (
         <>
-          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'text-accent' : ''}`} title="Scroll continuo">
+          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'text-accent' : ''}`}
+            title="Scroll continuo" aria-label="Scroll continuo" aria-pressed={continuousMode}>
             <ScrollText size={14} />
           </button>
-          <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho"><MoveVertical size={14} /></button>
-          <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página"><Maximize2 size={14} /></button>
+          <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho" aria-label="Ajustar al ancho"><MoveVertical size={14} /></button>
+          <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página" aria-label="Ajustar página"><Maximize2 size={14} /></button>
           <div className="w-px h-4 bg-border" />
-          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar"><ZoomOut size={14} /></button>
+          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar" aria-label="Alejar"><ZoomOut size={14} /></button>
           <div className="relative">
             <button onClick={() => setZoomMenuOpen((o) => !o)}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-hover text-fg" title="Nivel de zoom">
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-hover text-fg" title="Nivel de zoom" aria-label="Nivel de zoom" aria-haspopup="menu" aria-expanded={zoomMenuOpen}>
               <span className="font-mono w-9 text-right">{zoomPercent}%</span>
               <ChevronDown size={12} className="text-muted" />
             </button>
@@ -108,7 +118,7 @@ export default function StatusBar() {
               </>
             )}
           </div>
-          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} className={iconBtn} title="Acercar"><ZoomIn size={14} /></button>
+          <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} className={iconBtn} title="Acercar" aria-label="Acercar"><ZoomIn size={14} /></button>
         </>
       )}
     </div>

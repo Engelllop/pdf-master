@@ -51,7 +51,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
           <Search size={15} className="text-muted shrink-0" />
           <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
-            placeholder="Buscar una acción… (p. ej. medir, XFDF, comprimir)"
+            placeholder="Buscar una acción… (p. ej. medir, marcas, comprimir)"
             className="flex-1 min-w-0 bg-transparent text-ui text-fg placeholder:text-muted focus:outline-none" />
           <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted">Esc</kbd>
         </div>

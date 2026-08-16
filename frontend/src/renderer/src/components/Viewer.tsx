@@ -261,7 +261,7 @@ export default function Viewer() {
           width: w, height: h, imageData: data,
         })
         store.setDocDirty(docId, true)
-        store.showToast('Imagen colocada. Arrastra para mover, esquinas para redimensionar.', 'success')
+        store.showToast('Imagen colocada. Arrastrá para mover, esquinas para redimensionar.', 'success')
       }
       img.onerror = () => store.showToast('No se pudo leer la imagen', 'error')
       img.src = data

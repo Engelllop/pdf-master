@@ -57,7 +57,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
           </div>
           <div>
             <h2 className="text-xl font-semibold text-fg">PDF Master</h2>
-            <p className="mt-1 text-base text-muted">Arrastra un PDF aquí para abrirlo</p>
+            <p className="mt-1 text-base text-muted">Arrastrá un PDF acá para abrirlo</p>
           </div>
           <div className="flex items-center justify-center gap-2">
             <button onClick={handleOpen}
@@ -72,11 +72,12 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
             )}
           </div>
           <p className="text-mini text-muted">Ctrl+O abrir · Ctrl+rueda zoom · F1 atajos</p>
+          <p className="text-mini text-fg">Nunca se guarda solo. Ctrl+S escribe el PDF.</p>
         </div>
 
         {visibleRecents.length > 0 && (
           <div>
-            <p className="text-micro uppercase tracking-wider mb-2 text-muted">Recientes</p>
+            <p className="text-mini font-medium text-fg mb-2">Recientes</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {visibleRecents.map((entry) => {
                 const name = entry.path.split(/[\\/]/).pop()
@@ -108,7 +109,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
 
         {folders.length > 0 && (
           <div>
-            <p className="text-micro uppercase tracking-wider mb-2 text-muted">Carpetas frecuentes</p>
+            <p className="text-mini font-medium text-fg mb-2">Carpetas frecuentes</p>
             <div className="flex flex-wrap gap-2">
               {folders.map((f) => (
                 <button key={f.dir} onClick={() => handleOpenFolder(f.dir)} title={f.dir}

@@ -244,12 +244,16 @@ export default function ThumbnailPanel() {
       {railItems.map(({ id, icon: Icon, title }) => {
         const on = sidebarOpen && tab === id
         return (
-          <button key={id} onClick={() => onRail(id)} title={title} aria-label={title}
+          <button key={id} onClick={() => onRail(id)} title={title}
+            aria-label={id === 'search' && activeDoc && activeDoc.searchResults.length > 0
+              ? `${title}, ${activeDoc.searchResults.length} resultados`
+              : title}
+            aria-pressed={on}
             className={`relative p-2 rounded-token transition-colors ${on ? 'text-accent bg-hover' : 'text-muted hover:text-fg hover:bg-hover'}`}>
             {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" aria-hidden />
             )}
           </button>
         )
@@ -265,7 +269,7 @@ export default function ThumbnailPanel() {
           <div className={`w-56 border-r flex flex-col bg-panel border-border`}>
             <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
               <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
-              <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
+              <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
                 <PanelLeftClose size={14} />
               </button>
             </div>
@@ -287,7 +291,7 @@ export default function ThumbnailPanel() {
       <div className={`${tab === 'annotations' || tab === 'counts' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
         <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
-        <button onClick={toggleSidebar} className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
+        <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
           <PanelLeftClose size={14} />
         </button>
       </div>
@@ -362,12 +366,12 @@ export default function ThumbnailPanel() {
                 <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors text-muted hover:text-fg hover:bg-hover`}><X size={15} /></button>
               </div>
               <div className="flex flex-wrap gap-1.5 justify-center p-2.5">
-                <button onClick={() => handleRotateSelected(90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° derecha"><RotateCw size={15} /></button>
-                <button onClick={() => handleRotateSelected(-90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° izquierda"><RotateCcw size={15} /></button>
-                <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página"><Copy size={15} /></button>
-                <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después"><FilePlus2 size={15} /></button>
-                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-colors" title="Extraer a nuevo PDF"><Scissors size={15} /></button>
-                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-danger hover:bg-danger text-white transition-colors" title="Eliminar página(s)"><Trash2 size={15} /></button>
+                <button onClick={() => handleRotateSelected(90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° derecha" aria-label="Rotar 90° derecha"><RotateCw size={15} /></button>
+                <button onClick={() => handleRotateSelected(-90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° izquierda" aria-label="Rotar 90° izquierda"><RotateCcw size={15} /></button>
+                <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página" aria-label="Duplicar página"><Copy size={15} /></button>
+                <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después" aria-label="Insertar página en blanco después"><FilePlus2 size={15} /></button>
+                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-colors" title="Extraer a nuevo PDF" aria-label="Extraer a nuevo PDF"><Scissors size={15} /></button>
+                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-danger hover:bg-danger text-white transition-colors" title="Eliminar página(s)" aria-label="Eliminar página(s)"><Trash2 size={15} /></button>
               </div>
             </div>
           )}
@@ -396,7 +400,7 @@ export default function ThumbnailPanel() {
           {activeDoc.outline.length > 0 ? (
             <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} />
           ) : (
-            <p className={`text-mini text-center mt-4 text-muted`}>Este PDF no tiene outline</p>
+            <p className={`text-mini text-center mt-4 text-muted`}>Este PDF no tiene índice</p>
           )}
         </div>
       )}

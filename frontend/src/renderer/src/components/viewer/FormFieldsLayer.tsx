@@ -24,6 +24,7 @@ function TextWidget({ field, style, onCommit }: {
       className="bg-info/10 hover:bg-info/20 focus:bg-white text-black text-mini border border-info/70 focus:border-info rounded px-1 outline-none transition-colors"
       style={style}
       title={field.field_name}
+      aria-label={field.field_name || 'Campo de texto'}
     />
   )
 }
@@ -177,6 +178,7 @@ export default function FormFieldsLayer({
               className="accent-[rgb(var(--info))]"
               style={style}
               title={field.field_name}
+              aria-label={field.field_name || 'Casilla'}
             />
           )
         }
@@ -189,6 +191,7 @@ export default function FormFieldsLayer({
               className="accent-[rgb(var(--info))]"
               style={style}
               title={field.field_name}
+              aria-label={field.field_name || 'Opción'}
             />
           )
         }
@@ -200,6 +203,7 @@ export default function FormFieldsLayer({
               className="bg-white text-black text-mini border border-info rounded"
               style={style}
               title={field.field_name}
+              aria-label={field.field_name || 'Lista'}
             >
               {field.options.map((opt) => (
                 <option key={opt} value={opt}>{opt}</option>

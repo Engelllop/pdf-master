@@ -68,13 +68,14 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleAddPageNumbers = async () => {
     if (!activeDoc) return
     const v = await askForm('Numerar páginas', [
-      { name: 'prefix', label: 'Prefijo Bates (vacío = "n / total")', type: 'text', defaultValue: '', placeholder: 'Ej. DOC-' },
-      { name: 'position', label: 'Posición', type: 'select', options: ['bottom', 'top'], defaultValue: 'bottom' },
+      { name: 'prefix', label: 'Prefijo (vacío = n / total)', type: 'text', defaultValue: '', placeholder: 'Ej. DOC-' },
+      { name: 'position', label: 'Posición', type: 'select', options: ['Abajo', 'Arriba'], defaultValue: 'Abajo' },
     ])
     if (!v) return
     const prefix = String(v.prefix)
+    const position = String(v.position) === 'Arriba' ? 'top' : 'bottom'
     try {
-      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, String(v.position))
+      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, position)
       showToast('Numeración aplicada. Ctrl+Z deshace.', 'success')
     } catch (err) { toastActionError(err) }
   }
@@ -170,13 +171,13 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRedact = () => {
     if (!activeDoc) return
     setActiveTool('redactarea')
-    showToast('Arrastra el área a redactar y suelta para aplicar', 'info')
+    showToast('Arrastrá el área a redactar y soltá para aplicar', 'info')
   }
 
   const handleCrop = () => {
     if (!activeDoc) return
     setActiveTool('croparea')
-    showToast('Arrastra el área a conservar y suelta para recortar', 'info')
+    showToast('Arrastrá el área a conservar y soltá para recortar', 'info')
   }
 
   const handleExportExcel = async () => {
@@ -602,7 +603,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     }
     const outputPath = await window.api.saveFile({
       defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.xfdf'),
-      filters: [{ name: 'XFDF', extensions: ['xfdf'] }],
+      filters: [{ name: 'Marcas', extensions: ['xfdf'] }],
     })
     if (!outputPath) return
     try {
@@ -610,23 +611,23 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations: activeDoc.annotations }),
       })
-      showToast(res.ok ? `${activeDoc.annotations.length} anotación(es) exportadas a XFDF` : 'Error al exportar XFDF', res.ok ? 'success' : 'error')
+      showToast(res.ok ? `${activeDoc.annotations.length} marca(s) exportadas` : 'No se pudieron exportar las marcas', res.ok ? 'success' : 'error')
     } catch (err) { toastActionError(err) }
   }
 
   const handleImportXfdf = async () => {
     if (!activeDoc) return
-    const path = await window.api.openFile([{ name: 'XFDF', extensions: ['xfdf'] }])
+    const path = await window.api.openFile([{ name: 'Marcas', extensions: ['xfdf'] }])
     if (!path) return
     try {
       const res = await apiFetch(`/pdf/import-xfdf/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ file_path: path }),
       })
-      if (!res.ok) { showToast('Error al importar XFDF', 'error'); return }
+      if (!res.ok) { showToast('No se pudieron importar las marcas', 'error'); return }
       const data = await res.json()
       const imported = data.annotations || []
-      if (imported.length === 0) { showToast('El XFDF no contiene anotaciones compatibles', 'info'); return }
+      if (imported.length === 0) { showToast('Ese archivo no tiene marcas compatibles', 'info'); return }
       setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...imported])
       setDocDirty(activeDoc.doc_id, true)
       showToast(`${imported.length} anotación(es) importadas`, 'success')

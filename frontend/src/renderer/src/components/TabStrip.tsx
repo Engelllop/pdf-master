@@ -87,9 +87,15 @@ export default function TabStrip() {
                 ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
                 : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : doc.doc_id === activeDocId ? 'text-accent' : 'text-muted'}`} />}
               <span className="truncate flex-1">{doc.file_name}</span>
-              {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning dark:bg-warning" title="Cambios sin guardar" />}
+              {doc.dirty && (
+                <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning dark:bg-warning" title="Cambios sin guardar" role="img" aria-label="Sin guardar" />
+              )}
               <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }} aria-label="Cerrar pestaña"
-                className={`shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded transition-opacity hover:bg-hover`}>
+                className={`shrink-0 p-0.5 rounded transition-opacity hover:bg-hover ${
+                  doc.doc_id === activeDocId
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100'
+                }`}>
                 <X size={12} />
               </button>
             </div>
