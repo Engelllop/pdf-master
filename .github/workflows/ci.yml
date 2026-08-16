@@ -92,15 +92,33 @@ jobs:
           } else {
             Write-Host "El release $env:TAG ya existe: se le suben los archivos que falten."
           }
-      - name: Build installer and publish release
+      - name: Build installer
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           cd frontend
           npm ci
           npm run build
-          npx electron-builder --win --publish always
+          npx electron-builder --win --publish never
+      # La subida la hace gh, no electron-builder. Ademas de la carrera por
+      # crear el release, electron-builder se niega a subir a uno publicado
+      # hace mas de dos horas ("existing release published more than 2 hours
+      # ago") y saltea los archivos SIN fallar: republicar un tag roto era
+      # imposible y el build terminaba en verde igual. Se vio en el intento de
+      # republicar v1.12.8 el 08/15/2026.
+      - name: Subir los archivos al release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Solo el instalador, su blockmap y latest.yml. En dist/ tambien
+          # queda el __uninstaller.exe, que es un intermedio del build y no
+          # tiene nada que hacer en un release.
+          $archivos = Get-ChildItem frontend/dist -File | Where-Object {
+            $_.Name -match '^PDF-Master-Setup-[\d.]+\.exe(\.blockmap)?$' -or $_.Name -eq 'latest.yml'
+          }
+          Write-Host "Subiendo a $($env:TAG): $($archivos.Name -join ', ')"
+          $rutas = $archivos | ForEach-Object { $_.FullName }
+          gh release upload $env:TAG $rutas --clobber
       # electron-builder puede terminar con codigo 0 habiendo subido solo una
       # parte. Sin instalador no hay descarga y sin latest.yml no hay
       # actualizacion automatica, y las dos fallan calladas: el usuario ve un
