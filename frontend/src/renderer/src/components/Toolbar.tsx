@@ -446,8 +446,12 @@ export default function Toolbar() {
                 shortcut={TOOL_SHORTCUTS[t.id]}
                 onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
             ))}
-            {/* Las formas ya no son un menú aparte: al activar Dibujar aparecen todas
-                en la barra de propiedades, junto al color, grosor y estilo. */}
+            <Sep />
+            {SHAPE_TOOLS.map((t) => (
+              <TBtn key={t.id} icon={t.icon} label={t.label} tip={TOOL_LABELS[t.id] || t.label}
+                shortcut={TOOL_SHORTCUTS[t.id]}
+                onClick={() => handleToolClick(t.id)} active={activeTool === t.id} />
+            ))}
             {activeTool === 'count' && (
               <>
                 <Sep />

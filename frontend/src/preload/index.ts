@@ -15,6 +15,7 @@ const api = {
   openFolder: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
+  getApiToken: (): Promise<string> => ipcRenderer.invoke('api:token'),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number }) => ipcRenderer.invoke('pdf:print', docId, opts),
   aiChat: (payload: { requestId: string; docId: string | null; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => ipcRenderer.send('ai:chat', payload),
   aiAbort: (requestId: string) => ipcRenderer.send('ai:abort', requestId),

@@ -43,6 +43,26 @@ class ReadMixin:
         
         return result
 
+    def set_outline(self, doc_id: str, items: List[dict]) -> bool:
+        """Reescribe el TOC del PDF. items: [{title, page, children?}]."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            toc: List[list] = []
+
+            def walk(nodes: List[dict], level: int) -> None:
+                for n in nodes:
+                    title = str(n.get("title") or "Sin título")
+                    page = int(n.get("page") or 0) + 1
+                    toc.append([level, title, page])
+                    walk(n.get("children") or [], level + 1)
+
+            walk(items, 1)
+            doc.set_toc(toc)
+            self._dirty[doc_id] = True
+        return True
+
     def search_text(self, doc_id: str, query: str, limit: int = 500) -> List[dict]:
         with self._lock:
             doc = self._acquire(doc_id)

@@ -1,9 +1,11 @@
 """Ciclo de vida del documento: abrir/guardar/cerrar, merge/split, contraseñas."""
+import os
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.models.pdf import (
     CreateBlankRequest, DirtyStatus, MergeRequest, OpenPdfRequest, PdfInfo,
     SavePasswordRequest, SaveResult, SplitRequest, TempFileResult,
@@ -21,11 +23,15 @@ class ImagesToPdfRequest(BaseModel):
 
 @router.post("/open", response_model=PdfInfo)
 def open_pdf(request: OpenPdfRequest):
+    _validate_input_file(request.file_path, {'.pdf'})
+    max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
+    if os.path.getsize(request.file_path) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"El PDF supera el tope de {settings.MAX_FILE_SIZE_MB} MB",
+        )
     try:
         info = pdf_service.open_document(request.file_path, request.password)
-        # Load persisted annotations
-        anns = pdf_service.load_annotations(info.doc_id)
-        # We'll return annotations in a separate call, but we could attach them here
         return info
     except PasswordRequiredError as e:
         raise HTTPException(status_code=401, detail=str(e))

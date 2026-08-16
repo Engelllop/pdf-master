@@ -50,6 +50,7 @@ export const TOOL_KEYS: Record<string, string> = {
   d: 'draw',
   c: 'count',
   m: 'measure_distance',
+  p: 'measure_perimeter',
   'shift+m': 'measure_area',
   'shift+c': 'measure_calibrate',
 }

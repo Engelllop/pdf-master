@@ -111,7 +111,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           </Row>
 
           <Row label="Copia .bak al guardar"
-            hint="Guardar sobrescribe el original. Con esto se deja una copia junto al archivo (solo al guardar, nunca en automático).">
+            hint="Activado por defecto: la primera vez que guardás in-place se deja una copia .bak junto al original. Nunca en automático.">
             <Segmented<'on' | 'off'> value={backupOnSave ? 'on' : 'off'}
               options={[['off', 'No'], ['on', 'Sí']]}
               onChange={(v) => setBackupOnSave(v === 'on')} />

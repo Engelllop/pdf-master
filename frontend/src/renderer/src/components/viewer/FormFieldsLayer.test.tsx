@@ -65,6 +65,12 @@ describe('campos de formulario', () => {
     expect(onChange).toHaveBeenCalledWith('residencial', 'Yes')
   })
 
+  it('un radio se confirma al marcarlo', () => {
+    const onChange = renderLayer([field({ field_name: 'tipo.a', field_type: 'RadioButton', value: 'Off', options: ['Yes'] })])
+    fireEvent.click(screen.getByRole('radio'))
+    expect(onChange).toHaveBeenCalledWith('tipo.a', 'Yes')
+  })
+
   it('sin campos no pinta capa (no debe tapar el clic sobre la página)', () => {
     const { container } = render(<FormFieldsLayer fields={[]} pageData={pageData} onChange={vi.fn()} />)
     expect(container.firstChild).toBeNull()

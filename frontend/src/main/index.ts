@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
-import { join } from 'path'
+import { join, extname } from 'path'
+import { randomBytes } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
@@ -13,6 +14,8 @@ app.commandLine.appendSwitch('disable-software-rasterizer')
 app.commandLine.appendSwitch('max-old-space-size', '4096')
 
 const API_BASE = 'http://localhost:8745'
+const API_TOKEN = randomBytes(24).toString('hex')
+const backendEnv = { ...process.env, PDFMASTER_API_TOKEN: API_TOKEN }
 
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
@@ -68,11 +71,13 @@ function startBackend(): Promise<void> {
       backendProcess = spawn(exePath, ['main.py'], {
         cwd: join(process.cwd(), '..', 'backend'),
         windowsHide: true,
+        env: backendEnv,
       })
     } else {
       exePath = join(process.resourcesPath, 'backend', 'pdf-engine.exe')
       backendProcess = spawn(exePath, [], {
         windowsHide: true,
+        env: backendEnv,
       })
     }
 
@@ -387,6 +392,8 @@ app.whenReady().then(async () => {
     try { shell.openPath(dirPath) } catch { /* ignore */ }
   })
 
+  ipcMain.handle('api:token', () => API_TOKEN)
+
   ipcMain.handle('log:error', (_event, message: string) => {
     safeLog('RENDERER', String(message).slice(0, 2000))
   })
@@ -612,6 +619,8 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('file:readBase64', async (_event, filePath: string) => {
+    const allowed = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tif', '.tiff'])
+    if (!allowed.has(extname(filePath).toLowerCase())) return null
     try {
       const buffer = readFileSync(filePath)
       return buffer.toString('base64')

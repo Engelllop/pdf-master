@@ -36,9 +36,9 @@ export default function ThumbnailPanel() {
     'bookmarks', 'removeBookmark', 'reorderPages', 'showToast', 'setDocDirty',
     'incrementDocVersion', 'viewerScroll', 'updateDocPageCount', 'goToSearchResult',
     'deleteAnnotation', 'invalidatePageCache', 'invalidateThumbnails', 'selectAnnotation',
-    'setActiveDoc',
+    'setActiveDoc', 'setOutline',
   )
-  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult, setActiveDoc } = store
+  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult, setActiveDoc, setOutline } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const { askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -416,6 +416,24 @@ export default function ThumbnailPanel() {
       )}
       {tab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-2">
+          <button
+            onClick={async () => {
+              const title = `Página ${activeDoc.currentPage + 1}`
+              const next = [...activeDoc.outline, { title, page: activeDoc.currentPage }]
+              const res = await apiFetch(`/pdf/outline/${activeDoc.doc_id}`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(next),
+              })
+              if (res.ok) {
+                setOutline(activeDoc.doc_id, next)
+                setDocDirty(activeDoc.doc_id, true)
+                showToast('Entrada añadida al índice del PDF', 'success')
+              } else showToast('No se pudo escribir el índice', 'error')
+            }}
+            className="w-full mb-2 px-2 py-1 rounded text-mini border border-border text-muted hover:text-fg hover:bg-hover"
+          >
+            Añadir página actual al índice
+          </button>
           {activeDoc.outline.length > 0 ? (
             <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} />
           ) : (

@@ -31,6 +31,18 @@ class TestNotFound:
         client.post(f"/pdf/close/{doc_id}")
 
 
+class TestOpenValidation:
+    def test_open_rejects_non_pdf(self, client, tmp_path):
+        bad = tmp_path / "notas.txt"
+        bad.write_text("hola")
+        resp = client.post("/pdf/open", json={"file_path": str(bad)})
+        assert resp.status_code == 422
+
+    def test_open_rejects_missing_file(self, client):
+        resp = client.post("/pdf/open", json={"file_path": "C:/no/existe.pdf"})
+        assert resp.status_code == 422
+
+
 class TestPathValidation:
     def test_merge_with_missing_source_is_422(self, client, open_doc):
         info = open_doc()

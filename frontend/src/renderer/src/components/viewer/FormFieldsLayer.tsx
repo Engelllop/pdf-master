@@ -47,12 +47,25 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
           height: field.rect.height * sy,
         }
         const isCheckbox = field.field_type.toLowerCase().includes('check')
+        const isRadio = field.field_type.toLowerCase().includes('radio')
         const isSelect = field.field_type.toLowerCase().includes('combo') || field.field_type.toLowerCase().includes('list')
         if (isCheckbox) {
           return (
             <input key={field.field_name} type="checkbox"
               checked={field.value === 'Yes' || field.value === 'On'}
               onChange={(e) => onChange(field.field_name, e.target.checked ? 'Yes' : 'Off')}
+              className="accent-[rgb(var(--info))]"
+              style={style}
+              title={field.field_name}
+            />
+          )
+        }
+        if (isRadio) {
+          const checked = field.value === 'Yes' || field.value === 'On' || field.value === field.field_name
+          return (
+            <input key={field.field_name} type="radio" name={field.field_name.split('.').slice(0, -1).join('.') || field.field_name}
+              checked={checked}
+              onChange={() => onChange(field.field_name, field.options[0] || 'Yes')}
               className="accent-[rgb(var(--info))]"
               style={style}
               title={field.field_name}

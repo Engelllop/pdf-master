@@ -77,7 +77,21 @@ async def lifespan(app: FastAPI):
     _write_breadcrumb("")
 
 
-app = FastAPI(title="PDF Master Engine", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="PDF Master Engine", version="1.14.0", lifespan=lifespan)
+
+# Electron genera un token al spawnear el motor. Si no hay token (pytest / python
+# main.py a mano) la API sigue abierta en loopback — no romper tests ni el script
+# de desarrollo. Con token, cualquier otro proceso local no puede leer PDFs.
+_API_TOKEN = os.environ.get("PDFMASTER_API_TOKEN", "")
+
+
+@app.middleware("http")
+async def require_local_token(request: Request, call_next):
+    if not _API_TOKEN or request.url.path.endswith("/health"):
+        return await call_next(request)
+    if request.headers.get("x-pdfmaster-token") != _API_TOKEN:
+        return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+    return await call_next(request)
 
 # Solo el renderer de Electron: file:// manda Origin "null" en producción y
 # http://localhost:<puerto> en dev (electron-vite). Antes era allow_origins=["*"].

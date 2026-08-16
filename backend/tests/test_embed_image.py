@@ -40,9 +40,8 @@ class TestEmbedImage:
             assert abs(r.x0 - 50) < 2 and abs(r.y0 - 60) < 2
             assert abs(r.width - 120) < 2 and abs(r.height - 90) < 2
 
-    def test_la_rotacion_libre_se_redondea_a_multiplos_de_90(self, client, open_doc):
-        """insert_image solo rota en multiplos de 90; la app permite cualquier
-        angulo. Redondear es la degradacion conocida — pero no debe fallar."""
+    def test_la_rotacion_libre_no_tumba_el_embed(self, client, open_doc):
+        """Ángulos arbitrarios se rasterizan con Pillow; 90° usa rotate nativo."""
         info = open_doc(pages=1)
         for rotation in (0, 37, 80, 135, 200, 359):
             resp = self._embed(client, info["doc_id"], rotation=rotation)

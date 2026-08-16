@@ -69,15 +69,73 @@ class AnnotationsMixin:
         if not info:
             return []
         path = self._get_annotations_path(info.file_path)
-        if not os.path.exists(path):
+        if os.path.exists(path):
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                anns = [Annotation(**ann) for ann in data.get('annotations', [])]
+                if anns:
+                    return anns
+            except Exception:
+                logger.exception("Sidecar de anotaciones corrupto: %s", path)
+        return self.import_native_annotations(doc_id)
+
+    def import_native_annotations(self, doc_id: str) -> List[Annotation]:
+        """Lee anotaciones ya embebidas (Bluebeam/Acrobat) al abrir un PDF sin sidecar."""
+        doc = self._acquire(doc_id)
+        if not doc:
             return []
-        try:
-            with open(path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            return [Annotation(**ann) for ann in data.get('annotations', [])]
-        except Exception:
-            logger.exception("Sidecar de anotaciones corrupto: %s", path)
-            return []
+        out: List[Annotation] = []
+        type_map = {
+            'Highlight': 'highlight', 'Underline': 'underline', 'StrikeOut': 'strikethrough',
+            'Text': 'note', 'FreeText': 'text', 'Square': 'rect', 'Circle': 'circle',
+            'Line': 'line', 'Ink': 'draw', 'PolyLine': 'draw', 'Polygon': 'polygon',
+            'Stamp': 'stamp',
+        }
+        for i in range(len(doc)):
+            page = doc.load_page(i)
+            annots = page.annots()
+            if not annots:
+                continue
+            for a in annots:
+                try:
+                    raw = a.type[1] if a.type else ''
+                    mapped = type_map.get(raw)
+                    if not mapped:
+                        continue
+                    r = a.rect
+                    color = None
+                    try:
+                        sc = (a.colors or {}).get('stroke')
+                        if sc and len(sc) >= 3:
+                            color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
+                    except Exception:
+                        pass
+                    text = None
+                    try:
+                        text = (a.info or {}).get('content') or None
+                    except Exception:
+                        pass
+                    points = None
+                    if mapped in ('draw', 'polygon', 'line') and getattr(a, 'vertices', None):
+                        verts = a.vertices
+                        points = []
+                        if verts and isinstance(verts[0], (int, float)):
+                            for j in range(0, len(verts) - 1, 2):
+                                points.append({'x': float(verts[j]), 'y': float(verts[j + 1])})
+                        else:
+                            for pt in verts:
+                                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                                    points.append({'x': float(pt[0]), 'y': float(pt[1])})
+                    out.append(Annotation(
+                        id=str(uuid.uuid4()), type=mapped, page=i,
+                        x=float(r.x0), y=float(r.y0),
+                        width=float(r.width), height=float(r.height),
+                        color=color, text=text, points=points or None,
+                    ))
+                except Exception:
+                    logger.exception("No se pudo importar una anotación nativa (pág %s)", i)
+        return out
 
     def save_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
         info = self._infos.get(doc_id)
@@ -322,17 +380,23 @@ class AnnotationsMixin:
                     annot.set_colors(stroke=color)
                     annot.update()
             elif ann.type == 'image':
-                # imageData es un data-URL base64; insert_image solo rota en
-                # múltiplos de 90° → se redondea la rotación libre de la app.
                 if ann.imageData and ',' in ann.imageData:
                     try:
                         img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
                         rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
-                        rotate = int(round((ann.rotation or 0) / 90.0) * 90) % 360
-                        # keep_proportion=False: la app dibuja la imagen estirada al
-                        # rectángulo de la marca, y por defecto insert_image la
-                        # encajaría centrada respetando su proporción — el PDF salía
-                        # con la imagen en otro sitio y más pequeña que en pantalla.
+                        angle = float(ann.rotation or 0)
+                        rotate = 0
+                        if abs(angle) > 0.5:
+                            if abs(angle % 90) < 0.5:
+                                rotate = int(round(angle / 90.0) * 90) % 360
+                            else:
+                                from io import BytesIO
+                                from PIL import Image
+                                im = Image.open(BytesIO(img_bytes)).convert('RGBA')
+                                im = im.rotate(-angle, expand=True, resample=Image.Resampling.BICUBIC)
+                                buf = BytesIO()
+                                im.save(buf, format='PNG')
+                                img_bytes = buf.getvalue()
                         page.insert_image(rect, stream=img_bytes, rotate=rotate, keep_proportion=False)
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)

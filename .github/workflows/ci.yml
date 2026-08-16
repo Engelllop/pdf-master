@@ -47,6 +47,10 @@ jobs:
         working-directory: frontend
       - run: npm test
         working-directory: frontend
+      - name: Lint (warnings allowed)
+        continue-on-error: true
+        run: npx eslint . --ext .js,.jsx,.ts,.tsx --max-warnings 200
+        working-directory: frontend
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'

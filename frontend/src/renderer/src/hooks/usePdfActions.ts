@@ -95,8 +95,17 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!activeDoc) return
     try {
       const avail = await (await apiFetch(`/pdf/ocr-available`)).json()
-      if (!avail.available) { showToast('Tesseract OCR no está instalado en el sistema', 'error'); return }
-      const res = await withProgress('Haciendo la página buscable (OCR)…', () => apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}?page=${activeDoc.currentPage}`, { method: 'POST' }))
+      if (!avail.available) {
+        showToast('Tesseract OCR no está instalado. Instalá tesseract-ocr y reiniciá la app.', 'error')
+        return
+      }
+      const v = await askForm('Hacer buscable (OCR)', [
+        { name: 'scope', label: 'Alcance', type: 'select', options: ['Página actual', 'Todo el documento'], defaultValue: 'Página actual' },
+      ], 'Aplicar')
+      if (!v) return
+      const all = String(v.scope).includes('documento')
+      const qs = all ? '' : `?page=${activeDoc.currentPage}`
+      const res = await withProgress(all ? 'OCR de todo el documento…' : 'Haciendo la página buscable (OCR)…', () => apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}${qs}`, { method: 'POST' }))
       if (res.ok) {
         const d = await res.json()
         setDocDirty(activeDoc.doc_id, true)
@@ -558,7 +567,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
           setDocDirty(activeDoc.doc_id, true)
           invalidatePageCache(activeDoc.doc_id)
           invalidateThumbnails(activeDoc.doc_id)
-          showToast('Página eliminada', 'success')
+          showToast('Página eliminada. Ctrl+Z no deshace páginas; usá la copia .bak si la tenés activa.', 'info')
         }
       }
     } catch (err) {

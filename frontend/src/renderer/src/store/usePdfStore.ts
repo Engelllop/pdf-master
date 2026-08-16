@@ -77,6 +77,8 @@ export interface Annotation {
   modifiedAt?: number
   status?: AnnotationStatus
   replies?: Reply[]
+  /** Capa de markup (estilo Bluebeam). Default "Marcas". */
+  layer?: string
 }
 
 export interface TextStyle {
@@ -487,7 +489,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   defaultZoomMode: loadPref(PREF_KEYS.zoomMode, ['fit-page', 'fit-width', 'actual'] as const, 'fit-page'),
   defaultUnit: loadPref(PREF_KEYS.unit, ['m', 'cm', 'mm', 'ft', 'in'] as const, 'mm'),
   restoreSession: (() => { try { return localStorage.getItem(PREF_KEYS.restore) !== '0' } catch { return true } })(),
-  backupOnSave: (() => { try { return localStorage.getItem(PREF_KEYS.backup) === '1' } catch { return false } })(),
+  backupOnSave: (() => { try { return localStorage.getItem(PREF_KEYS.backup) !== '0' } catch { return true } })(),
   readingMode: false,
   presentationMode: false,
   continuousMode: false,
@@ -790,6 +792,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       const stamped: Annotation = {
         ...ann,
         ...(author ? { author } : {}),
+        layer: ann.layer || 'Marcas',
         createdAt: ann.createdAt ?? Date.now(),
       }
       const after = [...before, stamped]

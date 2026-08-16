@@ -6,6 +6,20 @@ export const API_BASE = 'http://localhost:8745'
 
 export const apiUrl = (path: string) => `${API_BASE}${path}`
 
+let apiToken: string | null = null
+async function tokenHeader(): Promise<Record<string, string>> {
+  if (apiToken === null) {
+    try {
+      apiToken = (typeof window !== 'undefined' && window.api?.getApiToken)
+        ? await window.api.getApiToken()
+        : ''
+    } catch {
+      apiToken = ''
+    }
+  }
+  return apiToken ? { 'X-Pdfmaster-Token': apiToken } : {}
+}
+
 /** Reabre un doc_id muerto y devuelve el nuevo. Lo inyecta `openDocument.ts` para
  * no crear un ciclo de imports (openDocument ya usa apiFetch). */
 type Reopener = (docId: string) => Promise<string | null>
@@ -21,12 +35,14 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
  * conservando su estado y se reintenta la llamada una sola vez con el id nuevo.
  */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(apiUrl(path), init)
+  const auth = await tokenHeader()
+  const headers = { ...(init?.headers as Record<string, string> | undefined), ...auth }
+  const res = await fetch(apiUrl(path), { ...init, headers })
   if (res.status !== 404 || !reopener || path.startsWith('/pdf/open')) return res
 
   const docId = path.match(UUID_RE)?.[0]
   if (!docId) return res
   const newId = await reopener(docId)
   if (!newId || newId === docId) return res
-  return fetch(apiUrl(path.replace(docId, newId)), init)
+  return fetch(apiUrl(path.replace(docId, newId)), { ...init, headers })
 }

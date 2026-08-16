@@ -129,11 +129,13 @@ class EditMixin:
             for rect in rects:
                 page.add_redact_annot(rect)
             page.apply_redactions()
-            # Insert new text at first rect position with default styling
             if rects:
-                # Estimate font size from rect height
-                est_fontsize = max(8, min(72, int(rects[0].height * 0.8)))
-                page.insert_text(rects[0].tl, replace, fontsize=est_fontsize, color=(0, 0, 0), overlay=True)
+                size, fontname, rgb = self._style_at(page, rects[0])
+                font = self._base14_font(fontname)
+                page.insert_text(
+                    rects[0].tl, replace, fontsize=size, color=rgb,
+                    fontname=font, overlay=True,
+                )
                 count += len(rects)
             if not replace_all:
                 break
@@ -158,6 +160,29 @@ class EditMixin:
         doc.set_metadata(meta)
         self._dirty[doc_id] = True
         return True
+
+    @staticmethod
+    def _style_at(page, rect):
+        """Fuente/tamaño/color del span que intersecta el rect (para replace)."""
+        size = max(8, min(72, int(rect.height * 0.8)))
+        fontname = None
+        rgb = (0.0, 0.0, 0.0)
+        try:
+            for block in page.get_text("dict").get("blocks", []):
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        sr = fitz.Rect(span.get("bbox", rect))
+                        if not sr.intersects(rect):
+                            continue
+                        size = float(span.get("size") or size)
+                        fontname = span.get("font")
+                        c = span.get("color", 0)
+                        if isinstance(c, int):
+                            rgb = ((c >> 16) / 255.0, ((c >> 8) & 255) / 255.0, (c & 255) / 255.0)
+                        return size, fontname, rgb
+        except Exception:
+            pass
+        return size, fontname, rgb
 
     @staticmethod
     def _base14_font(font: Optional[str]) -> str:

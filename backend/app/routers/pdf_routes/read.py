@@ -13,6 +13,12 @@ router = APIRouter()
 def get_outline(doc_id: str):
     return pdf_service.get_outline(doc_id)
 
+@router.post("/outline/{doc_id}")
+def set_outline(doc_id: str, items: List[dict]):
+    if not pdf_service.set_outline(doc_id, items):
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": "ok"}
+
 @router.get("/search/{doc_id}")
 def search_pdf(doc_id: str, query: str = Query(..., min_length=1), limit: int = Query(500, ge=1, le=5000)):
     return pdf_service.search_text(doc_id, query, limit)

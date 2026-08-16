@@ -86,6 +86,7 @@ class Annotation(BaseModel):
     modifiedAt: Optional[float] = None
     status: Optional[str] = None
     replies: Optional[List[Reply]] = None
+    layer: Optional[str] = None
 
 class AnnotationList(BaseModel):
     annotations: List[Annotation]

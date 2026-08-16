@@ -168,6 +168,9 @@ export default function ContinuousView() {
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto bg-surface">
+      <div className="sticky top-0 z-10 mx-auto max-w-xl mt-2 mb-1 px-3 py-1.5 rounded border border-border bg-panel text-mini text-muted text-center">
+        Vista continua: solo lectura. Volvé a página única para marcar.
+      </div>
       <div style={{ width: Math.max(maxWidth, 0), minWidth: '100%' }}>
         <div style={{ height: topSpacer }} />
         <div className="flex flex-col items-center" style={{ gap: GAP }}>

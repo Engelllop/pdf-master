@@ -129,11 +129,12 @@ function tintPage(img: HTMLImageElement, w: number, h: number, color: string): H
 }
 
 function CompareOverlayPanel({
-  docA, versionA, pageA, docB, versionB, pageB, zoom,
+  docA, versionA, pageA, docB, versionB, pageB, zoom, mix = 0.5,
 }: {
   docA: string; versionA: number; pageA: number
   docB: string; versionB: number; pageB: number
   zoom: number
+  mix?: number
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -175,8 +176,10 @@ function CompareOverlayPanel({
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, w, h)
         ctx.drawImage(tintedA, 0, 0)
+        ctx.globalAlpha = mix
         ctx.globalCompositeOperation = 'multiply'
         ctx.drawImage(tintedB, 0, 0)
+        ctx.globalAlpha = 1
         setDims({ w, h })
       } finally {
         revokePageUrl(a.url)
@@ -185,7 +188,7 @@ function CompareOverlayPanel({
       }
     })().catch(() => { if (!cancelled) { setError(true); setLoading(false) } })
     return () => { cancelled = true }
-  }, [docA, versionA, pageA, docB, versionB, pageB])
+  }, [docA, versionA, pageA, docB, versionB, pageB, mix])
 
   // Mismo criterio que los paneles lado a lado: zoom 1 = la lámina cabe entera
   const fit = dims && avail.w > 0
@@ -229,6 +232,7 @@ export default function ComparisonView() {
   const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
   const [diffLoading, setDiffLoading] = useState(false)
   const [overlayMode, setOverlayMode] = useState(false)
+  const [overlayMix, setOverlayMix] = useState(0.5)
 
   const leftScrollRef = useRef<HTMLDivElement>(null)
   const rightScrollRef = useRef<HTMLDivElement>(null)
@@ -365,6 +369,12 @@ export default function ComparisonView() {
           <span className={`text-mini flex items-center gap-2 ml-1 text-muted`}>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#ff2222' }} />{activeDoc.file_name}</span>
             <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#2244ff' }} />{compareDoc.file_name}</span>
+            <label className="flex items-center gap-1" title="Opacidad del overlay">
+              Mezcla
+              <input type="range" min={0} max={100} value={Math.round(overlayMix * 100)}
+                onChange={(e) => setOverlayMix(Number(e.target.value) / 100)}
+                className="w-20" />
+            </label>
           </span>
         )}
 
@@ -405,7 +415,7 @@ export default function ComparisonView() {
         <CompareOverlayPanel
           docA={activeDoc.doc_id} versionA={activeDoc.docVersion} pageA={leftPage}
           docB={compareDoc.doc_id} versionB={compareDoc.docVersion} pageB={rightPage}
-          zoom={zoom}
+          zoom={zoom} mix={overlayMix}
         />
       ) : (
         <div className="flex-1 flex overflow-hidden">

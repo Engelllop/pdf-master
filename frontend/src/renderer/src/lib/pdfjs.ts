@@ -32,7 +32,7 @@ export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib
   const entry = { task: null as unknown as pdfjsLib.PDFDocumentLoadingTask, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy> }
   entry.promise = (async () => {
     const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
-    if (!res.ok) throw new Error(`raw ${res.status}`)
+    if (!res.ok) throw new Error(`404 raw ${res.status}`)
     const data = await res.arrayBuffer()
     entry.task = pdfjsLib.getDocument({ data })
     return entry.task.promise

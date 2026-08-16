@@ -26,6 +26,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
   const [authorFilter, setAuthorFilter] = useState('all')
   const [status, setStatus] = useState<StatusFilter>('all')
   const [onlyThisPage, setOnlyThisPage] = useState(false)
+  const [layerFilter, setLayerFilter] = useState('all')
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [expanded, setExpanded] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
@@ -36,6 +37,10 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
     () => [...new Set(anns.map((a) => a.author).filter((a): a is string => !!a))].sort(),
     [anns],
   )
+  const layers = useMemo(
+    () => [...new Set(anns.map((a) => a.layer || 'Marcas'))].sort(),
+    [anns],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -43,16 +48,17 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
       if (onlyThisPage && a.page !== activeDoc.currentPage) return false
       if (typeFilter !== 'all' && a.type !== typeFilter) return false
       if (authorFilter !== 'all' && (a.author || '') !== authorFilter) return false
+      if (layerFilter !== 'all' && (a.layer || 'Marcas') !== layerFilter) return false
       if (status === 'open' && a.status === 'resolved') return false
       if (status === 'resolved' && a.status !== 'resolved') return false
       if (!q) return true
       const haystack = [
-        a.text || '', annotationLabel(a.type), a.author || '', a.measurement?.label || '',
+        a.text || '', annotationLabel(a.type), a.author || '', a.layer || '', a.measurement?.label || '',
         ...(a.replies || []).map((r) => r.text),
       ].join(' ').toLowerCase()
       return haystack.includes(q)
     })
-  }, [anns, query, typeFilter, authorFilter, status, onlyThisPage, activeDoc.currentPage])
+  }, [anns, query, typeFilter, authorFilter, layerFilter, status, onlyThisPage, activeDoc.currentPage])
 
   const byPage = useMemo(() => {
     const map = new Map<number, Annotation[]>()
@@ -106,6 +112,12 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
             <select value={authorFilter} onChange={(e) => setAuthorFilter(e.target.value)} className={selectCls} title="Autor">
               <option value="all">Todos</option>
               {authors.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+          {layers.length > 1 && (
+            <select value={layerFilter} onChange={(e) => setLayerFilter(e.target.value)} className={selectCls} title="Capa">
+              <option value="all">Todas las capas</option>
+              {layers.map((l) => <option key={l} value={l}>{l}</option>)}
             </select>
           )}
         </div>

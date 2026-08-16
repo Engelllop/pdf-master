@@ -5,6 +5,7 @@ import { reopenDeadDoc } from './openDocument'
 // This self-heals the "blank page / broken image" issue and logs the real cause so
 // it shows up in backend.log via the main process console forwarder.
 export async function recoverImage(img: HTMLImageElement, url: string): Promise<void> {
+  if (url.startsWith('blob:')) return
   if (img.dataset.recoveringUrl === url) return // one retry per distinct page URL
   img.dataset.recoveringUrl = url
   try {
@@ -12,7 +13,7 @@ export async function recoverImage(img: HTMLImageElement, url: string): Promise<
     if (!res.ok) {
       console.error(`PAGEIMG HTTP ${res.status} ${url}`)
       if (res.status === 404) {
-        const docId = url.match(/\/pdf\/page-image\/([0-9a-f-]+)\//)?.[1]
+        const docId = url.match(/\/pdf\/(?:page-image|raw)\/([0-9a-f-]+)/)?.[1]
         if (docId) reopenDeadDoc(docId)
       }
       return

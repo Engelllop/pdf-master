@@ -616,8 +616,8 @@ describe('preferencias de apertura', () => {
     expect(localStorage.getItem('pdfmaster_ui_scale')).toBe('0.75')
   })
 
-  it('la copia .bak está desactivada por defecto', () => {
-    expect(usePdfStore.getState().backupOnSave).toBe(false)
+  it('la copia .bak está activada por defecto', () => {
+    expect(usePdfStore.getState().backupOnSave).toBe(true)
   })
 })
 

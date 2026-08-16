@@ -132,8 +132,22 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
       <Header onClose={onClose} onKey={() => { setKeyInput(''); setEditingKey(true) }} />
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
-          <div className="text-mini text-muted text-center mt-6 px-4">
-            {emptyHint(activeDoc?.file_name)}
+          <div className="text-mini text-muted text-center mt-6 px-4 space-y-3">
+            <p>{emptyHint(activeDoc?.file_name)}</p>
+            {activeDoc && (
+              <div className="flex flex-col gap-1.5">
+                {[
+                  ['Resumí las marcas de este PDF: tipo, página y texto.', 'Resumir marcas'],
+                  ['Listá los pendientes abiertos (marcas no resueltas) por página.', 'Pendientes'],
+                  ['Extraé tablas o cómputos que veas en el documento, en formato lista.', 'Extraer tablas'],
+                ].map(([prompt, label]) => (
+                  <button key={label} onClick={() => send(prompt)}
+                    className="px-2 py-1 rounded border border-border text-mini text-fg hover:bg-hover">
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
         {messages.map((m, i) => (

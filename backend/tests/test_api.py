@@ -14,9 +14,9 @@ class TestOpenAndRender:
         assert len(info["page_sizes"]) == 3
         assert info["page_sizes"][0]["width"] == 595
 
-    def test_open_missing_file_is_400(self, client):
+    def test_open_missing_file_is_422(self, client):
         resp = client.post("/pdf/open", json={"file_path": "C:/no/existe.pdf"})
-        assert resp.status_code == 400
+        assert resp.status_code == 422
 
     def test_protected_pdf_needs_password(self, client, tmp_path):
         import fitz

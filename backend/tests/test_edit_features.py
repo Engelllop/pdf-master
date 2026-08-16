@@ -124,3 +124,28 @@ class TestRedact:
             "page_num": 0, "x": 0, "y": 0, "width": 10, "height": 10,
         })
         assert resp.status_code == 404
+
+
+class TestNativeAnnotsAndOutline:
+    def test_open_imports_highlight_without_sidecar(self, client, tmp_path):
+        path = str(tmp_path / "marcado.pdf")
+        doc = fitz.open()
+        page = doc.new_page()
+        page.add_highlight_annot(fitz.Rect(50, 50, 200, 70))
+        doc.save(path)
+        doc.close()
+        info = client.post("/pdf/open", json={"file_path": path}).json()
+        anns = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"]
+        assert any(a["type"] == "highlight" for a in anns)
+        client.post(f"/pdf/close/{info['doc_id']}")
+
+    def test_set_outline_roundtrip(self, client, open_doc):
+        info = open_doc(pages=3)
+        resp = client.post(f"/pdf/outline/{info['doc_id']}", json=[
+            {"title": "Portada", "page": 0},
+            {"title": "Detalle", "page": 2},
+        ])
+        assert resp.status_code == 200
+        toc = client.get(f"/pdf/outline/{info['doc_id']}").json()
+        titles = [i["title"] for i in toc]
+        assert "Portada" in titles and "Detalle" in titles

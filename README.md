@@ -4,11 +4,11 @@ Editor profesional de PDFs inspirado en Bluebeam Revu, UPDF y PDFelement.
 
 ## Documentación
 
-- **`DOCUMENTATION.md`** — documentación técnica completa (arquitectura, API, decisiones; el Addendum §11 cubre v1.2.x–v1.3.1 y prevalece sobre secciones antiguas).
-- **`CHANGELOG_SESSION.md`** — registro de cambios por sesión de desarrollo.
+- **`DOCUMENTATION.md`** — spec actual (v1.14.0): arquitectura, API, contratos.
+- **`CHANGELOG_SESSION.md`** — registro por sesión.
 - Tests del backend: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q` (obligatorio tras tocar Python).
 
-> **Regla de producto:** la app **nunca** escribe a disco sin acción explícita del usuario (no hay autoguardado; hay alertas de cambios sin guardar). Ver `DOCUMENTATION.md` §11.1.
+> **Regla de producto:** la app **nunca** escribe a disco sin acción explícita del usuario (no hay autoguardado; hay alertas de cambios sin guardar). Ver `DOCUMENTATION.md`.
 
 ## Arquitectura
 
@@ -74,4 +74,4 @@ npm run build:win      # Crear installer NSIS
 
 ---
 
-*Memoria del proyecto, roadmap y decisiones técnicas viven en `Documents/AURA/projects/pdf-master.md`*
+*Memoria y decisiones: este repo (`DOCUMENTATION.md` + `CHANGELOG_SESSION.md`). Canónico: `C:\dev\pdf-master`.*
