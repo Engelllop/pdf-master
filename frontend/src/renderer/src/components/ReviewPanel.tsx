@@ -170,7 +170,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                             <span className={`text-micro font-medium ${isResolved ? 'line-through text-muted' : 'text-fg'}`}>
                               {annotationLabel(ann.type)}
                             </span>
-                            {ann.measurement && <span className="text-micro text-accent tabular-nums">{ann.measurement.label}</span>}
+                            {ann.measurement && <span className="text-micro text-fg tabular-nums">{ann.measurement.label}</span>}
                           </div>
                           {ann.text && <div className="text-micro text-muted truncate mt-0.5">{ann.text}</div>}
                           <div className="text-micro text-muted mt-0.5 truncate"
@@ -182,7 +182,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button onClick={() => setExpanded(isOpen ? null : ann.id)}
                             title={replies.length ? `${replies.length} respuesta(s)` : 'Responder'}
-                            className={`p-1 rounded transition-colors ${replies.length ? 'text-accent' : 'text-muted'} hover:bg-hover`}>
+                            className={`p-1 rounded transition-colors ${replies.length ? 'text-fg' : 'text-muted'} hover:bg-hover`}>
                             <MessageSquare size={12} />
                             {replies.length > 0 && <span className="text-micro ml-0.5 tabular-nums">{replies.length}</span>}
                           </button>
@@ -220,7 +220,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                               placeholder={annotationAuthor ? `Responder como ${annotationAuthor}…` : 'Responder…'}
                               className="flex-1 min-w-0 border border-border rounded px-1.5 py-1 text-micro bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
                             <button onClick={() => sendReply(ann.id)} disabled={!replyText.trim()} aria-label="Enviar respuesta"
-                              className="p-1 rounded text-accent disabled:opacity-30 hover:bg-hover transition-colors">
+                              className="p-1 rounded text-fg disabled:opacity-30 hover:bg-hover transition-colors">
                               <Send size={12} />
                             </button>
                           </div>

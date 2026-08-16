@@ -141,7 +141,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
                   onBlur={(e) => { renameSignature(sig.id, e.target.value.trim() || sig.name); setSignatures(loadSignatures()) }}
                   className="flex-1 min-w-0 bg-transparent text-mini text-fg focus:outline-none focus:border-b focus:border-accent" />
                 <button onClick={() => useSignature(sig)} title="Colocar en el documento"
-                  className="p-1 rounded text-muted hover:text-accent hover:bg-hover transition-colors"><Check size={14} /></button>
+                  className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><Check size={14} /></button>
                 <button onClick={() => { removeSignature(sig.id); setSignatures(loadSignatures()) }} aria-label="Eliminar firma"
                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted hover:text-danger transition-opacity">
                   <Trash2 size={12} />

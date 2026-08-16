@@ -4,6 +4,18 @@ import { type PdfDoc, type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { countNumbers } from '../lib/counts'
 
+function inkOnTint(hex: string): 'text-black' | 'text-white' {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const n = parseInt(full.slice(0, 6), 16)
+  if (Number.isNaN(n)) return 'text-black'
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
+  return L > 0.55 ? 'text-black' : 'text-white'
+}
+
 /** Inventario de las marcas de conteo: totales por categoría, dónde está cada una
  * y un comentario por marca. Contar sin poder revisar después el listado obligaba
  * a ir página por página buscando los puntos. */
@@ -76,13 +88,13 @@ export default function CountPanel({ activeDoc }: { activeDoc: PdfDoc }) {
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
               <button onClick={() => setCountCategory(cat)} title="Seguir contando en esta categoría"
                 className="flex-1 text-left text-mini text-fg truncate">{cat}</button>
-              <span className="text-mini font-semibold text-accent tabular-nums shrink-0">{list.length}</span>
+              <span className="text-mini font-semibold text-fg tabular-nums shrink-0">{list.length}</span>
             </div>
             {isOpen && list.map((a) => (
               <div key={a.id} className="pl-8 pr-2 py-1 hover:bg-hover group">
                 <div className="flex items-center gap-2">
                   <button onClick={() => goTo(a)} className="flex-1 flex items-center gap-2 text-left min-w-0">
-                    <span className="w-5 h-5 rounded-full text-micro flex items-center justify-center shrink-0 tabular-nums text-black"
+                    <span className={`w-5 h-5 rounded-full text-micro flex items-center justify-center shrink-0 tabular-nums ${inkOnTint(a.color || '#fbbf24')}`}
                       style={{ background: a.color || '#fbbf24' }}>{numbers.get(a.id)}</span>
                     <span className="text-micro text-muted shrink-0">Pág. {a.page + 1}</span>
                     <span className="text-micro text-fg truncate">{comment(a)}</span>

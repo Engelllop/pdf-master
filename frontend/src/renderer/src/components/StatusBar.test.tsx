@@ -77,4 +77,14 @@ describe('chrome de zoom', () => {
     expect(current.className).toMatch(/text-toolbar/)
     expect(current.className).not.toMatch(/text-accent/)
   })
+
+  it('en Comparar no muestra el zoom del documento oculto', () => {
+    openDoc()
+    usePdfStore.setState({ compareMode: true })
+    render(<StatusBar />)
+    expect(screen.getByLabelText('Página actual')).toBeTruthy()
+    expect(screen.queryByLabelText('Alejar')).toBeNull()
+    expect(screen.queryByLabelText('Nivel de zoom')).toBeNull()
+    expect(screen.queryByLabelText('Scroll continuo')).toBeNull()
+  })
 })

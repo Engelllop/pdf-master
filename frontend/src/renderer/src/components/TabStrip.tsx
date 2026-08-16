@@ -85,7 +85,7 @@ export default function TabStrip() {
               }`}>
               {loadingDocId === doc.doc_id
                 ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
-                : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : doc.doc_id === activeDocId ? 'text-accent' : 'text-muted'}`} />}
+                : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : doc.doc_id === activeDocId ? 'text-fg' : 'text-muted'}`} />}
               <span className="truncate flex-1">{doc.file_name}</span>
               {doc.dirty && (
                 <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning dark:bg-warning" title="Cambios sin guardar" role="img" aria-label="Sin guardar" />
@@ -119,7 +119,7 @@ export default function TabStrip() {
         <div className="app-no-drag relative h-full flex items-center">
           <Tooltip content="Ir a pestaña…">
             <button onClick={() => setTabListOpen((o) => !o)} aria-label="Lista de pestañas"
-              className={`p-2 h-full transition-colors ${tabListOpen ? 'text-accent' : 'text-muted'} hover:bg-hover`}>
+              className={`p-2 h-full transition-colors ${tabListOpen ? 'bg-accent text-toolbar' : 'text-muted'} hover:bg-hover`}>
               <ChevronsUpDown size={16} />
             </button>
           </Tooltip>
@@ -136,7 +136,7 @@ export default function TabStrip() {
                       ? <Loader2 size={13} className="animate-spin text-accent shrink-0" />
                       : <FileText size={13} className={`shrink-0 ${doc.dirty ? 'text-warning' : 'text-muted'}`} />}
                     <span className="truncate flex-1">{doc.file_name}</span>
-                    {doc.doc_id === activeDocId && <span className="text-micro text-accent shrink-0">activo</span>}
+                    {doc.doc_id === activeDocId && <span className="text-micro text-fg shrink-0">activo</span>}
                   </button>
                 ))}
               </div>

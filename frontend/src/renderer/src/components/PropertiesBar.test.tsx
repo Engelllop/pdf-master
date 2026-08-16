@@ -53,31 +53,14 @@ describe('edición de defaults (sin anotación seleccionada)', () => {
 })
 
 describe('edición de la anotación seleccionada', () => {
-  it('no duplica color ni grosor: eso vive en la barra flotante', () => {
+  it('no muestra inspector: la marca se edita en la barra flotante', () => {
     openDoc()
     const docId = 'doc-1'
     usePdfStore.getState().addAnnotation(docId, {
       id: 'a1', type: 'rect', page: 0, x: 10, y: 10, width: 100, height: 50, lineWidth: 2,
     })
     usePdfStore.getState().selectAnnotation(docId, 'a1')
-    render(<PropertiesBar />)
-    expect(screen.queryByText('Color')).toBeNull()
-    expect(screen.queryByText('Grosor')).toBeNull()
-    expect(screen.getByText('Relleno')).toBeTruthy()
-  })
-
-  it('cambiar el relleno aplica a la anotación, no al default', () => {
-    openDoc()
-    const docId = 'doc-1'
-    usePdfStore.getState().addAnnotation(docId, {
-      id: 'a1', type: 'rect', page: 0, x: 10, y: 10, width: 100, height: 50, lineWidth: 2,
-    })
-    usePdfStore.getState().selectAnnotation(docId, 'a1')
-    const defaultFillBefore = usePdfStore.getState().annotationFillColor
-    render(<PropertiesBar />)
-    fireEvent.click(screen.getByRole('button', { name: /sin relleno/i }))
-    const ann = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'a1')
-    expect(ann?.fillColor).toBeTruthy()
-    expect(usePdfStore.getState().annotationFillColor).toBe(defaultFillBefore)
+    const { container } = render(<PropertiesBar />)
+    expect(container.firstChild).toBeNull()
   })
 })

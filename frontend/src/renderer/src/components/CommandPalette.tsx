@@ -64,14 +64,14 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
             <button key={cmd.id} data-active={i === index}
               onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
               className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
-                i === index ? 'bg-hover' : ''
+                i === index ? 'bg-accent text-toolbar' : ''
               }`}>
-              <span className="text-micro uppercase tracking-wider text-muted w-20 shrink-0 truncate">{cmd.group}</span>
-              <span className="flex-1 text-ui text-fg truncate">{cmd.label}</span>
+              <span className={`text-micro uppercase tracking-wider w-20 shrink-0 truncate ${i === index ? 'text-toolbar/70' : 'text-muted'}`}>{cmd.group}</span>
+              <span className={`flex-1 text-ui truncate ${i === index ? 'text-toolbar' : 'text-fg'}`}>{cmd.label}</span>
               {cmd.shortcut && (
-                <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted shrink-0">{cmd.shortcut}</kbd>
+                <kbd className={`px-1.5 py-0.5 rounded border text-micro shrink-0 ${i === index ? 'border-toolbar/30 text-toolbar' : 'border-border text-muted'}`}>{cmd.shortcut}</kbd>
               )}
-              {i === index && <CornerDownLeft size={12} className="text-muted shrink-0" />}
+              {i === index && <CornerDownLeft size={12} className="text-toolbar shrink-0" />}
             </button>
           ))}
         </div>

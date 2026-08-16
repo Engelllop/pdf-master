@@ -41,7 +41,7 @@ export default function TopBar() {
         <Tooltip content={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'} shortcut="Ctrl+Shift+L">
           <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
             aria-pressed={sidebarOpen}
-            className={`p-2 h-full transition-colors hover:bg-hover ${sidebarOpen ? 'text-accent' : 'text-muted'}`}>
+            className={`p-2 h-full transition-colors hover:bg-hover ${sidebarOpen ? 'bg-accent text-toolbar' : 'text-muted'}`}>
             <PanelLeft size={16} />
           </button>
         </Tooltip>

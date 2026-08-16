@@ -90,16 +90,16 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
                     <div className="w-9 h-11 shrink-0 rounded border border-border bg-white overflow-hidden flex items-center justify-center">
                       {entry.thumb
                         ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
-                        : <FileText size={15} className="text-accent" strokeWidth={1.5} />}
+                        : <FileText size={15} className="text-muted" strokeWidth={1.5} />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-ui text-fg truncate leading-tight">{name}</div>
                       <div className="text-micro text-muted truncate mt-0.5">
                         {formatWhen(entry.lastOpened)}
-                        {progress && <> · <span className="text-accent">{progress}</span></>}
+                        {progress && <> · <span className="text-fg">{progress}</span></>}
                       </div>
                     </div>
-                    {entry.pinned && <Pin size={11} className="text-accent shrink-0" />}
+                    {entry.pinned && <Pin size={11} className="text-fg shrink-0" />}
                   </button>
                 )
               })}
@@ -114,7 +114,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
               {folders.map((f) => (
                 <button key={f.dir} onClick={() => handleOpenFolder(f.dir)} title={f.dir}
                   className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-mini text-fg hover:bg-hover transition-colors">
-                  <Folder size={13} className="text-accent" />
+                  <Folder size={13} className="text-muted" />
                   <span className="truncate max-w-[180px]">{f.name}</span>
                   <span className="text-muted">{f.count}</span>
                 </button>
@@ -126,7 +126,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border">
           {CAPABILITIES.map(({ icon: Icon, title, text }) => (
             <div key={title} className="flex gap-2.5 p-2">
-              <Icon size={15} className="text-accent shrink-0 mt-0.5" strokeWidth={1.75} />
+              <Icon size={15} className="text-muted shrink-0 mt-0.5" strokeWidth={1.75} />
               <div>
                 <div className="text-mini font-medium text-fg">{title}</div>
                 <div className="text-micro text-muted leading-snug mt-0.5">{text}</div>

@@ -52,7 +52,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
         className="panel-in w-[460px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <Settings size={16} className="text-accent" />
+          <Settings size={16} className="text-muted" />
           <h2 className="text-base font-semibold flex-1">Ajustes</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>

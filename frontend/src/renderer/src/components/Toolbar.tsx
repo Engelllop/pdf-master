@@ -2,7 +2,7 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   FilePlus, Minimize2, Trash2, RotateCw, RotateCcw,
   Search, AlignVerticalJustifyCenter,
-  X, ChevronDown, ChevronUp, Merge,
+  X, ChevronDown, ChevronUp, ChevronRight, Merge,
   BookOpen, Printer,
   FileDown, GitCompare, RefreshCw, Scissors, Stamp, FileText, Presentation, ScrollText,
   Volume2, VolumeX, ScanText,
@@ -18,14 +18,13 @@ import {
 import { type CountSymbol } from '../store/usePdfStore'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
 import {
-  DRAW_FAMILY_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
-  isDrawFamily, isMeasureFamily, isMoreTool,
+  DRAW_BASIC_IDS, DRAW_SHAPE_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
+  isDrawFamily, isDrawShape, isMeasureFamily, isMoreTool,
 } from '../lib/commentRibbon'
 import { registerCommands } from '../lib/commands'
 import RibbonTabs from './ribbon/RibbonTabs'
 import PrintDialog from './PrintDialog'
 import PropertiesBar from './PropertiesBar'
-import RotatePreview from './RotatePreview'
 import { useFormModal } from './FormModal'
 import { usePdfActions } from '../hooks/usePdfActions'
 import { useState, useRef, useEffect, type ReactNode } from 'react'
@@ -39,7 +38,7 @@ export default function Toolbar() {
     docs, activeDocId, setPage,
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
     showToast,
-    readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
+    readingMode, toggleReadingMode, togglePresentationMode, toggleContinuousMode,
     compareMode, activeRibbon, activeTool,
     countCategory, setCountCategory, countSymbol, setCountSymbol,
     stickyTools, setStickyTools, setActiveRibbon,
@@ -47,7 +46,7 @@ export default function Toolbar() {
     'docs', 'activeDocId', 'setPage',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
     'showToast',
-    'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
+    'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'toggleContinuousMode',
     'compareMode', 'activeRibbon', 'activeTool',
     'countCategory', 'setCountCategory', 'countSymbol', 'setCountSymbol',
     'stickyTools', 'setStickyTools', 'setActiveRibbon',
@@ -84,9 +83,9 @@ export default function Toolbar() {
   const [replaceAllPages, setReplaceAllPages] = useState(true)
   const [searchAllDocs, setSearchAllDocs] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
-  const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
   const [commentMenu, setCommentMenu] = useState<string | null>(null)
+  const [drawFormasOpen, setDrawFormasOpen] = useState(false)
   const [lastDrawTool, setLastDrawTool] = useState('draw')
   const [lastMeasureTool, setLastMeasureTool] = useState('measure_distance')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -98,7 +97,8 @@ export default function Toolbar() {
     else searchRef.current?.focus()
   }, [showSearch, showReplace])
 
-  useEffect(() => { setCommentMenu(null) }, [activeRibbon])
+  useEffect(() => { setCommentMenu(null); setDrawFormasOpen(false) }, [activeRibbon])
+  useEffect(() => { if (commentMenu !== 'draw') setDrawFormasOpen(false) }, [commentMenu])
 
   // Atajo de búsqueda (Ctrl+F) desde App.tsx
   useEffect(() => {
@@ -349,7 +349,7 @@ export default function Toolbar() {
     </Tooltip>
   )
   const Sep = () => <div className="w-px h-5 mx-1 bg-border shrink-0" />
-  const closeCommentMenu = () => setCommentMenu(null)
+  const closeCommentMenu = () => { setCommentMenu(null); setDrawFormasOpen(false) }
   const MenuItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
     <button role="menuitem" onClick={() => {
       if (isDrawFamily(id)) setLastDrawTool(id)
@@ -494,7 +494,6 @@ export default function Toolbar() {
       case 'read':
         return (
           <>
-            <TBtn icon={ScrollText} label="Continuo" tip={continuousMode ? 'Vista de página única' : 'Scroll continuo'} onClick={() => toggleContinuousMode()} active={continuousMode} disabled={compareMode} />
             <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
             <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
             <TBtn icon={GitCompare} label="Comparar" tip="Comparar PDFs" onClick={handleCompare} active={compareMode} />
@@ -552,10 +551,29 @@ export default function Toolbar() {
               active={isDrawFamily(activeTool)}
               onActivate={() => { setLastDrawTool(drawId); handleToolClick(drawId) }}
             >
-              {DRAW_FAMILY_IDS.map((id) => {
+              {DRAW_BASIC_IDS.map((id) => {
                 const t = byId(id)
                 return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
               })}
+              <div className="relative">
+                <button type="button" role="menuitem"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDrawFormasOpen((o) => !o) }}
+                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
+                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+                  }`}>
+                  <Hexagon size={14} strokeWidth={1.75} className="shrink-0" />
+                  <span className="flex-1">Formas</span>
+                  <ChevronRight size={12} />
+                </button>
+                {drawFormasOpen && (
+                  <div role="menu" className="menu-pop absolute left-full top-0 z-50 ml-1 min-w-[200px] border border-border rounded-token shadow-token py-1 bg-panel">
+                    {DRAW_SHAPE_IDS.map((id) => {
+                      const t = byId(id)
+                      return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
+                    })}
+                  </div>
+                )}
+              </div>
             </SplitTool>
             <SplitTool
               family="measure"
@@ -618,59 +636,115 @@ export default function Toolbar() {
           </>
         )
       }
-      case 'edit':
+      case 'edit': {
+        const contentOn = ['edittext', 'text', 'image', 'editimage'].includes(activeTool || '')
+        const formOn = ['formtext', 'formcheck', 'formradio', 'formcombo'].includes(activeTool || '')
+        const itemCls = (id: string) =>
+          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-accent text-toolbar' : 'text-fg'}`
         return (
           <>
-            <TBtn icon={Pencil} label="Editar texto" tip="Editar texto existente (clic sobre el texto)" onClick={() => handleToolClick('edittext')} active={activeTool === 'edittext'} />
-            <TBtn icon={Type} label="Texto" tip="Insertar texto nuevo" onClick={() => handleToolClick('text')} active={activeTool === 'text'} />
-            <TBtn icon={ImageIcon} label="Imagen" tip="Insertar imagen" onClick={() => handleToolClick('image')} active={activeTool === 'image'} />
-            <TBtn icon={Images} label="Editar imagen" tip="Editar imágenes existentes (clic para seleccionar)" onClick={() => handleToolClick('editimage')} active={activeTool === 'editimage'} />
-            <Sep />
-            <TBtn icon={TextCursorInput} label="Campo texto" tip="Dibujá un rectángulo para crear un campo de texto" onClick={() => handleToolClick('formtext')} active={activeTool === 'formtext'} />
-            <TBtn icon={CheckIcon} label="Casilla" tip="Dibujá para crear una casilla" onClick={() => handleToolClick('formcheck')} active={activeTool === 'formcheck'} />
-            <TBtn icon={CircleDot} label="Opción" tip="Dibujá para crear un botón de opción (mismo nombre = mismo grupo)" onClick={() => handleToolClick('formradio')} active={activeTool === 'formradio'} />
-            <TBtn icon={List} label="Lista" tip="Dibujá para crear una lista desplegable" onClick={() => handleToolClick('formcombo')} active={activeTool === 'formcombo'} />
-            <Sep />
-            <TBtn icon={AlignVerticalJustifyCenter} label="Encab/Pie" tip="Encabezado y pie" onClick={handleHeaderFooter} />
-            <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua" onClick={handleWatermark} />
-            <TBtn icon={FileText} label="Numerar" tip="Numerar páginas" onClick={handleAddPageNumbers} />
-            <Sep />
-            <TBtn icon={FileText} label="Metadatos" tip="Editar metadatos" onClick={handleEditMetadata} />
+            <OverflowMenu id="edit-content" icon={Type} label="Contenido" active={contentOn}>
+              <button role="menuitem" onClick={() => { handleToolClick('edittext'); closeCommentMenu() }} className={itemCls('edittext')}>
+                <Pencil size={14} /> Editar texto
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('text'); closeCommentMenu() }} className={itemCls('text')}>
+                <Type size={14} /> Texto
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('image'); closeCommentMenu() }} className={itemCls('image')}>
+                <ImageIcon size={14} /> Imagen
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('editimage'); closeCommentMenu() }} className={itemCls('editimage')}>
+                <Images size={14} /> Editar imagen
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="edit-form" icon={TextCursorInput} label="Formulario" active={formOn}>
+              <button role="menuitem" onClick={() => { handleToolClick('formtext'); closeCommentMenu() }} className={itemCls('formtext')}>
+                <TextCursorInput size={14} /> Campo de texto
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('formcheck'); closeCommentMenu() }} className={itemCls('formcheck')}>
+                <CheckIcon size={14} /> Casilla
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('formradio'); closeCommentMenu() }} className={itemCls('formradio')}>
+                <CircleDot size={14} /> Opción
+              </button>
+              <button role="menuitem" onClick={() => { handleToolClick('formcombo'); closeCommentMenu() }} className={itemCls('formcombo')}>
+                <List size={14} /> Lista
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="edit-doc" icon={FileText} label="Documento">
+              <button role="menuitem" onClick={() => { handleHeaderFooter(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <AlignVerticalJustifyCenter size={14} /> Encabezado y pie
+              </button>
+              <button role="menuitem" onClick={() => { handleWatermark(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Stamp size={14} /> Marca de agua
+              </button>
+              <button role="menuitem" onClick={() => { handleAddPageNumbers(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileText size={14} /> Numerar páginas
+              </button>
+              <button role="menuitem" onClick={() => { handleEditMetadata(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileText size={14} /> Metadatos
+              </button>
+            </OverflowMenu>
           </>
         )
+      }
       case 'page':
         return (
           <>
-            <RotatePreview degrees={-90}>
-              <TBtn icon={RotateCcw} label="Rotar izq." tip="Rotar página a la izquierda" onClick={() => handleRotate(-90)} />
-            </RotatePreview>
-            <RotatePreview degrees={90}>
-              <TBtn icon={RotateCw} label="Rotar der." tip="Rotar página a la derecha" onClick={() => handleRotate(90)} />
-            </RotatePreview>
-            <RotatePreview degrees={90} all>
-              <TBtn icon={RefreshCw} label="Rotar todo" tip="Rotar todo el documento" onClick={() => handleRotateAll(90)} />
-            </RotatePreview>
-            <Sep />
-            <TBtn icon={FilePlus} label="Insertar" tip="Insertar página en blanco" onClick={handleInsertBlank} />
-            <TBtn icon={Copy} label="Duplicar" tip="Duplicar página" onClick={handleDuplicatePage} />
-            <TBtn icon={Trash2} label="Eliminar" tip="Eliminar página" onClick={handleDeletePage} />
-            <Sep />
-            <TBtn icon={Merge} label="Combinar" tip="Combinar otro PDF" onClick={handleMerge} />
-            <div className="relative">
-              <TBtn icon={Scissors} label="Dividir" tip="Dividir / extraer páginas" onClick={() => setSplitSubmenuOpen(!splitSubmenuOpen)} active={splitSubmenuOpen} />
-              {splitSubmenuOpen && (
-                <div className="menu-pop absolute top-full left-0 z-50 mt-1 w-44 border border-border rounded-token shadow-token py-1 bg-panel">
-                  {([['even', 'Páginas pares'], ['odd', 'Páginas impares'], ['range', 'Rango personalizado...'], ['from-current', 'Desde página actual']] as const).map(([m, lbl]) => (
-                    <button key={m} onClick={() => { handleSplit(m); setSplitSubmenuOpen(false) }}
-                      className="w-full text-left px-3 py-1.5 text-mini text-fg hover:bg-hover">{lbl}</button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <TBtn icon={Crop} label="Recortar" tip="Recortar página" onClick={handleCrop} />
-            <Sep />
-            <TBtn icon={LayoutGrid} label="Organizar" tip="Organizar páginas a pantalla completa"
-              onClick={() => window.dispatchEvent(new CustomEvent('app:page-organizer'))} />
+            <OverflowMenu id="page-rotate" icon={RotateCw} label="Rotar">
+              <button role="menuitem" onClick={() => { handleRotate(-90); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <RotateCcw size={14} /> Rotar a la izquierda
+              </button>
+              <button role="menuitem" onClick={() => { handleRotate(90); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <RotateCw size={14} /> Rotar a la derecha
+              </button>
+              <button role="menuitem" onClick={() => { handleRotateAll(90); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <RefreshCw size={14} /> Rotar todo el documento
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="page-pages" icon={FilePlus} label="Páginas">
+              <button role="menuitem" onClick={() => { handleInsertBlank(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FilePlus size={14} /> Insertar en blanco
+              </button>
+              <button role="menuitem" onClick={() => { handleDuplicatePage(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Copy size={14} /> Duplicar
+              </button>
+              <button role="menuitem" onClick={() => { handleDeletePage(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Trash2 size={14} /> Eliminar
+              </button>
+              <button role="menuitem" onClick={() => { window.dispatchEvent(new CustomEvent('app:page-organizer')); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <LayoutGrid size={14} /> Organizar
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="page-extract" icon={Scissors} label="Extraer">
+              <button role="menuitem" onClick={() => { handleMerge(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Merge size={14} /> Combinar otro PDF
+              </button>
+              <div className="h-px my-1 bg-border" />
+              {([['even', 'Dividir páginas pares'], ['odd', 'Dividir páginas impares'], ['range', 'Dividir rango…'], ['from-current', 'Dividir desde la actual']] as const).map(([m, lbl]) => (
+                <button key={m} role="menuitem" onClick={() => { handleSplit(m); closeCommentMenu() }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                  <Scissors size={14} /> {lbl}
+                </button>
+              ))}
+              <div className="h-px my-1 bg-border" />
+              <button role="menuitem" onClick={() => { handleCrop(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Crop size={14} /> Recortar
+              </button>
+            </OverflowMenu>
           </>
         )
       case 'protect':

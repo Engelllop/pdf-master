@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { usePdfStore } from '../store/usePdfStore'
@@ -19,6 +19,11 @@ export default function UnsavedDialog() {
   const { docs, showToast } = useStoreSlice('docs', 'showToast')
   const [request, setRequest] = useState<Request | null>(null)
   const [saving, setSaving] = useState(false)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const requestRef = useRef(request)
+  const savingRef = useRef(saving)
+  requestRef.current = request
+  savingRef.current = saving
 
   // Cierre de la ventana completa. Los documentos sucios se leen en ese momento,
   // no en el render.
@@ -33,6 +38,21 @@ export default function UnsavedDialog() {
       setRequest({ docIds, resolve })
     }))
   }, [])
+
+  useEffect(() => {
+    if (!request) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || savingRef.current) return
+      e.preventDefault()
+      const current = requestRef.current
+      if (!current) return
+      setRequest(null)
+      setSaving(false)
+      if (current.resolve) current.resolve('cancel')
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [request])
 
   if (!request) return null
   const affected = docs.filter((d) => request.docIds.includes(d.doc_id))
@@ -70,11 +90,21 @@ export default function UnsavedDialog() {
   return (
     <div className="overlay-in fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) finish('cancel') }}>
-      <div className="panel-in w-[440px] max-w-[92vw] rounded-lg border border-border bg-panel shadow-2xl overflow-hidden">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="unsaved-title" tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key !== 'Tab') return
+          const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
+            'button:not(:disabled), [tabindex]:not([tabindex="-1"])')
+          if (!nodes || nodes.length === 0) return
+          const first = nodes[0], last = nodes[nodes.length - 1]
+          if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+          else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+        }}
+        className="panel-in w-[440px] max-w-[92vw] rounded-lg border border-border bg-panel shadow-2xl overflow-hidden">
         <div className="flex items-start gap-3 p-5">
           <span className="mt-0.5 p-2 rounded-full bg-warning/15 text-warning shrink-0"><AlertTriangle size={18} /></span>
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-fg">
+            <h2 id="unsaved-title" className="text-base font-semibold text-fg">
               {affected.length === 1 ? 'Hay un documento sin guardar' : `Hay ${affected.length} documentos sin guardar`}
             </h2>
             <p className="text-mini text-muted mt-1">

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import {
-  FolderOpen, Save, FilePlus, Mail, MonitorPlay, X, ChevronDown,
+  FolderOpen, Save, SaveAll, FilePlus, Mail, MonitorPlay, X, ChevronDown,
   Printer, Pin, PinOff, Trash2, FileText, Merge, History, Search, Folder,
 } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
@@ -53,6 +53,31 @@ export default function FileMenu() {
       window.removeEventListener('app:file-menu', onToggle)
     }
   }, [])
+
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setOpen(false)
+        return
+      }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+      if (searchRef.current && searchRef.current.contains(e.target as Node)) return
+      const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') || [])]
+      if (items.length === 0) return
+      const i = items.indexOf(document.activeElement as HTMLButtonElement)
+      e.preventDefault()
+      if (i === -1) {
+        items[e.key === 'ArrowUp' ? items.length - 1 : 0].focus()
+        return
+      }
+      const next = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length
+      items[next].focus()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [open])
 
   const toastActionError = (err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err)
@@ -159,7 +184,7 @@ export default function FileMenu() {
     onClick: () => void
     disabled?: boolean
   }) => (
-    <button onClick={() => { onClick(); setOpen(false) }} disabled={disabled}
+    <button role="menuitem" onClick={() => { onClick(); setOpen(false) }} disabled={disabled}
       className={`w-full flex items-center gap-2.5 px-3 py-2 text-ui text-left rounded-md transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'text-fg hover:bg-hover'}`}>
       <Icon size={15} className="text-muted shrink-0" strokeWidth={1.75} />
       <span className="flex-1">{label}</span>
@@ -184,13 +209,13 @@ export default function FileMenu() {
         <div className="w-9 h-11 shrink-0 rounded border border-border bg-white overflow-hidden flex items-center justify-center">
           {entry.thumb
             ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
-            : <FileText size={16} className="text-accent" strokeWidth={1.5} />}
+            : <FileText size={16} className="text-muted" strokeWidth={1.5} />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-ui text-fg truncate leading-tight">{name}</div>
           <div className="text-micro text-muted truncate mt-0.5">
             {dirName} · {formatWhen(entry.lastOpened)}
-            {pageBadge && <> · <span className="text-accent">{pageBadge}</span></>}
+            {pageBadge && <> · <span className="text-fg">{pageBadge}</span></>}
           </div>
         </div>
         <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
@@ -210,7 +235,7 @@ export default function FileMenu() {
             <X size={12} />
           </button>
         </div>
-        {entry.pinned && <Pin size={11} className="text-accent shrink-0 group-hover:hidden" />}
+        {entry.pinned && <Pin size={11} className="text-fg shrink-0 group-hover:hidden" />}
       </div>
     )
   }
@@ -220,7 +245,7 @@ export default function FileMenu() {
       title={`${folder.dir}\nClic: abrir un PDF de esta carpeta`}
       onClick={() => handleOpenFromFolder(folder.dir)}>
       <div className="w-9 h-8 shrink-0 rounded bg-hover flex items-center justify-center">
-        <Folder size={15} className="text-accent" strokeWidth={1.75} />
+        <Folder size={15} className="text-muted" strokeWidth={1.75} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-ui text-fg truncate leading-tight">{folder.name}</div>
@@ -243,20 +268,20 @@ export default function FileMenu() {
 
   return (
     <div className="relative h-full" ref={menuRef}>
-      <button onClick={() => setOpen((o) => !o)}
-        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'text-accent bg-hover' : 'text-fg hover:bg-hover'}`}>
+      <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
+        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'}`}>
         Archivo <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="menu-pop absolute top-full left-0 z-50 flex w-[640px] max-w-[92vw] border border-border rounded-lg shadow-xl bg-panel overflow-hidden">
-          <div className="w-56 shrink-0 p-1.5 border-r border-border">
+          <div role="menu" aria-label="Archivo" className="w-56 shrink-0 p-1.5 border-r border-border">
             <Item icon={FolderOpen} label="Abrir…" shortcut="Ctrl+O" onClick={handleOpen} />
             <Item icon={History} label={lastSession ? `Reabrir última sesión (${lastSession.docs.length})` : 'Reabrir última sesión'}
               onClick={handleReopenSession} disabled={!lastSession} />
             <Item icon={FilePlus} label="Nuevo PDF en blanco" onClick={handleNewBlank} />
             <div className="h-px my-1 bg-border" />
             <Item icon={Save} label="Guardar" shortcut="Ctrl+S" onClick={handleSave} disabled={!activeDoc} />
-            <Item icon={FilePlus} label="Guardar como…" onClick={handleSaveAs} disabled={!activeDoc} />
+            <Item icon={SaveAll} label="Guardar como…" onClick={handleSaveAs} disabled={!activeDoc} />
             <Item icon={Printer} label="Imprimir…" shortcut="Ctrl+P" onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} disabled={!activeDoc} />
             <div className="h-px my-1 bg-border" />
             <Item icon={Merge} label="Combinar PDFs…" onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-merge'))} disabled={!activeDoc} />

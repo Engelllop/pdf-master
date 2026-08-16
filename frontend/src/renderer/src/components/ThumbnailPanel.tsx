@@ -249,11 +249,11 @@ export default function ThumbnailPanel() {
               ? `${title}, ${activeDoc.searchResults.length} resultados`
               : title}
             aria-pressed={on}
-            className={`relative p-2 rounded-token transition-colors ${on ? 'text-accent bg-hover' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-accent" />}
+            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-toolbar" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-accent" aria-hidden />
+              <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${on ? 'bg-toolbar' : 'bg-accent'}`} aria-hidden />
             )}
           </button>
         )

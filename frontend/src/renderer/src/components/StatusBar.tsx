@@ -9,11 +9,11 @@ export default function StatusBar() {
   const {
     docs, activeDocId, saveStatus, activeTool, stickyTools,
     setZoom, setPage, setFitMode, computeFitZoom, viewerWidth, viewerHeight,
-    continuousMode, toggleContinuousMode,
+    continuousMode, toggleContinuousMode, compareMode,
   } = useStoreSlice(
     'docs', 'activeDocId', 'saveStatus', 'activeTool', 'stickyTools',
     'setZoom', 'setPage', 'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
-    'continuousMode', 'toggleContinuousMode',
+    'continuousMode', 'toggleContinuousMode', 'compareMode',
   )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false)
@@ -61,7 +61,7 @@ export default function StatusBar() {
       )}
 
       {activeDoc && activeTool && (
-        <span className="flex items-center gap-1.5 text-accent" title="Herramienta activa">
+        <span className="flex items-center gap-1.5 text-fg" title="Herramienta activa">
           <Pointer size={12} /> {toolLabel(activeTool)}
           {stickyTools && <span className="text-muted">(fija)</span>}
           <kbd className="px-1 py-px rounded border border-border text-micro text-muted">Esc</kbd>
@@ -71,7 +71,7 @@ export default function StatusBar() {
       <div className="flex-1" />
 
       {saveStatus === 'saving' && (
-        <span className="flex items-center gap-1 text-accent"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
+        <span className="flex items-center gap-1 text-fg"><Loader2 size={12} className="animate-spin" /> Guardando...</span>
       )}
       {saveStatus !== 'saving' && activeDoc?.dirty && (
         <button type="button"
@@ -85,9 +85,9 @@ export default function StatusBar() {
         <span className="flex items-center gap-1 text-success"><CheckCircle2 size={12} /> Guardado</span>
       )}
 
-      {activeDoc && (
+      {activeDoc && !compareMode && (
         <>
-          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'text-accent' : ''}`}
+          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-accent text-toolbar hover:text-toolbar' : ''}`}
             title="Scroll continuo" aria-label="Scroll continuo" aria-pressed={continuousMode}>
             <ScrollText size={14} />
           </button>

@@ -91,7 +91,7 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
         className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">
-          <Keyboard size={18} className="text-accent" />
+          <Keyboard size={18} className="text-muted" />
           <h2 className="text-base font-semibold flex-1">Atajos de teclado</h2>
           <button onClick={onClose} aria-label="Cerrar"
             className="p-1 rounded transition-colors text-muted hover:bg-hover">
