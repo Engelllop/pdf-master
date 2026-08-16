@@ -66,4 +66,15 @@ describe('chrome de zoom', () => {
     expect(screen.getByLabelText('Ajustar página')).toBeTruthy()
     expect(screen.getByLabelText('Scroll continuo')).toBeTruthy()
   })
+
+  it('el porcentaje actual se marca con relleno de tinta, no con color de texto', () => {
+    openDoc()
+    usePdfStore.getState().setZoom('doc-1', 1, true)
+    render(<StatusBar />)
+    fireEvent.click(screen.getByLabelText('Nivel de zoom'))
+    const current = screen.getByRole('button', { name: '100%' })
+    expect(current.className).toMatch(/bg-accent/)
+    expect(current.className).toMatch(/text-toolbar/)
+    expect(current.className).not.toMatch(/text-accent/)
+  })
 })

@@ -31,7 +31,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
   const isText = ann.type === 'text'
   const isStroke = STROKE_TYPES.includes(ann.type)
   const hasColor = ann.type !== 'image'
-  const barW = isText ? 420 : isStroke ? 220 : 130
+  const barW = isText ? 460 : isStroke ? 220 : 130
 
   const bx = bounds.x * scale
   const by = bounds.y * scale
@@ -63,7 +63,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       onMouseDown={(e) => e.stopPropagation()}>
       {hasColor && (
         <>
-          <button title="Color" onClick={() => colorInputRef.current?.click()}
+          <button title="Color" aria-label="Color" onClick={() => colorInputRef.current?.click()}
             className="relative w-6 h-6 rounded-full border-2 border-border hover:scale-110 transition-transform shrink-0"
             style={{ backgroundColor: ann.color || '#fbbf24' }}>
             <input ref={colorInputRef} type="color" value={ann.color || '#fbbf24'}
@@ -98,10 +98,15 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
             onClick={() => apply({ bold: !ann.bold })}><Bold size={13} /></button>
           <button title="Cursiva" aria-label="Cursiva" className={`p-1.5 rounded transition-colors ${ann.italic ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}
             onClick={() => apply({ italic: !ann.italic })}><Italic size={13} /></button>
-          <button title={`Alineación: ${ann.align || 'left'}`} aria-label="Alineación" className={btn}
-            onClick={() => apply({ align: ann.align === 'left' || !ann.align ? 'center' : ann.align === 'center' ? 'right' : 'left' })}>
-            {ann.align === 'center' ? <AlignCenter size={13} /> : ann.align === 'right' ? <AlignRight size={13} /> : <AlignLeft size={13} />}
-          </button>
+          {(['left', 'center', 'right'] as const).map((a) => {
+            const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
+            const alignLabel = a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'
+            return (
+              <button key={a} title={`Alinear a la ${alignLabel}`} aria-label={`Alinear a la ${alignLabel}`}
+                className={`p-1.5 rounded transition-colors ${ (ann.align || 'left') === a ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover' }`}
+                onClick={() => apply({ align: a })}><Icon size={13} /></button>
+            )
+          })}
           <div className="w-px h-4 mx-1 bg-border" />
         </>
       )}

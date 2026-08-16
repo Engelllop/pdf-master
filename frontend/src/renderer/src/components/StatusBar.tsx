@@ -107,7 +107,7 @@ export default function StatusBar() {
                 <div className="absolute bottom-full right-0 mb-1 z-50 w-32 border border-border rounded-token shadow-token py-1 bg-panel">
                   {ZOOM_PRESETS.map((z) => (
                     <button key={z} onClick={() => { setZoom(activeDoc.doc_id, z); setFitMode(activeDoc.doc_id, 'custom'); setZoomMenuOpen(false) }}
-                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'text-accent' : 'text-fg'}`}>
+                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'bg-accent text-toolbar' : 'text-fg'}`}>
                       {Math.round(z * 100)}%
                     </button>
                   ))}

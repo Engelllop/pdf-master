@@ -88,9 +88,9 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
           : { borderTop: `${TAIL}px solid ${tint}` }),
         filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.15))',
       } as React.CSSProperties} />
-      <div className="rounded-xl shadow-xl backdrop-blur-md overflow-hidden"
-        style={{ background: `${tint}d9`, border: `1px solid ${tint}` }}>
-        <div className="px-3 pt-1.5 pb-0.5 text-micro font-medium tracking-wide uppercase text-black/45 flex justify-between">
+      <div className="rounded-xl shadow-xl overflow-hidden bg-panel border"
+        style={{ borderColor: tint }}>
+        <div className="px-3 pt-1.5 pb-0.5 text-micro font-medium tracking-wide uppercase text-muted flex justify-between">
           <span className="truncate">{ann.author || 'Nota'}</span>
           {ann.createdAt && <span className="shrink-0 ml-2 tabular-nums">{new Date(ann.createdAt).toLocaleDateString()}</span>}
         </div>
@@ -99,7 +99,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
           onChange={(e) => setText(e.target.value)}
           placeholder="Escribí tu comentario…"
           aria-label="Texto de la nota"
-          className="w-full bg-transparent px-3 pb-2.5 pt-1 text-base text-black placeholder:text-black/35 resize-none outline-none"
+          className="w-full bg-panel px-3 pb-2.5 pt-1 text-base text-fg placeholder:text-muted resize-none outline-none"
           style={{ height: height - 30 }} />
       </div>
     </div>

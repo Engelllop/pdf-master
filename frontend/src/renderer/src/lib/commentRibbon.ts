@@ -1,6 +1,6 @@
-/** IA de la cinta Comentar: 4 marcas diarias visibles, el resto en menús. */
+/** IA de la cinta Comentar: marcas diarias visibles, el resto en menús. */
 
-export const PRIMARY_MARK_IDS = ['highlight', 'note'] as const
+export const PRIMARY_MARK_IDS = ['highlight', 'note', 'count'] as const
 
 export const DRAW_FAMILY_IDS = [
   'draw', 'signature',
@@ -13,7 +13,7 @@ export const MEASURE_FAMILY_IDS = [
 ] as const
 
 export const MORE_TOOL_IDS = [
-  'textselect', 'underline', 'strikethrough', 'text', 'stamp', 'count',
+  'textselect', 'underline', 'strikethrough', 'text', 'stamp',
 ] as const
 
 const DRAW_SET = new Set<string>(DRAW_FAMILY_IDS)

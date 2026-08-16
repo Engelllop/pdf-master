@@ -36,6 +36,15 @@ beforeEach(() => {
 })
 
 describe('globo de la nota', () => {
+  it('el texto de la nota se lee sobre papel, no sobre el color de la marca', () => {
+    const ann = noteAnn({ color: '#1f2329', text: 'x' })
+    openDocWith(ann)
+    renderBubble(ann)
+    const field = screen.getByRole('textbox')
+    expect(field.className).toMatch(/text-fg/)
+    expect(field.className).not.toMatch(/text-black/)
+  })
+
   it('guarda al hacer clic fuera, sin botón de guardar', () => {
     const ann = noteAnn({ text: 'previo' })
     openDocWith(ann)

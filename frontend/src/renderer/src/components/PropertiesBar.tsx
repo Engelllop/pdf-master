@@ -45,8 +45,12 @@ export default function PropertiesBar() {
   const fillCapable = strokeSel ? FILLABLE.includes(strokeSel.type) : (!!activeTool && FILLABLE.includes(activeTool))
   const rotAnn = selAnn && ROTATABLE.includes(selAnn.type) ? selAnn : null
 
+  const showColorGroup = (showColor || isStamp) && !selAnn
+  const showTextGroup = isTextCtx && !selAnn
+  const showWidthGroup = showStroke && !selAnn
+
   // Nada relevante que mostrar → no ocupar espacio.
-  if (!activeDoc || (!showColor && !showStroke && !isTextCtx && !isStamp && !rotAnn)) return null
+  if (!activeDoc || (!showColorGroup && !showTextGroup && !showStroke && !isStamp && !rotAnn)) return null
 
   const lineWidthVal = strokeSel ? (strokeSel.lineWidth ?? 2) : store.annotationLineWidth
   const lineStyleVal: LineStyle = strokeSel ? (strokeSel.lineStyle || 'solid') : store.annotationLineStyle
@@ -71,7 +75,7 @@ export default function PropertiesBar() {
 
   return (
     <div className="min-h-10 border-b border-border bg-toolbar flex items-center gap-2 px-3 py-1.5 flex-wrap text-fg">
-      {(showColor || isStamp) && (
+      {showColorGroup && (
         <Group>
           <Label>Color</Label>
           {COLORS.map((c) => {
@@ -89,7 +93,7 @@ export default function PropertiesBar() {
         </Group>
       )}
 
-      {isTextCtx && (
+      {showTextGroup && (
         <Group>
           <Label>Fuente</Label>
             <select value={selAnn?.type === 'text' ? (selAnn.fontFamily || store.textFontFamily) : store.textFontFamily}
@@ -144,7 +148,7 @@ export default function PropertiesBar() {
 
       {showStroke && (
         <>
-          {/* Grosor: pesos visibles (se ve el trazo antes de dibujarlo) + ajuste fino */}
+          {showWidthGroup && (
           <Group>
             <Label>Grosor</Label>
             {WIDTH_PRESETS.map((w) => (
@@ -160,6 +164,7 @@ export default function PropertiesBar() {
               className="w-12 border border-border rounded px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-accent"
               title="Grosor exacto (pt)" aria-label="Grosor exacto" />
           </Group>
+          )}
 
           <Group>
             <Label>Estilo</Label>

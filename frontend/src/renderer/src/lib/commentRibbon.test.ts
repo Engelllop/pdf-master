@@ -14,8 +14,8 @@ const LEGACY_SHAPES = [
 ]
 
 describe('commentRibbon', () => {
-  it('deja 2 marcas primarias + 2 familias (dibujar / medir)', () => {
-    expect([...PRIMARY_MARK_IDS]).toEqual(['highlight', 'note'])
+  it('deja marcas primarias + 2 familias (dibujar / medir)', () => {
+    expect([...PRIMARY_MARK_IDS]).toEqual(['highlight', 'note', 'count'])
     expect(DRAW_FAMILY_IDS[0]).toBe('draw')
     expect(MEASURE_FAMILY_IDS[0]).toBe('measure_distance')
   })
@@ -33,7 +33,8 @@ describe('commentRibbon', () => {
   it('clasifica sin solaparse', () => {
     expect(isDrawFamily('rect')).toBe(true)
     expect(isMeasureFamily('measure_area')).toBe(true)
-    expect(isMoreTool('count')).toBe(true)
+    expect(isMoreTool('stamp')).toBe(true)
+    expect(isMoreTool('count')).toBe(false)
     expect(isDrawFamily('highlight')).toBe(false)
     expect(isMoreTool('draw')).toBe(false)
   })

@@ -1,7 +1,7 @@
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   FilePlus, Minimize2, Trash2, RotateCw, RotateCcw,
-  Search, Maximize2, AlignVerticalJustifyCenter,
+  Search, AlignVerticalJustifyCenter,
   X, ChevronDown, ChevronUp, Merge,
   BookOpen, Printer,
   FileDown, GitCompare, RefreshCw, Scissors, Stamp, FileText, Presentation, ScrollText,
@@ -9,8 +9,8 @@ import {
   Highlighter, Underline, Strikethrough, MessageSquare, PenTool, Signature,
   Type, Image as ImageIcon, Images, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
-  FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree, MoveVertical,
-  ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
+  FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree,
+  FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
   TextCursorInput, CircleDot, List, MoreHorizontal,
@@ -36,21 +36,21 @@ import { redactMatchesUndoable, replaceTextUndoable } from '../lib/pageUndo'
 
 export default function Toolbar() {
   const {
-    docs, activeDocId, setPage, setZoom,
+    docs, activeDocId, setPage,
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
     showToast,
     readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
-    compareMode, activeRibbon, activeTool, annotationColor, setAnnotationColor,
+    compareMode, activeRibbon, activeTool,
     countCategory, setCountCategory, countSymbol, setCountSymbol,
-    stickyTools, setStickyTools, setActiveRibbon, compareZoom, setCompareZoom,
+    stickyTools, setStickyTools, setActiveRibbon,
   } = useStoreSlice(
-    'docs', 'activeDocId', 'setPage', 'setZoom',
+    'docs', 'activeDocId', 'setPage',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
     'showToast',
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
-    'compareMode', 'activeRibbon', 'activeTool', 'annotationColor', 'setAnnotationColor',
+    'compareMode', 'activeRibbon', 'activeTool',
     'countCategory', 'setCountCategory', 'countSymbol', 'setCountSymbol',
-    'stickyTools', 'setStickyTools', 'setActiveRibbon', 'compareZoom', 'setCompareZoom',
+    'stickyTools', 'setStickyTools', 'setActiveRibbon',
   )
 
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -86,7 +86,7 @@ export default function Toolbar() {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [splitSubmenuOpen, setSplitSubmenuOpen] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
-  const [commentMenu, setCommentMenu] = useState<null | 'draw' | 'measure' | 'more' | 'export'>(null)
+  const [commentMenu, setCommentMenu] = useState<string | null>(null)
   const [lastDrawTool, setLastDrawTool] = useState('draw')
   const [lastMeasureTool, setLastMeasureTool] = useState('measure_distance')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -414,7 +414,7 @@ export default function Toolbar() {
   const OverflowMenu = ({
     id, icon: Icon, label, active, children,
   }: {
-    id: 'more' | 'export'
+    id: string
     icon: any
     label: string
     active?: boolean
@@ -494,22 +494,6 @@ export default function Toolbar() {
       case 'read':
         return (
           <>
-            {/* Comparando, estos botones mueven el zoom de la comparación: si siguieran
-                tocando el zoom del visor oculto parecerían rotos (pasó en pruebas). */}
-            <TBtn icon={ZoomOut} label="Alejar" tip="Alejar"
-              onClick={() => compareMode ? setCompareZoom(compareZoom - 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
-            <span className="text-mini text-fg w-10 text-center tabular-nums">
-              {Math.round((compareMode ? compareZoom : activeDoc.zoom) * 100)}%
-            </span>
-            <TBtn icon={ZoomIn} label="Acercar" tip="Acercar"
-              onClick={() => compareMode ? setCompareZoom(compareZoom + 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom + 0.15)} />
-            <Sep />
-            <TBtn icon={Maximize2} label="Ajustar página"
-              tip={compareMode ? 'Ajustar las láminas al panel' : 'Ajustar página'}
-              onClick={() => compareMode ? setCompareZoom(1) : handleFit('fit-page')}
-              active={compareMode ? Math.abs(compareZoom - 1) < 0.001 : activeDoc.fitMode === 'fit-page'} />
-            <TBtn icon={MoveVertical} label="Ajustar ancho" tip="Ajustar al ancho" onClick={() => handleFit('fit-width')} active={activeDoc.fitMode === 'fit-width'} disabled={compareMode} />
-            <Sep />
             <TBtn icon={ScrollText} label="Continuo" tip={continuousMode ? 'Vista de página única' : 'Scroll continuo'} onClick={() => toggleContinuousMode()} active={continuousMode} disabled={compareMode} />
             <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
             <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
@@ -538,9 +522,6 @@ export default function Toolbar() {
         const moreActive = isMoreTool(activeTool)
         return (
           <>
-            <input type="color" value={annotationColor} onChange={(e) => setAnnotationColor(e.target.value)}
-              className="w-8 h-8 rounded cursor-pointer border border-border p-0 bg-transparent shrink-0"
-              title="Color de la marca" aria-label="Color de la marca" />
             <Tooltip content={stickyTools
               ? 'Herramienta fija: se queda activa hasta pulsar Esc'
               : 'Herramienta de un solo uso: se suelta tras cada marca'}>
@@ -559,6 +540,9 @@ export default function Toolbar() {
             <TBtn icon={MessageSquare} label="Nota" tip={TOOL_LABELS.note}
               shortcut={TOOL_SHORTCUTS.note}
               onClick={() => handleToolClick('note')} active={activeTool === 'note'} />
+            <TBtn icon={Tally5} label="Conteo" tip={TOOL_LABELS.count}
+              shortcut={TOOL_SHORTCUTS.count}
+              onClick={() => handleToolClick('count')} active={activeTool === 'count'} />
             <SplitTool
               family="draw"
               icon={drawDef.icon}
@@ -701,16 +685,50 @@ export default function Toolbar() {
       case 'convert':
         return (
           <>
-            <TBtn icon={FileDown} label="Word" tip="Exportar a Word" onClick={handleExportWord} />
-            <TBtn icon={FileSpreadsheet} label="Excel" tip="Exportar a Excel" onClick={handleExportExcel} />
-            <TBtn icon={Presentation} label="PowerPoint" tip="Exportar a PowerPoint" onClick={handleExportPptx} />
-            <TBtn icon={FileType} label="TXT" tip="Exportar a texto plano" onClick={handleExportTxt} />
-            <TBtn icon={Code2} label="HTML" tip="Exportar a HTML" onClick={handleExportHtml} />
-            <TBtn icon={FileImage} label="Imagen" tip="Guardar página como imagen" onClick={handleSavePageAsImage} />
-            <Sep />
-            <TBtn icon={FilePlus2} label="Imágenes→PDF" tip="Crear PDF a partir de imágenes" onClick={handleImagesToPdf} />
-            <TBtn icon={ScanText} label="OCR buscable" tip="Hacer página buscable (OCR)" onClick={handleMakeSearchable} />
-            <TBtn icon={ScanText} label="OCR extraer" tip="OCR página actual (extraer texto)" onClick={handleOcr} />
+            <OverflowMenu id="cvt-office" icon={FileDown} label="Oficina">
+              <button role="menuitem" onClick={() => { handleExportWord(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileDown size={14} /> Word
+              </button>
+              <button role="menuitem" onClick={() => { handleExportExcel(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileSpreadsheet size={14} /> Excel
+              </button>
+              <button role="menuitem" onClick={() => { handleExportPptx(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Presentation size={14} /> PowerPoint
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="cvt-text" icon={FileType} label="Texto">
+              <button role="menuitem" onClick={() => { handleExportTxt(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileType size={14} /> TXT
+              </button>
+              <button role="menuitem" onClick={() => { handleExportHtml(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <Code2 size={14} /> HTML
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="cvt-image" icon={FileImage} label="Imagen">
+              <button role="menuitem" onClick={() => { handleSavePageAsImage(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FileImage size={14} /> Página como imagen
+              </button>
+              <button role="menuitem" onClick={() => { handleImagesToPdf(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <FilePlus2 size={14} /> Imágenes → PDF
+              </button>
+            </OverflowMenu>
+            <OverflowMenu id="cvt-ocr" icon={ScanText} label="OCR">
+              <button role="menuitem" onClick={() => { handleMakeSearchable(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <ScanText size={14} /> Hacer página buscable
+              </button>
+              <button role="menuitem" onClick={() => { handleOcr(); closeCommentMenu() }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
+                <ScanText size={14} /> Extraer texto
+              </button>
+            </OverflowMenu>
             <Sep />
             <TBtn icon={Minimize2} label="Comprimir" tip="Comprimir PDF" onClick={handleCompress} />
             {docs.length > 1 && (
