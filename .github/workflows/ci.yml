@@ -5,12 +5,23 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+  # Para volver a publicar un tag que ya existe. Sin esto, un release que subio
+  # la mitad de los archivos solo se arregla inventando una version nueva: se
+  # quema un numero por un fallo de subida, y la version que la gente ve como
+  # ultima queda sin instalador para siempre.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag a publicar (ej: v1.12.8)'
+        required: true
 
 jobs:
   backend-tests:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -23,6 +34,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -36,13 +49,17 @@ jobs:
         working-directory: frontend
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     needs: [backend-tests, frontend-typecheck]
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
@@ -57,6 +74,24 @@ jobs:
           cd backend
           pyinstaller pdf-engine.spec --noconfirm --clean
           Copy-Item dist/pdf-engine.exe ../frontend/resources/backend/pdf-engine.exe -Force
+      # El release se crea ACA y no lo crea electron-builder. electron-builder
+      # publica cada artefacto por su cuenta (.exe, .blockmap, latest.yml) y
+      # cada uno crea el release si no lo encuentra: son varios POST al mismo
+      # tag casi al mismo tiempo. Cuando la carrera sale "bien" quedan dos
+      # releases con el mismo tag y los archivos repartidos entre los dos (pasa
+      # en v1.5.1, v1.12.6 y v1.12.7); cuando sale mal, el segundo POST se come
+      # un 422 already_exists y voltea el build entero con el instalador sin
+      # subir — que es lo que dejo a v1.12.8 con un .blockmap y nada mas.
+      - name: Asegurar el release antes de subir nada
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view $env:TAG 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --title $env:TAG --generate-notes
+          } else {
+            Write-Host "El release $env:TAG ya existe: se le suben los archivos que falten."
+          }
       - name: Build installer and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,3 +101,15 @@ jobs:
           npm ci
           npm run build
           npx electron-builder --win --publish always
+      # electron-builder puede terminar con codigo 0 habiendo subido solo una
+      # parte. Sin instalador no hay descarga y sin latest.yml no hay
+      # actualizacion automatica, y las dos fallan calladas: el usuario ve un
+      # release que existe y no se puede bajar.
+      - name: Verificar que el release quedo completo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $archivos = gh release view $env:TAG --json assets --jq '.assets[].name'
+          Write-Host "Archivos en $($env:TAG):`n$archivos"
+          if (-not ($archivos -match '\.exe$')) { throw "Falta el instalador .exe en $env:TAG" }
+          if (-not ($archivos -match 'latest\.yml')) { throw "Falta latest.yml en $env:TAG: el auto-update no va a resolver" }
