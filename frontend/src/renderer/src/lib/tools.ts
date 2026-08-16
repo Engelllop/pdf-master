@@ -32,6 +32,10 @@ export const TOOL_LABELS: Record<string, string> = {
   editimage: 'Editar imagen',
   croparea: 'Recortar área',
   redactarea: 'Redactar área',
+  formtext: 'Campo de texto',
+  formcheck: 'Casilla',
+  formradio: 'Opción (radio)',
+  formcombo: 'Lista desplegable',
 }
 
 /** tecla (en minúscula, con prefijo `shift+` si aplica) → id de herramienta */

@@ -209,35 +209,43 @@ class ReadMixin:
         except Exception:
             return False
 
-    def make_searchable(self, doc_id: str, pages: Optional[List[int]] = None) -> int:
+    def make_searchable(self, doc_id: str, pages: Optional[List[int]] = None, stash: bool = True):
         """OCR scanned pages and embed an invisible text layer so they become
-        searchable/selectable. Returns words added, or -1 if Tesseract is unavailable."""
+        searchable/selectable. Returns (words, stash_id, stash_page). words=-1 if
+        Tesseract is unavailable."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
-                return 0
+                return 0, '', None
+            indices = pages if pages is not None else list(range(len(doc)))
+            to_ocr = [i for i in indices if 0 <= i < len(doc) and not doc.load_page(i).get_text().strip()]
+            if not to_ocr:
+                return 0, '', None
             try:
                 import pytesseract
                 from pytesseract import Output
                 from PIL import Image
                 from io import BytesIO
             except Exception:
-                return -1
+                return -1, '', None
             try:
                 pytesseract.get_tesseract_version()
             except Exception:
-                return -1
+                return -1, '', None
 
             DPI = 200
             scale = 72.0 / DPI
-            indices = pages if pages is not None else list(range(len(doc)))
+            stash_id = ''
+            stash_page = None
+            if stash:
+                if len(to_ocr) == 1:
+                    stash_id = self._stash_pages(doc, to_ocr)
+                    stash_page = to_ocr[0]
+                else:
+                    stash_id = self._stash_document(doc)
             total = 0
-            for i in indices:
-                if i < 0 or i >= len(doc):
-                    continue
+            for i in to_ocr:
                 page = doc.load_page(i)
-                if page.get_text().strip():
-                    continue  # already has a text layer
                 pix = page.get_pixmap(dpi=DPI)
                 img = Image.open(BytesIO(pix.tobytes("png")))
                 data = pytesseract.image_to_data(img, lang="spa+eng", output_type=Output.DICT)
@@ -255,7 +263,7 @@ class ReadMixin:
             if total:
                 self._dirty[doc_id] = True
                 self._invalidate_render_cache(doc_id)
-            return total
+            return total, stash_id, stash_page
 
     def ocr_page(self, doc_id: str, page_num: int) -> Optional[str]:
         doc = self._acquire(doc_id)

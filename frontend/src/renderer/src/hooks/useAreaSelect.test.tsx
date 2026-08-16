@@ -18,7 +18,7 @@ function openDoc() {
 
 function okFetch() {
   return vi.fn((_path: string, _init?: RequestInit) =>
-    Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }), text: async () => '' } as unknown as Response))
+    Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true, stash_id: 's1' }), text: async () => '' } as unknown as Response))
 }
 
 function setup() {
@@ -29,6 +29,7 @@ function setup() {
 beforeEach(() => {
   usePdfStore.setState(initialState, true)
   localStorage.clear()
+  Object.assign(window, { api: { getApiToken: async () => '' } })
 })
 
 describe('setArea', () => {

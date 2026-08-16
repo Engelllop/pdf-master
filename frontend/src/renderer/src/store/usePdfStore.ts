@@ -146,10 +146,48 @@ export interface ProgressState {
   canceled: boolean
 }
 
-interface AnnCommand {
+export type PageOp =
+  | { type: 'rotate'; pages: number[] | 'all'; degrees: number }
+  | { type: 'restore'; stashId: string; at: number[] }
+  | { type: 'remove'; pages: number[] }
+  | { type: 'reorder'; order: number[] }
+  | { type: 'replace'; page: number; stashId: string }
+  | { type: 'crop'; page: number; top: number; right: number; bottom: number; left: number }
+  | { type: 'redact'; page: number; x: number; y: number; width: number; height: number }
+  | { type: 'restoreDoc'; stashId: string }
+  | { type: 'watermark'; text: string }
+  | { type: 'redactMatches'; query: string }
+  | { type: 'headerFooter'; header?: string; footer?: string }
+  | { type: 'pageNumbers'; prefix: string; start: number; position: string }
+  | { type: 'replaceText'; query: string; replace: string; page?: number; caseSensitive: boolean; replaceAll: boolean }
+  | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string }
+  | { type: 'transformImage'; page: number; xref: number; old: number[]; new?: number[]; delete?: boolean; replacePath?: string }
+  | { type: 'metadata'; title?: string | null; author?: string | null; subject?: string | null; keywords?: string | null }
+  | { type: 'makeSearchable'; page?: number }
+  | { type: 'formField'; page: number; fieldName: string; value: string }
+  | { type: 'addFormField'; page: number; fieldType: string; fieldName: string; x: number; y: number; width: number; height: number; options?: string[]; radioValue?: string }
+  | { type: 'transformFormField'; page: number; xref: number; x?: number; y?: number; width?: number; height?: number; delete?: boolean }
+
+export interface AnnCommand {
+  kind?: 'ann'
   docId: string
   before: Annotation[]
   after: Annotation[]
+}
+
+export interface PageCommand {
+  kind: 'page'
+  docId: string
+  inverse: PageOp
+  forward: PageOp
+  beforeAnns: Annotation[]
+  afterAnns: Annotation[]
+}
+
+export type UndoCommand = AnnCommand | PageCommand
+
+export function isPageCommand(cmd: UndoCommand): cmd is PageCommand {
+  return cmd.kind === 'page'
 }
 
 export interface PdfState {
@@ -176,8 +214,9 @@ export interface PdfState {
   textFontSize: number
   bookmarks: Bookmark[]
   toasts: Toast[]
-  undoStack: AnnCommand[]
-  redoStack: AnnCommand[]
+  undoStack: UndoCommand[]
+  redoStack: UndoCommand[]
+  pageUndoBusy: boolean
   selectedAnnotationId: string | null
   saveStatus: 'idle' | 'saving' | 'saved'
   compareMode: boolean
@@ -462,6 +501,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   toasts: [],
   undoStack: [],
   redoStack: [],
+  pageUndoBusy: false,
   selectedAnnotationId: null,
   selectedAnnotationIds: [],
   annotationClipboard: [],
@@ -1206,30 +1246,50 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   undo: () => {
-    set((state) => {
-      if (state.undoStack.length === 0) return state
-      const cmd = state.undoStack[state.undoStack.length - 1]
-      return {
-        docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.before, dirty: true } : d)),
+    const state = get()
+    if (state.undoStack.length === 0 || state.pageUndoBusy) return
+    const cmd = state.undoStack[state.undoStack.length - 1]
+    if (isPageCommand(cmd)) {
+      set({
         undoStack: state.undoStack.slice(0, -1),
         redoStack: [...state.redoStack, cmd],
+        pageUndoBusy: true,
         selectedAnnotationId: null,
-  selectedAnnotationIds: [],
-      }
+        selectedAnnotationIds: [],
+      })
+      void import('../lib/pageUndo').then((m) => m.finishPageCommand(cmd, 'undo'))
+      return
+    }
+    set({
+      docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.before, dirty: true } : d)),
+      undoStack: state.undoStack.slice(0, -1),
+      redoStack: [...state.redoStack, cmd],
+      selectedAnnotationId: null,
+      selectedAnnotationIds: [],
     })
   },
 
   redo: () => {
-    set((state) => {
-      if (state.redoStack.length === 0) return state
-      const cmd = state.redoStack[state.redoStack.length - 1]
-      return {
-        docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.after, dirty: true } : d)),
+    const state = get()
+    if (state.redoStack.length === 0 || state.pageUndoBusy) return
+    const cmd = state.redoStack[state.redoStack.length - 1]
+    if (isPageCommand(cmd)) {
+      set({
         redoStack: state.redoStack.slice(0, -1),
         undoStack: [...state.undoStack, cmd],
+        pageUndoBusy: true,
         selectedAnnotationId: null,
-  selectedAnnotationIds: [],
-      }
+        selectedAnnotationIds: [],
+      })
+      void import('../lib/pageUndo').then((m) => m.finishPageCommand(cmd, 'redo'))
+      return
+    }
+    set({
+      docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.after, dirty: true } : d)),
+      redoStack: state.redoStack.slice(0, -1),
+      undoStack: [...state.undoStack, cmd],
+      selectedAnnotationId: null,
+      selectedAnnotationIds: [],
     })
   },
 

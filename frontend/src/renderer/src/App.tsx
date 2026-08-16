@@ -305,9 +305,8 @@ function App() {
         }
       }
 
-      // Herramientas con una sola tecla (V, H, R, M…). Solo en el visor de página
-      // única: el modo continuo y la comparación no dibujan.
-      if (!isMeta && activeDoc && !compareMode && !presentationMode && !continuousMode) {
+      // Herramientas con una sola tecla (V, H, R, M…). Comparar y presentación no dibujan.
+      if (!isMeta && activeDoc && !compareMode && !presentationMode) {
         const target = e.target as HTMLElement
         const isEditing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
         const tool = TOOL_KEYS[(e.shiftKey ? 'shift+' : '') + e.key.toLowerCase()]

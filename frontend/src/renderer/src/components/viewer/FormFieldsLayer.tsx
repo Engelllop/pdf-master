@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { type FormField } from '../../hooks/useFormFields'
 import { type PageDims } from './annotationRender'
 
@@ -28,17 +28,137 @@ function TextWidget({ field, style, onCommit }: {
   )
 }
 
-export default function FormFieldsLayer({ fields, pageData, onChange }: {
+type Rect = { x: number; y: number; width: number; height: number }
+
+function LayoutChrome({
+  field, sx, sy, selected, onSelect, onCommit, onDelete,
+}: {
+  field: FormField
+  sx: number
+  sy: number
+  selected: boolean
+  onSelect: () => void
+  onCommit: (rect: Rect) => void
+  onDelete: () => void
+}) {
+  const start = useRef<{ ox: number; oy: number; rect: Rect; mode: 'move' | 'resize' } | null>(null)
+  const [preview, setPreview] = useState<Rect | null>(null)
+  const rect = preview ?? field.rect
+  const left = rect.x * sx
+  const top = rect.y * sy
+  const w = Math.max(8, rect.width * sx)
+  const h = Math.max(8, rect.height * sy)
+
+  const onDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
+    e.preventDefault()
+    e.stopPropagation()
+    onSelect()
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    start.current = { ox: e.clientX, oy: e.clientY, rect: field.rect, mode }
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!start.current) return
+    const dx = (e.clientX - start.current.ox) / sx
+    const dy = (e.clientY - start.current.oy) / sy
+    if (start.current.mode === 'move') {
+      setPreview({ ...start.current.rect, x: start.current.rect.x + dx, y: start.current.rect.y + dy })
+    } else {
+      setPreview({
+        ...start.current.rect,
+        width: Math.max(8, start.current.rect.width + dx),
+        height: Math.max(8, start.current.rect.height + dy),
+      })
+    }
+  }
+  const onUp = () => {
+    const next = preview
+    start.current = null
+    setPreview(null)
+    if (!next) return
+    const moved = Math.abs(next.x - field.rect.x) > 0.5 || Math.abs(next.y - field.rect.y) > 0.5
+      || Math.abs(next.width - field.rect.width) > 0.5 || Math.abs(next.height - field.rect.height) > 0.5
+    if (moved) onCommit(next)
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Campo ${field.field_name}`}
+      aria-pressed={selected}
+      onPointerDown={(e) => onDown(e, 'move')}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      className={`absolute box-border ${selected ? 'ring-2 ring-accent' : 'ring-1 ring-info/70'} bg-info/10 cursor-move`}
+      style={{ left, top, width: w, height: h }}
+      title={`${field.field_name} — arrastrá para mover`}
+    >
+      {selected && (
+        <>
+          <button type="button" aria-label="Eliminar campo"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="absolute -top-6 right-0 px-1.5 py-0.5 text-micro rounded bg-danger text-white shadow">
+            Borrar
+          </button>
+          <div
+            onPointerDown={(e) => onDown(e, 'resize')}
+            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-accent rounded-sm cursor-nwse-resize"
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+export default function FormFieldsLayer({
+  fields, pageData, onChange, onTransform, interactive = true, layoutMode = false,
+}: {
   fields: FormField[]
   pageData: PageDims
   onChange: (fieldName: string, value: string) => void
+  onTransform?: (xref: number, next: Rect | { delete: true }) => void
+  interactive?: boolean
+  layoutMode?: boolean
 }) {
+  const [selected, setSelected] = useState<number | null>(null)
+  useEffect(() => { setSelected(null) }, [fields])
+  useEffect(() => {
+    if (!layoutMode || selected == null) return
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        onTransform?.(selected, { delete: true })
+        setSelected(null)
+      } else if (e.key === 'Escape') {
+        setSelected(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [layoutMode, selected, onTransform])
+
   if (fields.length === 0) return null
   const sx = pageData.width / pageData.originalWidth
   const sy = pageData.height / pageData.originalHeight
   return (
-    <div className="absolute top-0 left-0" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'auto', zIndex: 25 }}>
-      {fields.map((field) => {
+    <div className="absolute top-0 left-0" style={{
+      width: pageData.width, height: pageData.height,
+      pointerEvents: (interactive || layoutMode) ? 'auto' : 'none',
+      zIndex: 25,
+    }}>
+      {layoutMode ? fields.map((field) => (
+        <LayoutChrome
+          key={field.xref || `${field.field_name}-${field.rect.x}-${field.rect.y}`}
+          field={field} sx={sx} sy={sy}
+          selected={selected === field.xref}
+          onSelect={() => setSelected(field.xref)}
+          onCommit={(rect) => onTransform?.(field.xref, rect)}
+          onDelete={() => onTransform?.(field.xref, { delete: true })}
+        />
+      )) : fields.map((field, i) => {
         const style = {
           position: 'absolute' as const,
           left: field.rect.x * sx,
@@ -51,7 +171,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
         const isSelect = field.field_type.toLowerCase().includes('combo') || field.field_type.toLowerCase().includes('list')
         if (isCheckbox) {
           return (
-            <input key={field.field_name} type="checkbox"
+            <input key={`${field.field_name}-${i}`} type="checkbox"
               checked={field.value === 'Yes' || field.value === 'On'}
               onChange={(e) => onChange(field.field_name, e.target.checked ? 'Yes' : 'Off')}
               className="accent-[rgb(var(--info))]"
@@ -63,7 +183,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
         if (isRadio) {
           const checked = field.value === 'Yes' || field.value === 'On' || field.value === field.field_name
           return (
-            <input key={field.field_name} type="radio" name={field.field_name.split('.').slice(0, -1).join('.') || field.field_name}
+            <input key={`${field.field_name}-${i}`} type="radio" name={field.field_name.split('.').slice(0, -1).join('.') || field.field_name}
               checked={checked}
               onChange={() => onChange(field.field_name, field.options[0] || 'Yes')}
               className="accent-[rgb(var(--info))]"
@@ -74,7 +194,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
         }
         if (isSelect) {
           return (
-            <select key={field.field_name}
+            <select key={`${field.field_name}-${i}`}
               value={field.value}
               onChange={(e) => onChange(field.field_name, e.target.value)}
               className="bg-white text-black text-mini border border-info rounded"
@@ -88,7 +208,7 @@ export default function FormFieldsLayer({ fields, pageData, onChange }: {
           )
         }
         return (
-          <TextWidget key={field.field_name} field={field} style={style}
+          <TextWidget key={`${field.field_name}-${i}`} field={field} style={style}
             onCommit={(v) => onChange(field.field_name, v)} />
         )
       })}

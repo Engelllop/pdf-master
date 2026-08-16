@@ -6,6 +6,7 @@ import { type FormField } from '../../hooks/useFormFields'
 const pageData = { width: 800, height: 600, originalWidth: 800, originalHeight: 600, image: '' }
 
 const field = (extra: Partial<FormField> = {}): FormField => ({
+  xref: 11,
   field_name: 'medidores',
   field_type: 'Text',
   rect: { x: 10, y: 20, width: 120, height: 18 },
@@ -74,5 +75,15 @@ describe('campos de formulario', () => {
   it('sin campos no pinta capa (no debe tapar el clic sobre la página)', () => {
     const { container } = render(<FormFieldsLayer fields={[]} pageData={pageData} onChange={vi.fn()} />)
     expect(container.firstChild).toBeNull()
+  })
+
+  it('en modo layout no rellena: el campo se selecciona para mover o borrar', () => {
+    const onTransform = vi.fn()
+    render(<FormFieldsLayer fields={[field()]} pageData={pageData} onChange={vi.fn()}
+      layoutMode onTransform={onTransform} />)
+    expect(screen.queryByRole('textbox')).toBeNull()
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Campo medidores' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar campo' }))
+    expect(onTransform).toHaveBeenCalledWith(11, { delete: true })
   })
 })

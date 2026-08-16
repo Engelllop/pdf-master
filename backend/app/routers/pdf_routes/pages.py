@@ -2,8 +2,8 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.pdf import (
-    CropRequest, DeletePagesRequest, ReorderPagesRequest, RotatePagesRequest,
-    RotateRequest, SaveResult,
+    CropRequest, DeletePagesRequest, ReorderPagesRequest, ReplacePageRequest,
+    RestoreDocumentRequest, RestorePagesRequest, RotatePagesRequest, RotateRequest, SaveResult,
 )
 from app.services.pdf_service import pdf_service
 
@@ -33,9 +33,21 @@ def rotate_pages(doc_id: str, req: RotatePagesRequest):
 
 @router.post("/delete-pages/{doc_id}", response_model=SaveResult)
 def delete_pages(doc_id: str, req: DeletePagesRequest):
-    ok = pdf_service.delete_pages(doc_id, req.pages)
-    if not ok:
+    stash_id = pdf_service.delete_pages(doc_id, req.pages, stash=req.stash)
+    if stash_id is None:
         raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True, stash_id=stash_id or None)
+
+@router.post("/restore-pages/{doc_id}", response_model=SaveResult)
+def restore_pages(doc_id: str, req: RestorePagesRequest):
+    if not pdf_service.restore_pages(doc_id, req.stash_id, req.at):
+        raise HTTPException(status_code=404, detail="No se pudo restaurar la página")
+    return SaveResult(success=True)
+
+@router.post("/restore-document/{doc_id}", response_model=SaveResult)
+def restore_document(doc_id: str, req: RestoreDocumentRequest):
+    if not pdf_service.restore_document(doc_id, req.stash_id):
+        raise HTTPException(status_code=404, detail="No se pudo restaurar el documento")
     return SaveResult(success=True)
 
 @router.post("/reorder/{doc_id}", response_model=SaveResult)
@@ -47,9 +59,15 @@ def reorder_pages(doc_id: str, req: ReorderPagesRequest):
 
 @router.post("/crop/{doc_id}", response_model=SaveResult)
 def crop_page(doc_id: str, req: CropRequest):
-    ok = pdf_service.crop_page(doc_id, req.page_num, req.top, req.right, req.bottom, req.left)
-    if not ok:
+    stash_id = pdf_service.crop_page(doc_id, req.page_num, req.top, req.right, req.bottom, req.left, stash=req.stash)
+    if stash_id is None:
         raise HTTPException(status_code=400, detail="Crop failed")
+    return SaveResult(success=True, stash_id=stash_id or None)
+
+@router.post("/replace-page/{doc_id}", response_model=SaveResult)
+def replace_page(doc_id: str, req: ReplacePageRequest):
+    if not pdf_service.replace_page(doc_id, req.page_num, req.stash_id):
+        raise HTTPException(status_code=404, detail="No se pudo restaurar la página")
     return SaveResult(success=True)
 
 @router.post("/duplicate-page/{doc_id}", response_model=SaveResult)

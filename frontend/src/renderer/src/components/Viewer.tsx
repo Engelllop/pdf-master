@@ -9,6 +9,7 @@ import { useRotateAnnotation } from '../hooks/useRotateAnnotation'
 import { useRightPageResize } from '../hooks/useRightPageResize'
 import { useImageEdit } from '../hooks/useImageEdit'
 import { useAreaSelect } from '../hooks/useAreaSelect'
+import { isFormTool } from '../lib/formFields'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
@@ -30,6 +31,7 @@ import { loadSignatures, signatureAtPoint } from '../lib/signatures'
 import { Loader2, X } from 'lucide-react'
 
 import { apiFetch } from '../lib/api'
+import { editTextUndoable } from '../lib/pageUndo'
 
 export default function Viewer() {
   const store = useStoreSlice(
@@ -148,7 +150,7 @@ export default function Viewer() {
   const { contextMenu, openMenu, closeMenu } = useContextMenu()
 
   // Form fields
-  const { fields: formFields, updateField: updateFormField } = useFormFields(activeDoc?.doc_id || null, activeDoc?.currentPage || 0)
+  const { fields: formFields, updateField: updateFormField, transformField } = useFormFields(activeDoc?.doc_id || null, activeDoc?.currentPage || 0)
 
   // ResizeObserver: containerRef cambia de elemento al alternar estado vacío ↔
   // documento, así que hay que re-observar en ese cambio (si no, el observer queda
@@ -309,10 +311,11 @@ export default function Viewer() {
     }
 
     // Selección de área (recortar/redactar): arrastrar rectángulo
-    if (store.activeTool === 'croparea' || store.activeTool === 'redactarea') {
+    const areaTool = store.activeTool
+    if (areaTool === 'croparea' || areaTool === 'redactarea' || isFormTool(areaTool)) {
       e.preventDefault()
       areaDraggingRef.current = true
-      areaToolRef.current = store.activeTool
+      areaToolRef.current = areaTool
       setArea({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y })
       return
     }
@@ -423,7 +426,7 @@ export default function Viewer() {
       const tool = areaToolRef.current
       const s = areaSelRef.current
       setArea(null)
-      store.setActiveTool(null)
+      if (!isFormTool(tool)) store.setActiveTool(null)
       if (tool && s) applyArea(tool, s)
       return
     }
@@ -590,7 +593,10 @@ export default function Viewer() {
               )}
 
               {/* Form fields overlay */}
-              <FormFieldsLayer fields={formFields} pageData={pageData} onChange={updateFormField} />
+              <FormFieldsLayer fields={formFields} pageData={pageData} onChange={updateFormField}
+                onTransform={(xref, next) => { void transformField(xref, 'delete' in next ? { delete: true } : next) }}
+                interactive={!store.activeTool}
+                layoutMode={store.activeTool === 'select'} />
 
               {/* Selectable text layer */}
               <TextLayer docId={activeDoc.doc_id} page={activeDoc.currentPage} version={activeDoc.docVersion} pageData={pageData}
@@ -758,7 +764,7 @@ export default function Viewer() {
                 })}
 
                 {/* Rectángulo de selección de área (recortar/redactar) */}
-                {areaSel && (store.activeTool === 'croparea' || store.activeTool === 'redactarea') && (
+                {areaSel && (store.activeTool === 'croparea' || store.activeTool === 'redactarea' || isFormTool(store.activeTool)) && (
                   <rect x={Math.min(areaSel.x0, areaSel.x1)} y={Math.min(areaSel.y0, areaSel.y1)}
                     width={Math.abs(areaSel.x1 - areaSel.x0)} height={Math.abs(areaSel.y1 - areaSel.y0)}
                     fill={store.activeTool === 'redactarea' ? 'rgba(0,0,0,0.35)' : 'rgba(59,130,246,0.15)'}
@@ -793,17 +799,12 @@ export default function Viewer() {
                   const span = editSpan
                   setEditSpan(null)
                   try {
-                    const res = await apiFetch(`/pdf/edit-text/${activeDoc.doc_id}`, {
-                      method: 'POST', headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ page_num: activeDoc.currentPage, x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1, text: v, size: span.size, color: span.color, font: span.font }),
+                    await editTextUndoable(activeDoc.doc_id, {
+                      page: activeDoc.currentPage,
+                      x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1,
+                      text: v, size: span.size, color: span.color, font: span.font,
                     })
-                    if (res.ok) {
-                      store.setDocDirty(activeDoc.doc_id, true)
-                      store.invalidatePageCache(activeDoc.doc_id)
-                      store.invalidateThumbnails(activeDoc.doc_id)
-                      store.incrementDocVersion(activeDoc.doc_id)
-                      store.showToast('Texto editado', 'success')
-                    } else store.showToast('Error al editar texto', 'error')
+                    store.showToast('Texto editado. Ctrl+Z deshace.', 'success')
                   } catch { store.showToast('Error al editar texto', 'error') }
                 }
                 return (
@@ -855,7 +856,7 @@ export default function Viewer() {
             {formFields.length > 0 && !formHintOff && (
               <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-info/60 bg-panel shadow-token text-mini text-fg">
                 <span className="w-2 h-2 rounded-full bg-info shrink-0" />
-                Formulario: {formFields.length} campo(s) rellenable(s) en esta página
+                Formulario: {formFields.length} campo(s). Seleccioná (V) para mover o borrar.
                 <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
                   className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
                   <X size={14} />

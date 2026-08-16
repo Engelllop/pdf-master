@@ -58,7 +58,7 @@ class RenderMixin:
             max_px = 3000 if zoom <= 1.6 else 6000
             scale = self._capped_scale(page, zoom * settings.RENDER_DPI / 72, max_px)
             mat = fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix = page.get_pixmap(matrix=mat, alpha=False, annots=False)
             return pix.tobytes("png")
 
     def render_tile_bytes(self, doc_id: str, page_num: int, x0: float, y0: float,
@@ -79,7 +79,7 @@ class RenderMixin:
             md = max(clip.width, clip.height)
             scale = max(0.05, min(desired, 4000 / md)) if md > 0 else desired
             mat = fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False)
+            pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False, annots=False)
             return pix.tobytes("png")
 
     def render_page(self, doc_id: str, page_num: int, zoom: float = 1.0) -> Optional[PageRender]:
@@ -98,7 +98,7 @@ class RenderMixin:
             max_px = 3000 if zoom <= 1.6 else 6000
             scale = self._capped_scale(page, zoom * settings.RENDER_DPI / 72, max_px)
             mat = fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix = page.get_pixmap(matrix=mat, alpha=False, annots=False)
 
             img_data = pix.tobytes("png")
             img_b64 = base64.b64encode(img_data).decode('utf-8')
@@ -129,7 +129,7 @@ class RenderMixin:
             page = doc.load_page(page_num)
             scale = self._capped_scale(page, settings.THUMBNAIL_DPI / 72, 300)
             mat = fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix = page.get_pixmap(matrix=mat, alpha=False, annots=False)
 
             img_data = pix.tobytes("png")
             img_b64 = base64.b64encode(img_data).decode('utf-8')

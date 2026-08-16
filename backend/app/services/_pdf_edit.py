@@ -20,10 +20,11 @@ class EditMixin:
     MAX_WATERMARK_TILES = 400
 
     def add_watermark(self, doc_id: str, text: str, color: str = "#888888", fontsize: float = 48,
-                      angle: int = 45, opacity: float = 0.3, tiled: bool = True) -> bool:
+                      angle: int = 45, opacity: float = 0.3, tiled: bool = True, stash: bool = True) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc:
-            return False
+            return None
+        stash_id = self._stash_document(doc) if stash else ''
         rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0.5, 0.5, 0.5)
         text_width = fitz.get_text_length(text, fontsize=fontsize)
         for i in range(len(doc)):
@@ -65,35 +66,39 @@ class EditMixin:
                 row += 1
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
-        return True
+        return stash_id
 
-    def redact_area(self, doc_id: str, page_num: int, x: float, y: float, width: float, height: float) -> bool:
+    def redact_area(self, doc_id: str, page_num: int, x: float, y: float, width: float, height: float, stash: bool = True) -> Optional[str]:
+        """None = falló. '' = ok sin stash. uuid = página original para undo."""
         doc = self._acquire(doc_id)
         if not doc or page_num < 0 or page_num >= len(doc):
-            return False
+            return None
+        stash_id = self._stash_pages(doc, [page_num]) if stash else ''
         page = doc.load_page(page_num)
         rect = fitz.Rect(x, y, x + width, y + height)
         page.add_redact_annot(rect)
         page.apply_redactions()
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
-        return True
+        return stash_id
 
-    def insert_image(self, doc_id: str, page_num: int, x: float, y: float, width: float, height: float, image_path: str) -> bool:
+    def insert_image(self, doc_id: str, page_num: int, x: float, y: float, width: float, height: float, image_path: str, stash: bool = True) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc or page_num < 0 or page_num >= len(doc) or not os.path.exists(image_path):
-            return False
+            return None
+        stash_id = self._stash_pages(doc, [page_num]) if stash else ''
         page = doc.load_page(page_num)
         rect = fitz.Rect(x, y, x + width, y + height)
         page.insert_image(rect, filename=image_path)
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
-        return True
+        return stash_id
 
-    def add_header_footer(self, doc_id: str, header: Optional[str] = None, footer: Optional[str] = None, fontsize: float = 10, color: str = "#000000") -> bool:
+    def add_header_footer(self, doc_id: str, header: Optional[str] = None, footer: Optional[str] = None, fontsize: float = 10, color: str = "#000000", stash: bool = True) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc:
-            return False
+            return None
+        stash_id = self._stash_document(doc) if stash else ''
         rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0, 0, 0)
         for i in range(len(doc)):
             page = doc.load_page(i)
@@ -106,13 +111,15 @@ class EditMixin:
                 page.insert_text((rect.width / 2 - tw / 2, rect.height - 10), footer, fontsize=fontsize, color=rgb, overlay=True)
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
-        return True
+        return stash_id
 
-    def replace_text(self, doc_id: str, query: str, replace: str, page_num: Optional[int] = None, case_sensitive: bool = False, replace_all: bool = True) -> int:
+    def replace_text(self, doc_id: str, query: str, replace: str, page_num: Optional[int] = None, case_sensitive: bool = False, replace_all: bool = True, stash: bool = True):
         doc = self._acquire(doc_id)
         if not doc or not query:
-            return 0
+            return 0, '', None
         count = 0
+        stash_id = ''
+        stash_page = None
         pages_to_search = [page_num] if page_num is not None else range(len(doc))
         for p in pages_to_search:
             if p < 0 or p >= len(doc):
@@ -125,6 +132,12 @@ class EditMixin:
                 rects = [r for r in rects if query in page.get_textbox(r + (-1, -1, 1, 1))]
             if not rects:
                 continue
+            if stash and not stash_id:
+                if page_num is not None or not replace_all:
+                    stash_id = self._stash_pages(doc, [p])
+                    stash_page = p
+                else:
+                    stash_id = self._stash_document(doc)
             # Redact old text
             for rect in rects:
                 page.add_redact_annot(rect)
@@ -142,13 +155,20 @@ class EditMixin:
         if count > 0:
             self._dirty[doc_id] = True
             self._invalidate_render_cache(doc_id)
-        return count
+        return count, stash_id, stash_page
 
-    def set_metadata(self, doc_id: str, title: Optional[str] = None, author: Optional[str] = None, subject: Optional[str] = None, keywords: Optional[str] = None) -> bool:
+    def set_metadata(self, doc_id: str, title: Optional[str] = None, author: Optional[str] = None, subject: Optional[str] = None, keywords: Optional[str] = None) -> Optional[dict]:
+        """None = falló. Si ok, devuelve los metadatos anteriores para undo."""
         doc = self._acquire(doc_id)
         if not doc:
-            return False
-        meta = doc.metadata
+            return None
+        meta = doc.metadata or {}
+        previous = {
+            'title': meta.get('title') or '',
+            'author': meta.get('author') or '',
+            'subject': meta.get('subject') or '',
+            'keywords': meta.get('keywords') or '',
+        }
         if title is not None:
             meta['title'] = title
         if author is not None:
@@ -158,8 +178,16 @@ class EditMixin:
         if keywords is not None:
             meta['keywords'] = keywords
         doc.set_metadata(meta)
+        info = self._infos.get(doc_id)
+        if info:
+            if title is not None:
+                info.title = title or None
+            if author is not None:
+                info.author = author or None
+            if subject is not None:
+                info.subject = subject or None
         self._dirty[doc_id] = True
-        return True
+        return previous
 
     @staticmethod
     def _style_at(page, rect):
@@ -198,14 +226,15 @@ class EditMixin:
 
     def edit_text_span(self, doc_id: str, page_num: int, x0: float, y0: float,
                        x1: float, y1: float, text: str, size: Optional[float] = None,
-                       color: str = "#000000", font: Optional[str] = None) -> bool:
+                       color: str = "#000000", font: Optional[str] = None, stash: bool = True) -> Optional[str]:
         """Edición in-situ: tapa el span original con el color de fondo muestreado y
         reinserta el texto nuevo en la misma posición, mapeando la fuente a una base14
         aproximada (PyMuPDF no reusa fuentes incrustadas por nombre)."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or page_num < 0 or page_num >= len(doc):
-                return False
+                return None
+            stash_id = self._stash_pages(doc, [page_num]) if stash else ''
             page = doc.load_page(page_num)
             rect = fitz.Rect(x0, y0, x1, y1)
             # Color de fondo: el píxel más claro del borde del span (evita los glifos).
@@ -234,7 +263,7 @@ class EditMixin:
                 page.insert_text((x0, y1 - max(1.0, (y1 - y0) * 0.2)), text,
                                  fontsize=fs, color=rgb, overlay=True)
             self._dirty[doc_id] = True
-            return True
+            return stash_id
 
     def list_page_images(self, doc_id: str, page_num: int) -> List[dict]:
         """Imágenes de la página con su bbox (para editar/mover/borrar)."""
@@ -280,14 +309,15 @@ class EditMixin:
 
     def transform_image(self, doc_id: str, page_num: int, xref: int,
                         old: List[float], new: Optional[List[float]] = None,
-                        delete: bool = False, replace_path: Optional[str] = None) -> bool:
+                        delete: bool = False, replace_path: Optional[str] = None, stash: bool = True) -> Optional[str]:
         """Mueve/redimensiona/borra/reemplaza una imagen existente: tapa el área
         original con el color de fondo muestreado y, si no es borrado, reinserta (la
         misma imagen o una nueva) en el rect destino."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or page_num < 0 or page_num >= len(doc):
-                return False
+                return None
+            stash_id = self._stash_pages(doc, [page_num]) if stash else ''
             page = doc.load_page(page_num)
             img_bytes: Optional[bytes] = None
             if not delete:
@@ -296,7 +326,7 @@ class EditMixin:
                         with open(replace_path, "rb") as f:
                             img_bytes = f.read()
                     except Exception:
-                        return False
+                        return None
                 else:
                     try:
                         ext = doc.extract_image(xref)
@@ -313,15 +343,16 @@ class EditMixin:
                 try:
                     page.insert_image(fitz.Rect(*(new or old)), stream=img_bytes)
                 except Exception:
-                    return False
+                    return None
             self._dirty[doc_id] = True
-            return True
+            return stash_id
 
-    def add_page_numbers(self, doc_id: str, prefix: str = "", start: int = 1, position: str = "bottom", fontsize: float = 10, color: str = "#000000") -> bool:
+    def add_page_numbers(self, doc_id: str, prefix: str = "", start: int = 1, position: str = "bottom", fontsize: float = 10, color: str = "#000000", stash: bool = True) -> Optional[str]:
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
-                return False
+                return None
+            stash_id = self._stash_document(doc) if stash else ''
             rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0, 0, 0)
             n = len(doc)
             for i in range(n):
@@ -335,23 +366,28 @@ class EditMixin:
                 page.insert_text((x, y), label, fontsize=fontsize, color=rgb, overlay=True)
             self._dirty[doc_id] = True
             self._invalidate_render_cache(doc_id)
-            return True
+            return stash_id
 
-    def redact_matches(self, doc_id: str, query: str) -> int:
+    def redact_matches(self, doc_id: str, query: str, stash: bool = True):
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or not query:
-                return 0
-            count = 0
+                return 0, ''
+            hits = []
             for i in range(len(doc)):
+                rects = doc.load_page(i).search_for(query)
+                if rects:
+                    hits.append((i, rects))
+            if not hits:
+                return 0, ''
+            stash_id = self._stash_document(doc) if stash else ''
+            count = 0
+            for i, rects in hits:
                 page = doc.load_page(i)
-                rects = page.search_for(query)
                 for r in rects:
                     page.add_redact_annot(r, fill=(0, 0, 0))
                     count += 1
-                if rects:
-                    page.apply_redactions()
-            if count:
-                self._dirty[doc_id] = True
-                self._invalidate_render_cache(doc_id)
-            return count
+                page.apply_redactions()
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return count, stash_id

@@ -7,6 +7,13 @@ import ReviewPanel from './ReviewPanel'
 import CountPanel from './CountPanel'
 
 import { apiFetch } from '../lib/api'
+import {
+  deletePagesUndoable,
+  duplicatePageUndoable,
+  insertBlankUndoable,
+  reorderPagesUndoable,
+  rotatePagesUndoable,
+} from '../lib/pageUndo'
 
 function OutlineTree({ items, depth = 0, onJump }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void }) {
   return (
@@ -33,12 +40,12 @@ function OutlineTree({ items, depth = 0, onJump }: { items: OutlineItem[]; depth
 export default function ThumbnailPanel() {
   const store = useStoreSlice(
     'docs', 'activeDocId', 'sidebarOpen', 'toggleSidebar', 'setPage', 'addThumbnail',
-    'bookmarks', 'removeBookmark', 'reorderPages', 'showToast', 'setDocDirty',
-    'incrementDocVersion', 'viewerScroll', 'updateDocPageCount', 'goToSearchResult',
+    'bookmarks', 'removeBookmark', 'showToast', 'setDocDirty',
+    'viewerScroll', 'goToSearchResult',
     'deleteAnnotation', 'invalidatePageCache', 'invalidateThumbnails', 'selectAnnotation',
     'setActiveDoc', 'setOutline',
   )
-  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, reorderPages, showToast, setDocDirty, incrementDocVersion, viewerScroll, updateDocPageCount, goToSearchResult, setActiveDoc, setOutline } = store
+  const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, showToast, setDocDirty, viewerScroll, goToSearchResult, setActiveDoc, setOutline } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const { askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -146,28 +153,16 @@ export default function ThumbnailPanel() {
 
   const handleDeleteSelected = async () => {
     if (!activeDoc || selectedPages.size === 0) return
+    if (selectedPages.size >= activeDoc.page_count) {
+      showToast('No se pueden eliminar todas las páginas', 'error')
+      return
+    }
     if (!(await askConfirm('Eliminar páginas', `¿Eliminar ${selectedPages.size} página(s) seleccionada(s)?`, 'Eliminar'))) return
-    const pages = Array.from(selectedPages).sort((a, b) => b - a)
+    const pages = Array.from(selectedPages)
     try {
-      const res = await apiFetch(`/pdf/delete-pages/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          updateDocPageCount(activeDoc.doc_id, Math.max(1, activeDoc.page_count - selectedPages.size))
-          if (activeDoc.currentPage >= activeDoc.page_count - selectedPages.size) {
-            setPage(activeDoc.doc_id, Math.max(0, activeDoc.page_count - selectedPages.size - 1))
-          }
-          setDocDirty(activeDoc.doc_id, true)
-          store.invalidatePageCache(activeDoc.doc_id)
-          store.invalidateThumbnails(activeDoc.doc_id)
-          setSelectedPages(new Set())
-          showToast(`${selectedPages.size} pagina(s) eliminada(s)`, 'success')
-        }
-      }
+      await deletePagesUndoable(activeDoc.doc_id, pages)
+      setSelectedPages(new Set())
+      showToast(`${pages.length} página(s) eliminada(s). Ctrl+Z restaura.`, 'success')
     } catch (err: any) {
       showToast('Error: ' + err.message, 'error')
     }
@@ -177,18 +172,8 @@ export default function ThumbnailPanel() {
     if (!activeDoc || selectedPages.size === 0) return
     const pages = Array.from(selectedPages)
     try {
-      const res = await apiFetch(`/pdf/rotate-pages/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages, degrees }),
-      })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        store.invalidatePageCache(activeDoc.doc_id)
-        store.invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast(`${pages.length} pagina(s) rotada(s) ${degrees}°`, 'success')
-      }
+      await rotatePagesUndoable(activeDoc.doc_id, pages, degrees)
+      showToast(`${pages.length} página(s) rotada(s) ${degrees}°. Ctrl+Z deshace.`, 'success')
     } catch (err: any) {
       showToast('Error: ' + err.message, 'error')
     }
@@ -216,25 +201,13 @@ export default function ThumbnailPanel() {
     }
   }
 
-  const refreshAfterStructuralChange = (newCount: number) => {
-    if (!activeDoc) return
-    updateDocPageCount(activeDoc.doc_id, newCount)
-    setDocDirty(activeDoc.doc_id, true)
-    store.invalidatePageCache(activeDoc.doc_id)
-    store.invalidateThumbnails(activeDoc.doc_id)
-    incrementDocVersion(activeDoc.doc_id)
-  }
-
   const handleDuplicate = async () => {
     if (!activeDoc || selectedPages.size === 0) return
     const page = Math.min(...Array.from(selectedPages))
     try {
-      const res = await apiFetch(`/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${page}`, { method: 'POST' })
-      if (res.ok) {
-        refreshAfterStructuralChange(activeDoc.page_count + 1)
-        setSelectedPages(new Set())
-        showToast('Página duplicada', 'success')
-      } else showToast('Error al duplicar', 'error')
+      await duplicatePageUndoable(activeDoc.doc_id, page)
+      setSelectedPages(new Set())
+      showToast('Página duplicada. Ctrl+Z deshace.', 'success')
     } catch (err: any) { showToast('Error: ' + err.message, 'error') }
   }
 
@@ -242,12 +215,9 @@ export default function ThumbnailPanel() {
     if (!activeDoc) return
     const index = selectedPages.size > 0 ? Math.max(...Array.from(selectedPages)) + 1 : activeDoc.page_count
     try {
-      const res = await apiFetch(`/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
-      if (res.ok) {
-        refreshAfterStructuralChange(activeDoc.page_count + 1)
-        setSelectedPages(new Set())
-        showToast('Página en blanco insertada', 'success')
-      } else showToast('Error al insertar página', 'error')
+      await insertBlankUndoable(activeDoc.doc_id, index)
+      setSelectedPages(new Set())
+      showToast('Página en blanco insertada. Ctrl+Z deshace.', 'success')
     } catch (err: any) { showToast('Error: ' + err.message, 'error') }
   }
 
@@ -343,20 +313,9 @@ export default function ThumbnailPanel() {
                     const newOrder = Array.from({ length: activeDoc.page_count }, (_, idx) => idx)
                     const [removed] = newOrder.splice(dragIndex, 1)
                     newOrder.splice(i, 0, removed)
-                    apiFetch(`/pdf/reorder/${activeDoc.doc_id}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ new_order: newOrder }),
-                    }).then((res) => {
-                      if (res.ok) {
-                        reorderPages(activeDoc.doc_id, newOrder)
-                        setDocDirty(activeDoc.doc_id, true)
-                        incrementDocVersion(activeDoc.doc_id)
-                        showToast('Paginas reordenadas', 'success')
-                      } else {
-                        showToast('Error al reordenar paginas', 'error')
-                      }
-                    })
+                    void reorderPagesUndoable(activeDoc.doc_id, newOrder)
+                      .then(() => showToast('Páginas reordenadas. Ctrl+Z deshace.', 'success'))
+                      .catch((err: Error) => showToast('Error: ' + err.message, 'error'))
                     setDragIndex(null); setDragOverIndex(null)
                   }}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}

@@ -109,6 +109,11 @@ class TestDocumentOps:
         })
         assert resp.status_code == 200
         assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.post(f"/pdf/restore-document/{info['doc_id']}", json={"stash_id": stash_id}).status_code == 200
+        text = client.get(f"/pdf/text/{info['doc_id']}/0").json()["text"]
+        assert "CONFIDENCIAL" not in text
 
     def test_watermark_is_tiled_across_the_page(self, client, open_doc):
         """La marca de agua se repite por toda la pagina; con tiled=False vuelve a
@@ -132,6 +137,12 @@ class TestDocumentOps:
         assert resp.status_code == 200
         data = client.get(f"/pdf/page-info/{info['doc_id']}/0?zoom=1.0").json()
         assert data["original_width"] < 595
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        restored = client.post(f"/pdf/replace-page/{info['doc_id']}", json={"page_num": 0, "stash_id": stash_id})
+        assert restored.status_code == 200
+        back = client.get(f"/pdf/page-info/{info['doc_id']}/0?zoom=1.0").json()
+        assert back["original_width"] >= data["original_width"]
 
     def test_header_footer(self, client, open_doc):
         info = open_doc()
@@ -165,6 +176,112 @@ class TestDocumentOps:
             "title": "Mi título", "author": "Engell", "subject": "Pruebas", "keywords": "pdf,test",
         })
         assert resp.status_code == 200
+        previous = resp.json()["previous"]
+        assert client.get(f"/pdf/info/{info['doc_id']}").json()["title"] == "Mi título"
+        undo = client.post(f"/pdf/metadata/{info['doc_id']}", json=previous)
+        assert undo.status_code == 200
+        assert undo.json()["previous"]["title"] == "Mi título"
+        again = client.get(f"/pdf/info/{info['doc_id']}").json()
+        assert (again["title"] or "") == (previous["title"] or "")
+
+    def test_make_searchable_skips_pages_with_text(self, client, open_doc):
+        info = open_doc(pages=1, text="ya hay texto")
+        resp = client.post(f"/pdf/make-searchable/{info['doc_id']}?page=0")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["words"] == 0
+        assert body["stash_id"] is None
+
+    def test_form_field_roundtrip(self, client, tmp_path):
+        path = tmp_path / "form.pdf"
+        doc = fitz.open()
+        page = doc.new_page()
+        widget = fitz.Widget()
+        widget.field_name = "nombre"
+        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        widget.rect = fitz.Rect(72, 72, 300, 100)
+        page.add_widget(widget)
+        doc.save(str(path))
+        doc.close()
+        info = client.post("/pdf/open", json={"file_path": str(path)}).json()
+        resp = client.post(f"/pdf/widgets/{info['doc_id']}/0", json={"field_name": "nombre", "value": "Ana"})
+        assert resp.status_code == 200
+        assert resp.json()["previous"] == ""
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.get(f"/pdf/widgets/{info['doc_id']}/0").json()[0]["value"] == "Ana"
+        assert client.post(f"/pdf/replace-page/{info['doc_id']}", json={"page_num": 0, "stash_id": stash_id}).status_code == 200
+        assert client.get(f"/pdf/widgets/{info['doc_id']}/0").json()[0]["value"] == ""
+        client.post(f"/pdf/close/{info['doc_id']}")
+
+    def test_create_form_fields(self, client, open_doc):
+        info = open_doc(pages=1)
+        doc_id = info["doc_id"]
+        text = client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "text", "field_name": "nombre",
+            "x": 72, "y": 120, "width": 200, "height": 24,
+        })
+        assert text.status_code == 200, text.text
+        assert text.json()["field_name"] == "nombre"
+        assert text.json()["stash_id"]
+        check = client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "checkbox", "field_name": "ok",
+            "x": 72, "y": 160, "width": 14, "height": 14,
+        })
+        assert check.status_code == 200
+        combo = client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "combo", "field_name": "ciudad",
+            "x": 72, "y": 200, "width": 160, "height": 22,
+            "options": ["CABA", "Rosario", "Córdoba"],
+        })
+        assert combo.status_code == 200
+        radio = client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "radio", "field_name": "sexo",
+            "x": 72, "y": 240, "width": 16, "height": 16, "radio_value": "M",
+        })
+        assert radio.status_code == 200
+        fields = {f["field_name"]: f for f in client.get(f"/pdf/widgets/{doc_id}/0").json()}
+        assert "nombre" in fields
+        assert fields["nombre"]["field_type"].lower().startswith("text")
+        assert "ok" in fields
+        assert "ciudad" in fields
+        assert "CABA" in fields["ciudad"]["options"]
+        dup = client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "text", "field_name": "nombre",
+            "x": 72, "y": 280, "width": 120, "height": 20,
+        })
+        assert dup.status_code == 200
+        assert dup.json()["field_name"] == "nombre_2"
+        stash_id = text.json()["stash_id"]
+        assert client.post(f"/pdf/replace-page/{doc_id}", json={"page_num": 0, "stash_id": stash_id}).status_code == 200
+        names = [f["field_name"] for f in client.get(f"/pdf/widgets/{doc_id}/0").json()]
+        assert names == []
+
+    def test_transform_form_field(self, client, open_doc):
+        info = open_doc(pages=1)
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/widgets/{doc_id}", json={
+            "page_num": 0, "field_type": "text", "field_name": "titulo",
+            "x": 72, "y": 120, "width": 200, "height": 24,
+        }).status_code == 200
+        xref = client.get(f"/pdf/widgets/{doc_id}/0").json()[0]["xref"]
+        moved = client.post(f"/pdf/widgets/{doc_id}/0/transform", json={
+            "xref": xref, "x": 100, "y": 150, "width": 180, "height": 22,
+        })
+        assert moved.status_code == 200
+        rect = client.get(f"/pdf/widgets/{doc_id}/0").json()[0]["rect"]
+        assert abs(rect["x"] - 100) < 1
+        assert abs(rect["y"] - 150) < 1
+        deleted = client.post(f"/pdf/widgets/{doc_id}/0/transform", json={"xref": xref, "delete": True})
+        assert deleted.status_code == 200
+        assert deleted.json()["stash_id"]
+        assert client.get(f"/pdf/widgets/{doc_id}/0").json() == []
+        assert client.post(f"/pdf/replace-page/{doc_id}", json={
+            "page_num": 0, "stash_id": deleted.json()["stash_id"],
+        }).status_code == 200
+        restored = client.get(f"/pdf/widgets/{doc_id}/0").json()
+        assert len(restored) == 1
+        assert restored[0]["field_name"] == "titulo"
 
     def test_replace_text(self, client, open_doc):
         info = open_doc(pages=1, text="palabraunica")
@@ -174,6 +291,10 @@ class TestDocumentOps:
         })
         assert resp.status_code == 200
         assert resp.json()["replaced"] >= 1
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.post(f"/pdf/replace-page/{info['doc_id']}", json={"page_num": 0, "stash_id": stash_id}).status_code == 200
+        assert "palabraunica" in client.get(f"/pdf/text/{info['doc_id']}/0").json()["text"]
 
     def test_save_with_password_protects_file(self, client, open_doc, tmp_path):
         info = open_doc()

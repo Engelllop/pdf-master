@@ -3,6 +3,18 @@ import { usePdfStore, type PdfDoc } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
+import {
+  deletePagesUndoable,
+  duplicatePageUndoable,
+  headerFooterUndoable,
+  insertBlankUndoable,
+  makeSearchableUndoable,
+  metadataUndoable,
+  mergePdfUndoable,
+  pageNumbersUndoable,
+  rotatePagesUndoable,
+  watermarkUndoable,
+} from '../lib/pageUndo'
 
 type ActiveDoc = PdfDoc | undefined
 
@@ -17,19 +29,19 @@ type Helpers = {
  * wrapper sobre el backend; movidos verbatim desde Toolbar.tsx. */
 export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toastActionError }: Helpers) {
   const {
-    docs, addDoc, setPage, setZoom,
+    docs, addDoc, setZoom,
     setFitMode, computeFitZoom, viewerWidth, viewerHeight,
-    updateDocPageCount, updateDocPageSizes, showToast,
-    setDocDirty, invalidatePageCache, invalidateThumbnails, setSaveStatus,
-    toggleCompareMode, setCompareDoc, compareMode, compareDocId, incrementDocVersion,
+    showToast,
+    setDocDirty, setSaveStatus,
+    toggleCompareMode, setCompareDoc, compareMode, compareDocId,
     activeTool, setActiveTool, setSelectedImagePath, setSelectedImageData,
     setAnnotations,
   } = useStoreSlice(
-    'docs', 'addDoc', 'setPage', 'setZoom',
+    'docs', 'addDoc', 'setZoom',
     'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
-    'updateDocPageCount', 'updateDocPageSizes', 'showToast',
-    'setDocDirty', 'invalidatePageCache', 'invalidateThumbnails', 'setSaveStatus',
-    'toggleCompareMode', 'setCompareDoc', 'compareMode', 'compareDocId', 'incrementDocVersion',
+    'showToast',
+    'setDocDirty', 'setSaveStatus',
+    'toggleCompareMode', 'setCompareDoc', 'compareMode', 'compareDocId',
     'activeTool', 'setActiveTool', 'setSelectedImagePath', 'setSelectedImageData',
     'setAnnotations',
   )
@@ -62,14 +74,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!v) return
     const prefix = String(v.prefix)
     try {
-      const res = await apiFetch(`/pdf/page-numbers/${activeDoc.doc_id}?prefix=${encodeURIComponent(prefix)}&start=1&position=${v.position}`, { method: 'POST' })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast('Numeración aplicada', 'success')
-      } else showToast('Error al numerar páginas', 'error')
+      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, String(v.position))
+      showToast('Numeración aplicada. Ctrl+Z deshace.', 'success')
     } catch (err) { toastActionError(err) }
   }
 
@@ -104,17 +110,12 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       ], 'Aplicar')
       if (!v) return
       const all = String(v.scope).includes('documento')
-      const qs = all ? '' : `?page=${activeDoc.currentPage}`
-      const res = await withProgress(all ? 'OCR de todo el documento…' : 'Haciendo la página buscable (OCR)…', () => apiFetch(`/pdf/make-searchable/${activeDoc.doc_id}${qs}`, { method: 'POST' }))
-      if (res.ok) {
-        const d = await res.json()
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast(`OCR aplicado: ${d.words} palabra(s)`, 'success')
-      } else if (res.status === 503) {
-        showToast('Tesseract OCR no está instalado', 'error')
-      } else showToast('Error en OCR', 'error')
+      const words = await withProgress(
+        all ? 'OCR de todo el documento…' : 'Haciendo la página buscable (OCR)…',
+        () => makeSearchableUndoable(activeDoc.doc_id, all ? undefined : activeDoc.currentPage),
+      )
+      if (words > 0) showToast(`OCR aplicado: ${words} palabra(s). Ctrl+Z deshace.`, 'success')
+      else showToast('Nada que OCR: la página ya tiene texto', 'info')
     } catch (err) { toastActionError(err) }
   }
 
@@ -159,19 +160,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const text = String(v.text).trim()
     if (!text) return
     try {
-      const res = await apiFetch(`/pdf/watermark/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast('Marca de agua agregada', 'success')
-      } else {
-        showToast('Error al agregar marca de agua', 'error')
-      }
+      await watermarkUndoable(activeDoc.doc_id, text)
+      showToast('Marca de agua agregada. Ctrl+Z deshace.', 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -268,17 +258,13 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     ], 'Guardar')
     if (!v) return
     try {
-      const res = await apiFetch(`/pdf/metadata/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: String(v.title) || undefined, author: String(v.author) || undefined, subject: String(v.subject) || undefined, keywords: String(v.keywords) || undefined }),
+      await metadataUndoable(activeDoc.doc_id, {
+        title: String(v.title) || undefined,
+        author: String(v.author) || undefined,
+        subject: String(v.subject) || undefined,
+        keywords: String(v.keywords) || undefined,
       })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        showToast('Metadatos actualizados', 'success')
-      } else {
-        showToast('Error al actualizar metadatos', 'error')
-      }
+      showToast('Metadatos actualizados. Ctrl+Z deshace.', 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -293,20 +279,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!v) return
     const header = String(v.header), footer = String(v.footer)
     try {
-      const res = await apiFetch(`/pdf/header-footer/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ header: header || undefined, footer: footer || undefined }),
-      })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast('Encabezado/pie agregado', 'success')
-      } else {
-        showToast('Error al agregar encabezado/pie', 'error')
-      }
+      await headerFooterUndoable(activeDoc.doc_id, header || undefined, footer || undefined)
+      showToast('Encabezado/pie agregado. Ctrl+Z deshace.', 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -317,28 +291,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const sourcePath = await window.api.openFile()
     if (!sourcePath) return
     try {
-      const res = await apiFetch(`/pdf/merge/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_path: sourcePath }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          // El merge vive solo en memoria del motor: /pdf/info devuelve el estado
-          // actualizado (reabrir el archivo desde disco daba el page_count viejo).
-          const infoRes = await apiFetch(`/pdf/info/${activeDoc.doc_id}`)
-          if (infoRes.ok) {
-            const info = await infoRes.json()
-            updateDocPageCount(activeDoc.doc_id, info.page_count)
-            updateDocPageSizes(activeDoc.doc_id, info.page_sizes)
-          }
-          setDocDirty(activeDoc.doc_id, true)
-          invalidatePageCache(activeDoc.doc_id)
-          invalidateThumbnails(activeDoc.doc_id)
-          incrementDocVersion(activeDoc.doc_id)
-          showToast('PDFs combinados', 'success')
-        }
-      }
+      await mergePdfUndoable(activeDoc.doc_id, sourcePath)
+      showToast('PDFs combinados. Ctrl+Z deshace.', 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -350,7 +304,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     try {
       const res = await withProgress('Comprimiendo…', () => apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (res.ok) {
-        showToast('Comprimido: ' + outputPath.split(/[\\/]/).pop(), 'success')
+        showToast('Comprimido en ' + outputPath.split(/[\\/]/).pop() + ' (archivo nuevo)', 'success')
       } else {
         showToast('Error al comprimir', 'error')
       }
@@ -404,11 +358,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const text = String(v.text).trim()
     if (!text) return
     await runBatch('Marca de agua', async (d) => {
-      const res = await apiFetch(`/pdf/watermark/${d.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
-      })
-      if (!res.ok) throw new Error('watermark ' + d.file_name)
-      setDocDirty(d.doc_id, true); invalidatePageCache(d.doc_id); invalidateThumbnails(d.doc_id); incrementDocVersion(d.doc_id)
+      await watermarkUndoable(d.doc_id, text)
     })
   }
 
@@ -514,17 +464,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRotate = async (degrees: number) => {
     if (!activeDoc) return
     try {
-      const res = await apiFetch(`/pdf/rotate/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_num: activeDoc.currentPage, degrees }),
-      })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast(`Página rotada ${degrees}°`, 'success')
-      }
+      await rotatePagesUndoable(activeDoc.doc_id, [activeDoc.currentPage], degrees)
+      showToast(`Página rotada ${degrees}°. Ctrl+Z deshace.`, 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -533,17 +474,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRotateAll = async (degrees: number) => {
     if (!activeDoc) return
     try {
-      const res = await apiFetch(`/pdf/rotate-all/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ page_num: 0, degrees }),
-      })
-      if (res.ok) {
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast(`Documento rotado ${degrees}°`, 'success')
-      }
+      await rotatePagesUndoable(activeDoc.doc_id, 'all', degrees)
+      showToast(`Documento rotado ${degrees}°. Ctrl+Z deshace.`, 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -551,25 +483,14 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleDeletePage = async () => {
     if (!activeDoc) return
+    if (activeDoc.page_count <= 1) {
+      showToast('No se puede eliminar la única página', 'error')
+      return
+    }
     if (!(await askConfirm('Eliminar página', `¿Eliminar la página ${activeDoc.currentPage + 1}?`, 'Eliminar'))) return
     try {
-      const res = await apiFetch(`/pdf/delete-pages/${activeDoc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: [activeDoc.currentPage] }),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.success) {
-          updateDocPageCount(activeDoc.doc_id, Math.max(1, activeDoc.page_count - 1))
-          if (activeDoc.currentPage >= activeDoc.page_count - 1) {
-            setPage(activeDoc.doc_id, Math.max(0, activeDoc.page_count - 2))
-          }
-          setDocDirty(activeDoc.doc_id, true)
-          invalidatePageCache(activeDoc.doc_id)
-          invalidateThumbnails(activeDoc.doc_id)
-          showToast('Página eliminada. Ctrl+Z no deshace páginas; usá la copia .bak si la tenés activa.', 'info')
-        }
-      }
+      await deletePagesUndoable(activeDoc.doc_id, [activeDoc.currentPage])
+      showToast('Página eliminada. Ctrl+Z la restaura.', 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -584,32 +505,17 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleInsertBlank = async () => {
     if (!activeDoc) return
-    const index = activeDoc.currentPage + 1
     try {
-      const res = await apiFetch(`/pdf/insert-blank/${activeDoc.doc_id}?index=${index}`, { method: 'POST' })
-      if (res.ok) {
-        updateDocPageCount(activeDoc.doc_id, activeDoc.page_count + 1)
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast('Página en blanco insertada', 'success')
-      } else showToast('Error al insertar página', 'error')
+      await insertBlankUndoable(activeDoc.doc_id, activeDoc.currentPage + 1)
+      showToast('Página en blanco insertada. Ctrl+Z deshace.', 'success')
     } catch (err) { toastActionError(err) }
   }
 
   const handleDuplicatePage = async () => {
     if (!activeDoc) return
     try {
-      const res = await apiFetch(`/pdf/duplicate-page/${activeDoc.doc_id}?page_num=${activeDoc.currentPage}`, { method: 'POST' })
-      if (res.ok) {
-        updateDocPageCount(activeDoc.doc_id, activeDoc.page_count + 1)
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast('Página duplicada', 'success')
-      } else showToast('Error al duplicar', 'error')
+      await duplicatePageUndoable(activeDoc.doc_id, activeDoc.currentPage)
+      showToast('Página duplicada. Ctrl+Z deshace.', 'success')
     } catch (err) { toastActionError(err) }
   }
 

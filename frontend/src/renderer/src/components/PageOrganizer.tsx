@@ -5,16 +5,21 @@ import {
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
+import {
+  deletePagesUndoable,
+  duplicatePageUndoable,
+  insertBlankUndoable,
+  reorderPagesUndoable,
+  rotatePagesUndoable,
+} from '../lib/pageUndo'
 
 /** Organizador de páginas a pantalla completa: la columna de 224 px del panel
  * lateral no sirve para reordenar documentos de decenas de páginas. */
 export default function PageOrganizer({ onClose }: { onClose: () => void }) {
   const {
-    docs, activeDocId, setPage, showToast, setDocDirty, reorderPages,
-    updateDocPageCount, invalidatePageCache, invalidateThumbnails, incrementDocVersion,
+    docs, activeDocId, setPage, showToast,
   } = useStoreSlice(
-    'docs', 'activeDocId', 'setPage', 'showToast', 'setDocDirty', 'reorderPages',
-    'updateDocPageCount', 'invalidatePageCache', 'invalidateThumbnails', 'incrementDocVersion',
+    'docs', 'activeDocId', 'setPage', 'showToast',
   )
   const doc = docs.find((d) => d.doc_id === activeDocId)
 
@@ -67,15 +72,6 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
 
   if (!doc) return null
 
-  const refreshAfter = (newCount: number) => {
-    updateDocPageCount(doc.doc_id, newCount)
-    setDocDirty(doc.doc_id, true)
-    invalidatePageCache(doc.doc_id)
-    invalidateThumbnails(doc.doc_id)
-    incrementDocVersion(doc.doc_id)
-    setSelected(new Set())
-  }
-
   const click = (i: number, e: React.MouseEvent) => {
     if (e.ctrlKey || e.metaKey) {
       setSelected((prev) => {
@@ -106,35 +102,20 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
     setDragOver(null)
     setBusy(true)
     try {
-      const res = await apiFetch(`/pdf/reorder/${doc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ new_order: order }),
-      })
-      if (res.ok) {
-        reorderPages(doc.doc_id, order)
-        setDocDirty(doc.doc_id, true)
-        incrementDocVersion(doc.doc_id)
-        showToast('Páginas reordenadas', 'success')
-      } else showToast('Error al reordenar', 'error')
-    } finally { setBusy(false) }
+      await reorderPagesUndoable(doc.doc_id, order)
+      showToast('Páginas reordenadas. Ctrl+Z deshace.', 'success')
+    } catch { showToast('Error al reordenar', 'error') }
+    finally { setBusy(false) }
   }
 
   const rotate = async (degrees: number) => {
     if (selected.size === 0) return
     setBusy(true)
     try {
-      const res = await apiFetch(`/pdf/rotate-pages/${doc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: [...selected], degrees }),
-      })
-      if (res.ok) {
-        setDocDirty(doc.doc_id, true)
-        invalidatePageCache(doc.doc_id)
-        invalidateThumbnails(doc.doc_id)
-        incrementDocVersion(doc.doc_id)
-        showToast(`${selected.size} página(s) rotada(s)`, 'success')
-      } else showToast('Error al rotar', 'error')
-    } finally { setBusy(false) }
+      await rotatePagesUndoable(doc.doc_id, [...selected], degrees)
+      showToast(`${selected.size} página(s) rotada(s). Ctrl+Z deshace.`, 'success')
+    } catch { showToast('Error al rotar', 'error') }
+    finally { setBusy(false) }
   }
 
   const remove = async () => {
@@ -143,35 +124,33 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
     if (!(await askConfirm('Eliminar páginas', `¿Eliminar ${selected.size} página(s)?`, 'Eliminar'))) return
     setBusy(true)
     try {
-      const res = await apiFetch(`/pdf/delete-pages/${doc.doc_id}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: [...selected].sort((a, b) => b - a) }),
-      })
-      if (res.ok) {
-        refreshAfter(pageCount - selected.size)
-        showToast('Páginas eliminadas', 'success')
-      } else showToast('Error al eliminar', 'error')
-    } finally { setBusy(false) }
+      await deletePagesUndoable(doc.doc_id, [...selected])
+      setSelected(new Set())
+      showToast('Páginas eliminadas. Ctrl+Z restaura.', 'success')
+    } catch { showToast('Error al eliminar', 'error') }
+    finally { setBusy(false) }
   }
 
   const duplicate = async () => {
     if (selected.size === 0) return
     setBusy(true)
     try {
-      const res = await apiFetch(`/pdf/duplicate-page/${doc.doc_id}?page_num=${Math.min(...selected)}`, { method: 'POST' })
-      if (res.ok) { refreshAfter(pageCount + 1); showToast('Página duplicada', 'success') }
-      else showToast('Error al duplicar', 'error')
-    } finally { setBusy(false) }
+      await duplicatePageUndoable(doc.doc_id, Math.min(...selected))
+      setSelected(new Set())
+      showToast('Página duplicada. Ctrl+Z deshace.', 'success')
+    } catch { showToast('Error al duplicar', 'error') }
+    finally { setBusy(false) }
   }
 
   const insertBlank = async () => {
     const index = selected.size > 0 ? Math.max(...selected) + 1 : pageCount
     setBusy(true)
     try {
-      const res = await apiFetch(`/pdf/insert-blank/${doc.doc_id}?index=${index}`, { method: 'POST' })
-      if (res.ok) { refreshAfter(pageCount + 1); showToast('Página en blanco insertada', 'success') }
-      else showToast('Error al insertar', 'error')
-    } finally { setBusy(false) }
+      await insertBlankUndoable(doc.doc_id, index)
+      setSelected(new Set())
+      showToast('Página en blanco insertada. Ctrl+Z deshace.', 'success')
+    } catch { showToast('Error al insertar', 'error') }
+    finally { setBusy(false) }
   }
 
   const extract = async () => {

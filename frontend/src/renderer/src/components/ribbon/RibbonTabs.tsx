@@ -17,8 +17,8 @@ const TABS: Array<{ id: RibbonTab; label: string }> = [
 // Fila de la cinta: menú Archivo + acciones rápidas (guardar, imprimir, deshacer,
 // rehacer) a la izquierda, pestañas de modo centradas.
 export default function RibbonTabs() {
-  const { activeRibbon, setActiveRibbon, docs, activeDocId, undo, redo, undoStack, redoStack } = useStoreSlice(
-    'activeRibbon', 'setActiveRibbon', 'docs', 'activeDocId', 'undo', 'redo', 'undoStack', 'redoStack',
+  const { activeRibbon, setActiveRibbon, docs, activeDocId, undo, redo, undoStack, redoStack, pageUndoBusy } = useStoreSlice(
+    'activeRibbon', 'setActiveRibbon', 'docs', 'activeDocId', 'undo', 'redo', 'undoStack', 'redoStack', 'pageUndoBusy',
   )
   const hasDoc = docs.some((d) => d.doc_id === activeDocId)
 
@@ -47,8 +47,8 @@ export default function RibbonTabs() {
         <QBtn icon={Printer} tip="Imprimir" shortcut="Ctrl+P" disabled={!hasDoc}
           onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} />
         <div className="w-px h-4 mx-1 bg-border" />
-        <QBtn icon={Undo2} tip="Deshacer" shortcut="Ctrl+Z" disabled={undoStack.length === 0} onClick={undo} />
-        <QBtn icon={Redo2} tip="Rehacer" shortcut="Ctrl+Y" disabled={redoStack.length === 0} onClick={redo} />
+        <QBtn icon={Undo2} tip="Deshacer" shortcut="Ctrl+Z" disabled={undoStack.length === 0 || pageUndoBusy} onClick={undo} />
+        <QBtn icon={Redo2} tip="Rehacer" shortcut="Ctrl+Y" disabled={redoStack.length === 0 || pageUndoBusy} onClick={redo} />
       </div>
       {/* Patrón tablist de W3C: una sola parada de tabulación y flechas para moverse. */}
       <div role="tablist" aria-label="Modos de la cinta"

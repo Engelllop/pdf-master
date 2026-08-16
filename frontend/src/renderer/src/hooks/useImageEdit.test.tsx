@@ -24,6 +24,7 @@ function setup() {
 beforeEach(() => {
   usePdfStore.setState(initialState, true)
   localStorage.clear()
+  Object.assign(window, { api: { getApiToken: async () => '' } })
 })
 
 describe('imgLocalOf', () => {
@@ -48,7 +49,7 @@ describe('carga de imágenes de la página', () => {
 
 describe('applyImageTransform', () => {
   it('delete: llama a /transform-image con delete y marca dirty', async () => {
-    const fetchMock = vi.fn((_path: string, _init?: RequestInit) => Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true }) } as unknown as Response))
+    const fetchMock = vi.fn((_path: string, _init?: RequestInit) => Promise.resolve({ ok: true, status: 200, json: async () => ({ success: true, stash_id: 'img-1', page_count: 1, page_sizes: [{ page_num: 0, width: 800, height: 600 }] }) } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
     const { result } = setup()
     const im = { xref: 7, x0: 100, y0: 100, x1: 300, y1: 200 }

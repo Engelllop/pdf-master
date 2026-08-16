@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 
 import { apiFetch } from '../lib/api'
+import { formFieldUndoable, transformFormFieldUndoable } from '../lib/pageUndo'
 import { usePdfStore } from '../store/usePdfStore'
 
 export interface FormField {
+  xref: number
   field_name: string
   field_type: string
   rect: { x: number; y: number; width: number; height: number }
@@ -13,6 +15,7 @@ export interface FormField {
 
 export function useFormFields(docId: string | null, pageNum: number) {
   const [fields, setFields] = useState<FormField[]>([])
+  const docVersion = usePdfStore((s) => s.docs.find((d) => d.doc_id === docId)?.docVersion ?? 0)
 
   useEffect(() => {
     if (!docId) {
@@ -29,30 +32,29 @@ export function useFormFields(docId: string | null, pageNum: number) {
         if (!cancelled) setFields([])
       })
     return () => { cancelled = true }
-  }, [docId, pageNum])
+  }, [docId, pageNum, docVersion])
 
   const updateField = async (fieldName: string, value: string) => {
     if (!docId) return false
     try {
-      const res = await apiFetch(`/pdf/widgets/${docId}/${pageNum}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ field_name: fieldName, value }),
-      })
-      if (res.ok) {
-        setFields((prev) => prev.map((f) => (f.field_name === fieldName ? { ...f, value } : f)))
-        // Rellenar un campo modifica el PDF: sin marcarlo sucio la app dejaba salir
-        // sin avisar y el dato se perdía. Se re-renderiza para verlo ya escrito.
-        const store = usePdfStore.getState()
-        store.setDocDirty(docId, true)
-        store.invalidatePageCache(docId)
-        store.invalidateThumbnails(docId)
-        store.incrementDocVersion(docId)
-        return true
-      }
+      await formFieldUndoable(docId, pageNum, fieldName, value)
+      setFields((prev) => prev.map((f) => (f.field_name === fieldName ? { ...f, value } : f)))
+      return true
     } catch { /* ignore */ }
     return false
   }
 
-  return { fields, updateField }
+  const transformField = async (
+    xref: number,
+    next: { x?: number; y?: number; width?: number; height?: number; delete?: boolean },
+  ) => {
+    if (!docId) return false
+    try {
+      await transformFormFieldUndoable(docId, pageNum, { xref, ...next })
+      if (next.delete) usePdfStore.getState().showToast('Campo eliminado. Ctrl+Z deshace.', 'success')
+      return true
+    } catch { return false }
+  }
+
+  return { fields, updateField, transformField }
 }

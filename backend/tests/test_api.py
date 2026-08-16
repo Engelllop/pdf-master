@@ -438,6 +438,18 @@ class TestDocumentOps:
         assert resp.status_code == 200
         assert client.get(f"/pdf/page-image/{info['doc_id']}/2").status_code == 404
 
+    def test_delete_and_restore_pages(self, client, open_doc):
+        info = open_doc(pages=3)
+        doc_id = info["doc_id"]
+        deleted = client.post(f"/pdf/delete-pages/{doc_id}", json={"pages": [1]})
+        assert deleted.status_code == 200
+        stash_id = deleted.json()["stash_id"]
+        assert stash_id
+        assert client.get(f"/pdf/info/{doc_id}").json()["page_count"] == 2
+        restored = client.post(f"/pdf/restore-pages/{doc_id}", json={"stash_id": stash_id, "at": [1]})
+        assert restored.status_code == 200
+        assert client.get(f"/pdf/info/{doc_id}").json()["page_count"] == 3
+
     def test_search_finds_text(self, client, open_doc):
         info = open_doc(pages=2, text="NeedleUnico")
         results = client.get(f"/pdf/search/{info['doc_id']}", params={"query": "NeedleUnico"}).json()

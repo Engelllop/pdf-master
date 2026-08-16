@@ -65,9 +65,9 @@ def ocr_available():
     return {"available": pdf_service.ocr_available()}
 
 @router.post("/make-searchable/{doc_id}")
-def make_searchable(doc_id: str, page: Optional[int] = Query(None)):
+def make_searchable(doc_id: str, page: Optional[int] = Query(None), stash: bool = Query(True)):
     pages = [page] if page is not None else None
-    words = pdf_service.make_searchable(doc_id, pages)
+    words, stash_id, stash_page = pdf_service.make_searchable(doc_id, pages, stash=stash)
     if words == -1:
         raise HTTPException(status_code=503, detail="Tesseract OCR no está instalado")
-    return {"words": words}
+    return {"words": words, "stash_id": stash_id or None, "stash_page": stash_page}

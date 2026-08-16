@@ -69,7 +69,8 @@ export async function renderPdfPage(
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(viewport.width)
   canvas.height = Math.ceil(viewport.height)
-  await page.render({ canvas, viewport }).promise
+  // 0 = AnnotationMode.DISABLE: las marcas nativas las pinta el overlay editable.
+  await page.render({ canvas, viewport, annotationMode: 0 }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/png'),
@@ -99,6 +100,7 @@ export async function renderPdfTile(
   await page.render({
     canvas, viewport,
     transform: [1, 0, 0, 1, -x0 * scale, -y0 * scale],
+    annotationMode: 0,
   }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   const blob: Blob = await new Promise((resolve, reject) =>

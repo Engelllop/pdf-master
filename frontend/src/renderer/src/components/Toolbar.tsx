@@ -13,6 +13,7 @@ import {
   ZoomIn, ZoomOut, FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
+  TextCursorInput, CircleDot, List,
 } from 'lucide-react'
 import { type CountSymbol } from '../store/usePdfStore'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
@@ -27,12 +28,13 @@ import { useState, useRef, useEffect } from 'react'
 import Tooltip from './Tooltip'
 
 import { apiFetch } from '../lib/api'
+import { redactMatchesUndoable, replaceTextUndoable } from '../lib/pageUndo'
 
 export default function Toolbar() {
   const {
     docs, activeDocId, setPage, setZoom,
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
-    showToast, setDocDirty, invalidatePageCache, invalidateThumbnails, incrementDocVersion,
+    showToast,
     readingMode, toggleReadingMode, togglePresentationMode, continuousMode, toggleContinuousMode,
     compareMode, activeRibbon, activeTool, annotationColor, setAnnotationColor,
     countCategory, setCountCategory, countSymbol, setCountSymbol,
@@ -40,7 +42,7 @@ export default function Toolbar() {
   } = useStoreSlice(
     'docs', 'activeDocId', 'setPage', 'setZoom',
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
-    'showToast', 'setDocDirty', 'invalidatePageCache', 'invalidateThumbnails', 'incrementDocVersion',
+    'showToast',
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'continuousMode', 'toggleContinuousMode',
     'compareMode', 'activeRibbon', 'activeTool', 'annotationColor', 'setAnnotationColor',
     'countCategory', 'setCountCategory', 'countSymbol', 'setCountSymbol',
@@ -155,6 +157,10 @@ export default function Toolbar() {
       { id: 'edit.watermark', group: 'Editar', label: 'Marca de agua', disabled: !hasDoc, run: handleWatermark },
       { id: 'edit.numbers', group: 'Editar', label: 'Numerar páginas / Bates', disabled: !hasDoc, run: handleAddPageNumbers },
       { id: 'edit.metadata', group: 'Editar', label: 'Editar metadatos', disabled: !hasDoc, run: handleEditMetadata },
+      { id: 'edit.formtext', group: 'Formulario', label: 'Campo de texto', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formtext') } },
+      { id: 'edit.formcheck', group: 'Formulario', label: 'Casilla', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formcheck') } },
+      { id: 'edit.formradio', group: 'Formulario', label: 'Botón de opción', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formradio') } },
+      { id: 'edit.formcombo', group: 'Formulario', label: 'Lista desplegable', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formcombo') } },
 
       { id: 'protect.password', group: 'Proteger', label: 'Guardar con contraseña', disabled: !hasDoc, run: handleSaveWithPassword },
       { id: 'protect.nopassword', group: 'Proteger', label: 'Guardar copia sin contraseña', disabled: !hasDoc, run: handleRemovePassword },
@@ -202,20 +208,13 @@ export default function Toolbar() {
     const preview = matches.slice(0, 5).map((m) => `  · pág. ${m.page + 1}: ${(m.snippet || '').trim().slice(0, 60)}`).join('\n')
     const ok = await askConfirm(
       'Redactar coincidencias',
-      `Se tacharán ${matches.length} coincidencia(s) de "${query}" en ${pages.length} página(s): ${pageList}.\n\n${preview}${matches.length > 5 ? '\n  …' : ''}\n\nEl contenido se elimina del PDF de forma permanente. Esta acción no se puede deshacer.`,
+      `Se tacharán ${matches.length} coincidencia(s) de "${query}" en ${pages.length} página(s): ${pageList}.\n\n${preview}${matches.length > 5 ? '\n  …' : ''}\n\nEl contenido se elimina del PDF. Ctrl+Z restaura el documento anterior.`,
       'Redactar',
     )
     if (!ok) return
     try {
-      const res = await apiFetch(`/pdf/redact-matches/${activeDoc.doc_id}?query=${encodeURIComponent(query)}`, { method: 'POST' })
-      if (res.ok) {
-        const data = await res.json()
-        setDocDirty(activeDoc.doc_id, true)
-        invalidatePageCache(activeDoc.doc_id)
-        invalidateThumbnails(activeDoc.doc_id)
-        incrementDocVersion(activeDoc.doc_id)
-        showToast(`${data.redacted} ocurrencia(s) redactada(s)`, 'success')
-      } else showToast('Error al redactar', 'error')
+      const n = await redactMatchesUndoable(activeDoc.doc_id, query)
+      showToast(`${n} ocurrencia(s) redactada(s). Ctrl+Z deshace.`, 'success')
     } catch (err) { toastActionError(err) }
   }
 
@@ -274,29 +273,18 @@ export default function Toolbar() {
   const handleReplace = async () => {
     if (!activeDoc || !searchInput.trim()) return
     try {
-      const res = await apiFetch(`/pdf/replace-text/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchInput,
-          replace: replaceInput,
-          page_num: replaceAllPages ? undefined : activeDoc.currentPage,
-          case_sensitive: replaceCaseSensitive,
-          replace_all: false,
-        }),
+      const n = await replaceTextUndoable(activeDoc.doc_id, {
+        query: searchInput,
+        replace: replaceInput,
+        page: replaceAllPages ? undefined : activeDoc.currentPage,
+        caseSensitive: replaceCaseSensitive,
+        replaceAll: false,
       })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.replaced > 0) {
-          setDocDirty(activeDoc.doc_id, true)
-          invalidatePageCache(activeDoc.doc_id)
-          invalidateThumbnails(activeDoc.doc_id)
-          incrementDocVersion(activeDoc.doc_id)
-          showToast(`${data.replaced} reemplazo(s) realizado(s)`, 'success')
-          handleSearch()
-        } else {
-          showToast('Texto no encontrado', 'info')
-        }
+      if (n > 0) {
+        showToast(`${n} reemplazo(s). Ctrl+Z deshace.`, 'success')
+        handleSearch()
+      } else {
+        showToast('Texto no encontrado', 'info')
       }
     } catch (err) {
       toastActionError(err)
@@ -305,31 +293,20 @@ export default function Toolbar() {
 
   const handleReplaceAll = async () => {
     if (!activeDoc || !searchInput.trim()) return
-    if (!(await askConfirm('Reemplazar todo', `Se reemplazarán todas las ocurrencias de "${searchInput}" por "${replaceInput}".`, 'Reemplazar todo'))) return
+    if (!(await askConfirm('Reemplazar todo', `Se reemplazarán todas las ocurrencias de "${searchInput}" por "${replaceInput}". Ctrl+Z deshace.`, 'Reemplazar todo'))) return
     try {
-      const res = await apiFetch(`/pdf/replace-text/${activeDoc.doc_id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          query: searchInput,
-          replace: replaceInput,
-          page_num: replaceAllPages ? undefined : activeDoc.currentPage,
-          case_sensitive: replaceCaseSensitive,
-          replace_all: true,
-        }),
+      const n = await replaceTextUndoable(activeDoc.doc_id, {
+        query: searchInput,
+        replace: replaceInput,
+        page: replaceAllPages ? undefined : activeDoc.currentPage,
+        caseSensitive: replaceCaseSensitive,
+        replaceAll: true,
       })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.replaced > 0) {
-          setDocDirty(activeDoc.doc_id, true)
-          invalidatePageCache(activeDoc.doc_id)
-          invalidateThumbnails(activeDoc.doc_id)
-          incrementDocVersion(activeDoc.doc_id)
-          showToast(`${data.replaced} reemplazo(s) realizado(s)`, 'success')
-          handleSearch()
-        } else {
-          showToast('Texto no encontrado', 'info')
-        }
+      if (n > 0) {
+        showToast(`${n} reemplazo(s). Ctrl+Z deshace.`, 'success')
+        handleSearch()
+      } else {
+        showToast('Texto no encontrado', 'info')
       }
     } catch (err) {
       toastActionError(err)
@@ -486,6 +463,11 @@ export default function Toolbar() {
             <TBtn icon={Type} label="Texto" tip="Insertar texto nuevo" onClick={() => handleToolClick('text')} active={activeTool === 'text'} />
             <TBtn icon={ImageIcon} label="Imagen" tip="Insertar imagen" onClick={() => handleToolClick('image')} active={activeTool === 'image'} />
             <TBtn icon={Images} label="Editar imagen" tip="Editar imágenes existentes (clic para seleccionar)" onClick={() => handleToolClick('editimage')} active={activeTool === 'editimage'} />
+            <Sep />
+            <TBtn icon={TextCursorInput} label="Campo texto" tip="Dibujá un rectángulo para crear un campo de texto" onClick={() => handleToolClick('formtext')} active={activeTool === 'formtext'} />
+            <TBtn icon={CheckIcon} label="Casilla" tip="Dibujá para crear una casilla" onClick={() => handleToolClick('formcheck')} active={activeTool === 'formcheck'} />
+            <TBtn icon={CircleDot} label="Opción" tip="Dibujá para crear un botón de opción (mismo nombre = mismo grupo)" onClick={() => handleToolClick('formradio')} active={activeTool === 'formradio'} />
+            <TBtn icon={List} label="Lista" tip="Dibujá para crear una lista desplegable" onClick={() => handleToolClick('formcombo')} active={activeTool === 'formcombo'} />
             <Sep />
             <TBtn icon={AlignVerticalJustifyCenter} label="Encab/Pie" tip="Encabezado y pie" onClick={handleHeaderFooter} />
             <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua" onClick={handleWatermark} />

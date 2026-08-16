@@ -43,6 +43,29 @@ class PdfServiceBase:
         # PyMuPDF is not thread-safe and handlers now run in FastAPI's threadpool,
         # so serialize all access to documents and caches.
         self._lock = threading.RLock()
+        # Páginas borradas, para Ctrl+Z. bytes de un PDF chico; tope 20.
+        self._page_stash: "OrderedDict[str, bytes]" = OrderedDict()
+        self._page_stash_max = 20
+
+    def _stash_pages(self, doc: fitz.Document, pages: list) -> str:
+        """Copia las páginas (índices) a un PDF en memoria. Devuelve el id del stash."""
+        tmp = fitz.open()
+        for p in pages:
+            tmp.insert_pdf(doc, from_page=p, to_page=p)
+        stash_id = uuid.uuid4().hex
+        self._page_stash[stash_id] = tmp.tobytes()
+        tmp.close()
+        while len(self._page_stash) > self._page_stash_max:
+            self._page_stash.popitem(last=False)
+        return stash_id
+
+    def _stash_document(self, doc: fitz.Document) -> str:
+        """Copia el PDF entero al stash (marca de agua, redacción masiva, etc.)."""
+        stash_id = uuid.uuid4().hex
+        self._page_stash[stash_id] = doc.tobytes()
+        while len(self._page_stash) > self._page_stash_max:
+            self._page_stash.popitem(last=False)
+        return stash_id
 
     @staticmethod
     def _open_stream(file_path: str) -> fitz.Document:

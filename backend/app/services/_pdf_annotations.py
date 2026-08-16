@@ -8,57 +8,11 @@ import os
 from datetime import datetime
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation, Reply
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
 logger = logging.getLogger("pdfmaster")
-
-# Fuentes reales de Windows para el texto embebido (se incrustan en el PDF, con
-# subset al final del embed): (regular, bold, italic, bold-italic). None = esa
-# variante no viene con Windows; se cae a la regular. Si nada existe → base14.
-_WINDOWS_FONTS = {
-    'arial': ('arial.ttf', 'arialbd.ttf', 'ariali.ttf', 'arialbi.ttf'),
-    'helvetica': ('arial.ttf', 'arialbd.ttf', 'ariali.ttf', 'arialbi.ttf'),
-    'calibri': ('calibri.ttf', 'calibrib.ttf', 'calibrii.ttf', 'calibriz.ttf'),
-    'segoe ui': ('segoeui.ttf', 'segoeuib.ttf', 'segoeuii.ttf', 'segoeuiz.ttf'),
-    'tahoma': ('tahoma.ttf', 'tahomabd.ttf', None, None),
-    'verdana': ('verdana.ttf', 'verdanab.ttf', 'verdanai.ttf', 'verdanaz.ttf'),
-    'trebuchet ms': ('trebuc.ttf', 'trebucbd.ttf', 'trebucit.ttf', 'trebucbi.ttf'),
-    'times new roman': ('times.ttf', 'timesbd.ttf', 'timesi.ttf', 'timesbi.ttf'),
-    'georgia': ('georgia.ttf', 'georgiab.ttf', 'georgiai.ttf', 'georgiaz.ttf'),
-    'garamond': ('gara.ttf', 'garabd.ttf', 'garait.ttf', None),
-    'courier new': ('cour.ttf', 'courbd.ttf', 'couri.ttf', 'courbi.ttf'),
-    'consolas': ('consola.ttf', 'consolab.ttf', 'consolai.ttf', 'consolaz.ttf'),
-    'impact': ('impact.ttf', None, None, None),
-    'comic sans ms': ('comic.ttf', 'comicbd.ttf', 'comici.ttf', 'comicz.ttf'),
-}
-
-# Variantes base14 como fallback (PyMuPDF: helv/hebo/heit/hebi).
-_BASE14_VARIANTS = {(False, False): 'helv', (True, False): 'hebo', (False, True): 'heit', (True, True): 'hebi'}
-
-
-def _font_args(family: Optional[str], bold: bool = False, italic: bool = False) -> dict:
-    if family:
-        variants = _WINDOWS_FONTS.get(family.strip().lower())
-        if variants:
-            idx = (1 if bold else 0) + (2 if italic else 0)
-            fname = variants[idx] or variants[0]
-            path = os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts', fname)
-            if os.path.exists(path):
-                safe = 'F' + ''.join(c for c in fname.lower() if c.isalnum())
-                return {'fontname': safe, 'fontfile': path}
-    return {'fontname': _BASE14_VARIANTS[(bold, italic)]}
-
-
-def _load_font(fargs: dict) -> fitz.Font:
-    try:
-        if 'fontfile' in fargs:
-            return fitz.Font(fontfile=fargs['fontfile'])
-        return fitz.Font(fargs['fontname'])
-    except Exception:
-        return fitz.Font('helv')
-
 
 class AnnotationsMixin:
     def _get_annotations_path(self, file_path: str) -> str:
@@ -80,18 +34,52 @@ class AnnotationsMixin:
                 logger.exception("Sidecar de anotaciones corrupto: %s", path)
         return self.import_native_annotations(doc_id)
 
+    @staticmethod
+    def _read_pm(doc, annot) -> dict:
+        try:
+            kind, val = doc.xref_get_key(annot.xref, "PM")
+            if kind in ("string", "text") and val:
+                raw = val[1:-1] if val.startswith("(") and val.endswith(")") else val
+                return json.loads(raw)
+        except Exception:
+            pass
+        return {}
+
+    @staticmethod
+    def _vertices_to_points(verts) -> List[dict]:
+        points = []
+        if not verts:
+            return points
+        first = verts[0]
+        # Ink: lista de trazos, cada uno una lista de puntos.
+        if isinstance(first, (list, tuple)) and first and not isinstance(first[0], (int, float)):
+            for stroke in verts:
+                points.extend(AnnotationsMixin._vertices_to_points(stroke))
+            return points
+        if isinstance(first, (int, float)):
+            for j in range(0, len(verts) - 1, 2):
+                points.append({'x': float(verts[j]), 'y': float(verts[j + 1])})
+        else:
+            for pt in verts:
+                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
+                    points.append({'x': float(pt[0]), 'y': float(pt[1])})
+                elif hasattr(pt, 'x'):
+                    points.append({'x': float(pt.x), 'y': float(pt.y)})
+        return points
+
     def import_native_annotations(self, doc_id: str) -> List[Annotation]:
         """Lee anotaciones ya embebidas (Bluebeam/Acrobat) al abrir un PDF sin sidecar."""
         doc = self._acquire(doc_id)
         if not doc:
             return []
-        out: List[Annotation] = []
         type_map = {
             'Highlight': 'highlight', 'Underline': 'underline', 'StrikeOut': 'strikethrough',
             'Text': 'note', 'FreeText': 'text', 'Square': 'rect', 'Circle': 'circle',
             'Line': 'line', 'Ink': 'draw', 'PolyLine': 'draw', 'Polygon': 'polygon',
             'Stamp': 'stamp',
         }
+        by_xref: Dict[int, Annotation] = {}
+        replies: List[tuple] = []
         for i in range(len(doc)):
             page = doc.load_page(i)
             annots = page.annots()
@@ -99,8 +87,18 @@ class AnnotationsMixin:
                 continue
             for a in annots:
                 try:
+                    info = a.info or {}
+                    pm = self._read_pm(doc, a)
+                    if a.irt_xref:
+                        replies.append((a.irt_xref, Reply(
+                            id=str(pm.get('id') or uuid.uuid4()),
+                            author=info.get('title') or None,
+                            text=info.get('content') or '',
+                            at=float(pm.get('at') or 0),
+                        )))
+                        continue
                     raw = a.type[1] if a.type else ''
-                    mapped = type_map.get(raw)
+                    mapped = pm.get('type') or type_map.get(raw)
                     if not mapped:
                         continue
                     r = a.rect
@@ -111,31 +109,68 @@ class AnnotationsMixin:
                             color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
                     except Exception:
                         pass
-                    text = None
-                    try:
-                        text = (a.info or {}).get('content') or None
-                    except Exception:
-                        pass
-                    points = None
-                    if mapped in ('draw', 'polygon', 'line') and getattr(a, 'vertices', None):
-                        verts = a.vertices
-                        points = []
-                        if verts and isinstance(verts[0], (int, float)):
-                            for j in range(0, len(verts) - 1, 2):
-                                points.append({'x': float(verts[j]), 'y': float(verts[j + 1])})
-                        else:
-                            for pt in verts:
-                                if isinstance(pt, (list, tuple)) and len(pt) >= 2:
-                                    points.append({'x': float(pt[0]), 'y': float(pt[1])})
-                    out.append(Annotation(
-                        id=str(uuid.uuid4()), type=mapped, page=i,
-                        x=float(r.x0), y=float(r.y0),
-                        width=float(r.width), height=float(r.height),
-                        color=color, text=text, points=points or None,
-                    ))
+                    text = pm.get('text') if pm.get('text') is not None else (info.get('content') or None)
+                    points = pm.get('points')
+                    if not points and mapped in ('draw', 'polygon', 'line', 'signature', 'check', 'cross',
+                                                 'measure_perimeter', 'measure_area', 'arrow') and getattr(a, 'vertices', None):
+                        points = self._vertices_to_points(a.vertices) or None
+                    name = info.get('name') or ''
+                    ann_id = pm.get('id') or (name.split(':', 1)[1] if name.startswith('pdfmaster:') else str(uuid.uuid4()))
+                    color = pm.get('color') or color
+                    if mapped == 'count':
+                        cx = float(pm['x']) if 'x' in pm else float(r.x0 + r.width / 2)
+                        cy = float(pm['y']) if 'y' in pm else float(r.y0 + r.height / 2)
+                        by_xref[a.xref] = Annotation(
+                            id=ann_id, type='count', page=i, x=cx, y=cy, color=color,
+                            text=text or (info.get('subject') or '').split(':', 1)[-1].strip() or None,
+                            author=info.get('title') or None, status=pm.get('status'),
+                            layer=pm.get('layer') or None,
+                            symbol=pm.get('symbol'),
+                            createdAt=pm.get('createdAt'),
+                        )
+                        continue
+                    if mapped in ('line', 'arrow', 'measure_distance') and 'x' not in pm and points and len(points) >= 2:
+                        x0, y0 = points[0]['x'], points[0]['y']
+                        x1, y1 = points[-1]['x'], points[-1]['y']
+                        by_xref[a.xref] = Annotation(
+                            id=ann_id, type=mapped, page=i, x=x0, y=y0,
+                            width=x1 - x0, height=y1 - y0, color=color, text=text,
+                            author=info.get('title') or None, status=pm.get('status'),
+                            layer=pm.get('layer') or info.get('subject') or None,
+                            measurement=pm.get('measurement'),
+                            createdAt=pm.get('createdAt'),
+                        )
+                        continue
+                    by_xref[a.xref] = Annotation(
+                        id=ann_id, type=mapped, page=i,
+                        x=float(pm['x']) if 'x' in pm else float(r.x0),
+                        y=float(pm['y']) if 'y' in pm else float(r.y0),
+                        width=pm.get('width', float(r.width)),
+                        height=pm.get('height', float(r.height)),
+                        color=color, text=text, points=points,
+                        author=info.get('title') or None,
+                        status=pm.get('status'),
+                        layer=pm.get('layer') or (None if (info.get('subject') or '').startswith('Count:') else info.get('subject')) or None,
+                        symbol=pm.get('symbol'),
+                        fontSize=pm.get('fontSize'),
+                        fontFamily=pm.get('fontFamily'),
+                        lineWidth=pm.get('lineWidth'),
+                        lineStyle=pm.get('lineStyle'),
+                        opacity=pm.get('opacity'),
+                        fillColor=pm.get('fillColor'),
+                        fillOpacity=pm.get('fillOpacity'),
+                        measurement=pm.get('measurement'),
+                        createdAt=pm.get('createdAt'),
+                        modifiedAt=pm.get('modifiedAt'),
+                    )
                 except Exception:
                     logger.exception("No se pudo importar una anotación nativa (pág %s)", i)
-        return out
+        for irt, reply in replies:
+            parent = by_xref.get(irt)
+            if parent is None:
+                continue
+            parent.replies = (parent.replies or []) + [reply]
+        return list(by_xref.values())
 
     def save_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
         info = self._infos.get(doc_id)
@@ -149,6 +184,109 @@ class AnnotationsMixin:
         except Exception:
             logger.exception("No se pudo escribir el sidecar %s", path)
             return False
+
+    def _style_annot(self, annot, ann: Annotation, color, fill=None):
+        if not annot:
+            return
+        try:
+            annot.set_colors(stroke=color, fill=fill)
+        except Exception:
+            pass
+        lw = ann.lineWidth or 1
+        dashes = None
+        if ann.lineStyle == 'dashed':
+            dashes = [lw * 3, lw * 2]
+        elif ann.lineStyle == 'dotted':
+            dashes = [0.5, lw * 2]
+        if ann.type not in ('highlight', 'underline', 'strikethrough', 'note', 'text', 'callout'):
+            try:
+                annot.set_border(width=lw, dashes=dashes)
+            except Exception:
+                pass
+        if ann.opacity is not None:
+            try:
+                annot.set_opacity(float(ann.opacity))
+            except Exception:
+                pass
+
+    def _stamp_markup(self, annot, ann: Annotation):
+        """Autor, id, capa, estado y respuestas viajan en el PDF (Acrobat/Bluebeam)."""
+        if not annot:
+            return
+        content = ann.text or ""
+        if ann.measurement and getattr(ann.measurement, 'label', None):
+            content = content or ann.measurement.label
+        subject = ann.layer or "Marcas"
+        if ann.type == 'count':
+            subject = f"Count: {ann.text or 'General'}"
+        try:
+            annot.set_info(content=content, title=ann.author or "", subject=subject)
+        except Exception:
+            pass
+        try:
+            annot.set_name(f"pdfmaster:{ann.id}")
+        except Exception:
+            pass
+        payload = {
+            "id": ann.id,
+            "type": ann.type,
+            "status": ann.status,
+            "layer": ann.layer,
+            "symbol": ann.symbol,
+            "text": ann.text,
+            "fontSize": ann.fontSize,
+            "fontFamily": ann.fontFamily,
+            "x": ann.x,
+            "y": ann.y,
+            "width": ann.width,
+            "height": ann.height,
+            "points": ann.points,
+            "color": ann.color,
+            "lineWidth": ann.lineWidth,
+            "lineStyle": ann.lineStyle,
+            "opacity": ann.opacity,
+            "fillColor": ann.fillColor,
+            "fillOpacity": ann.fillOpacity,
+            "createdAt": ann.createdAt,
+            "modifiedAt": ann.modifiedAt,
+        }
+        if ann.measurement:
+            payload["measurement"] = ann.measurement.model_dump()
+        payload = {k: v for k, v in payload.items() if v is not None}
+        try:
+            page = annot.parent
+            doc = page.parent if page is not None else None
+            if doc is not None:
+                doc.xref_set_key(annot.xref, "PM", fitz.get_pdf_str(json.dumps(payload, ensure_ascii=True)))
+        except Exception:
+            pass
+        for reply in ann.replies or []:
+            try:
+                page = annot.parent
+                if page is None:
+                    break
+                rann = page.add_text_annot(
+                    fitz.Point((ann.x or 0) + 8, (ann.y or 0) + 8),
+                    reply.text or "",
+                )
+                if rann:
+                    rann.set_info(content=reply.text or "", title=reply.author or "")
+                    rann.set_name(f"pdfmaster:{reply.id}")
+                    rann.set_irt_xref(annot.xref)
+                    try:
+                        page.parent.xref_set_key(
+                            rann.xref, "PM",
+                            fitz.get_pdf_str(json.dumps({"id": reply.id, "at": reply.at}, ensure_ascii=False)),
+                        )
+                    except Exception:
+                        pass
+                    rann.update()
+            except Exception:
+                logger.exception("No se pudo incrustar una respuesta (ann %s)", ann.id)
+        try:
+            annot.update()
+        except Exception:
+            pass
 
     def embed_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
         """Deja las marcas en cola para el próximo guardado. NO toca el documento
@@ -195,101 +333,75 @@ class AnnotationsMixin:
             if ann.type == 'highlight':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_highlight_annot(rect)
-                if annot:
-                    annot.set_colors(stroke=color)
-                    if ann.opacity is not None:
-                        annot.set_opacity(float(ann.opacity))
-                    annot.update()
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'underline':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_underline_annot(rect)
-                if annot:
-                    annot.set_colors(stroke=color)
-                    if ann.opacity is not None:
-                        annot.set_opacity(float(ann.opacity))
-                    annot.update()
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'strikethrough':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_strikeout_annot(rect)
-                if annot:
-                    annot.set_colors(stroke=color)
-                    if ann.opacity is not None:
-                        annot.set_opacity(float(ann.opacity))
-                    annot.update()
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'rect':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                page.draw_rect(rect, color=color, width=ann.lineWidth or 2,
-                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
-                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
-                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
+                annot = page.add_rect_annot(rect)
+                self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'circle':
                 rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                page.draw_oval(rect, color=color, width=ann.lineWidth or 2,
-                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
-                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
-                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
-            elif ann.type == 'arrow':
-                x1, y1 = ann.x, ann.y
-                x2, y2 = ann.x + (ann.width or 0), ann.y + (ann.height or 0)
-                page.draw_line(fitz.Point(x1, y1), fitz.Point(x2, y2), color=color, width=ann.lineWidth or 2,
-                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann))
-                # Arrowhead
-                angle = math.atan2(y2 - y1, x2 - x1)
-                head_len = max(8, (ann.lineWidth or 2) * 4)
-                p1 = fitz.Point(x2, y2)
-                p2 = fitz.Point(x2 - head_len * math.cos(angle - math.pi / 6), y2 - head_len * math.sin(angle - math.pi / 6))
-                p3 = fitz.Point(x2 - head_len * math.cos(angle + math.pi / 6), y2 - head_len * math.sin(angle + math.pi / 6))
-                shape = page.new_shape()
-                shape.draw_polyline([p1, p2, p3])
-                shape.finish(color=color, fill=color, closePath=True,
-                             stroke_opacity=stroke_op(ann), fill_opacity=stroke_op(ann))
-                shape.commit()
-            elif ann.type == 'line':
-                page.draw_line(fitz.Point(ann.x, ann.y),
-                               fitz.Point(ann.x + (ann.width or 0), ann.y + (ann.height or 0)),
-                               color=color, width=ann.lineWidth or 2,
-                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann), lineCap=1)
+                annot = page.add_circle_annot(rect)
+                self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
+                self._stamp_markup(annot, ann)
+            elif ann.type in ('arrow', 'line', 'measure_distance'):
+                p1 = fitz.Point(ann.x, ann.y)
+                p2 = fitz.Point(ann.x + (ann.width or 0), ann.y + (ann.height or 0))
+                annot = page.add_line_annot(p1, p2)
+                self._style_annot(annot, ann, color)
+                if annot and ann.type == 'arrow':
+                    try:
+                        annot.set_line_ends(fitz.PDF_ANNOT_LE_NONE, fitz.PDF_ANNOT_LE_CLOSED_ARROW)
+                    except Exception:
+                        pass
+                self._stamp_markup(annot, ann)
             elif ann.type == 'callout':
-                # Caja + línea guía al punto señalado (points[0]) + texto dentro.
                 w, h = ann.width or 0, ann.height or 0
                 box = fitz.Rect(ann.x, ann.y, ann.x + w, ann.y + h)
                 tip = (ann.points or [None])[0]
+                callout = None
                 if tip:
                     tx, ty = float(tip.get('x', 0)), float(tip.get('y', 0))
                     anchor_x = box.x0 if tx < box.x0 else box.x1 if tx > box.x1 else (box.x0 + box.x1) / 2
                     anchor_y = box.y0 if ty < box.y0 else box.y1 if ty > box.y1 else (box.y0 + box.y1) / 2
-                    page.draw_line(fitz.Point(anchor_x, anchor_y), fitz.Point(tx, ty),
-                                   color=color, width=ann.lineWidth or 1.5, stroke_opacity=stroke_op(ann))
-                    page.draw_circle(fitz.Point(tx, ty), max(1.5, (ann.lineWidth or 1.5) * 1.5),
-                                     color=color, fill=color, stroke_opacity=stroke_op(ann))
-                page.draw_rect(box, color=color, width=ann.lineWidth or 1.5,
-                               dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
-                               fill=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
-                               fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.9)
-                if ann.text:
-                    fs = ann.fontSize or 12
-                    fargs = _font_args(ann.fontFamily, bool(ann.bold), bool(ann.italic))
-                    try:
-                        page.insert_textbox(fitz.Rect(box.x0 + 3, box.y0 + 2, box.x1 - 3, box.y1 - 2),
-                                            ann.text, fontsize=fs, color=color, align=0, **fargs)
-                    except Exception:
-                        page.insert_textbox(fitz.Rect(box.x0 + 3, box.y0 + 2, box.x1 - 3, box.y1 - 2),
-                                            ann.text, fontsize=fs, color=color, align=0)
+                    callout = [fitz.Point(tx, ty), fitz.Point(anchor_x, anchor_y), fitz.Point(anchor_x, anchor_y)]
+                annot = page.add_freetext_annot(
+                    box, ann.text or '', fontsize=ann.fontSize or 12,
+                    text_color=color, fill_color=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
+                    border_color=color, border_width=ann.lineWidth or 1,
+                    callout=callout, opacity=stroke_op(ann),
+                )
+                self._stamp_markup(annot, ann)
             elif ann.type == 'check':
                 w, h = ann.width or 0, ann.height or 0
                 pts = [fitz.Point(ann.x + w * 0.12, ann.y + h * 0.55),
                        fitz.Point(ann.x + w * 0.42, ann.y + h * 0.85),
                        fitz.Point(ann.x + w * 0.88, ann.y + h * 0.15)]
-                page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
-                                   dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
-                                   lineCap=1, lineJoin=1)
+                annot = page.add_polyline_annot(pts)
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'cross':
                 w, h = ann.width or 0, ann.height or 0
-                for (ax, ay, bx, by) in ((0.15, 0.15, 0.85, 0.85), (0.85, 0.15, 0.15, 0.85)):
-                    page.draw_line(fitz.Point(ann.x + w * ax, ann.y + h * ay),
-                                   fitz.Point(ann.x + w * bx, ann.y + h * by),
-                                   color=color, width=ann.lineWidth or 2,
-                                   dashes=dashes_for(ann), stroke_opacity=stroke_op(ann), lineCap=1)
+                strokes = [
+                    [(ann.x + w * 0.15, ann.y + h * 0.15),
+                     (ann.x + w * 0.85, ann.y + h * 0.85)],
+                    [(ann.x + w * 0.85, ann.y + h * 0.15),
+                     (ann.x + w * 0.15, ann.y + h * 0.85)],
+                ]
+                annot = page.add_ink_annot(strokes)
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'star':
                 w, h = ann.width or 0, ann.height or 0
                 cx, cy = ann.x + w / 2, ann.y + h / 2
@@ -329,56 +441,46 @@ class AnnotationsMixin:
                              fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
                              fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
                 shape.commit()
-            elif ann.type == 'polygon':
+            elif ann.type in ('polygon', 'measure_area'):
                 if ann.points and len(ann.points) >= 3:
                     pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
-                    shape = page.new_shape()
-                    shape.draw_polyline(pts + [pts[0]])
-                    shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
-                                 stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
-                                 fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
-                                 fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
-                    shape.commit()
-            elif ann.type == 'draw':
+                    annot = page.add_polygon_annot(pts)
+                    self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
+                    self._stamp_markup(annot, ann)
+            elif ann.type in ('draw', 'signature'):
                 if ann.points and len(ann.points) > 1:
-                    # points llegan como dicts del JSON, no objetos (p["x"], no p.x)
-                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
-                    page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
-                                       dashes=dashes_for(ann), stroke_opacity=stroke_op(ann))
-            elif ann.type == 'signature':
-                if ann.points and len(ann.points) > 1:
-                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
-                    page.draw_polyline(pts, color=(0, 0, 0), width=3)
+                    pts = [(float(p["x"]), float(p["y"])) for p in ann.points]
+                    annot = page.add_ink_annot([pts])
+                    ink_color = (0, 0, 0) if ann.type == 'signature' and not ann.color else color
+                    self._style_annot(annot, ann, ink_color)
+                    if ann.type == 'signature' and annot:
+                        try:
+                            annot.set_border(width=ann.lineWidth or 3)
+                        except Exception:
+                            pass
+                    self._stamp_markup(annot, ann)
             elif ann.type == 'text':
                 fs = ann.fontSize or 14
                 lh = ann.lineHeight or 1.3
-                fargs = _font_args(ann.fontFamily, bool(ann.bold), bool(ann.italic))
                 lines = (ann.text or '').split('\n')
                 if ann.listStyle == 'bullet':
                     lines = [f"• {l}" for l in lines]
                 elif ann.listStyle == 'number':
                     lines = [f"{i + 1}. {l}" for i, l in enumerate(lines)]
-                # Alineación: offset por línea contra el ancho de caja (el de la
-                # anotación, o el de la línea más larga si no hay caja explícita).
-                offsets = [0.0] * len(lines)
-                if ann.align in ('center', 'right'):
-                    font = _load_font(fargs)
-                    widths = [font.text_length(l, fontsize=fs) for l in lines]
-                    box_w = ann.width or (max(widths) if widths else 0)
-                    factor = 0.5 if ann.align == 'center' else 1.0
-                    offsets = [max(0.0, (box_w - w) * factor) for w in widths]
-                # ann.y is the text box top-left; place each line's baseline below it.
-                for i, line in enumerate(lines):
-                    pt = (ann.x + offsets[i], ann.y + fs * 0.8 + i * fs * lh)
-                    try:
-                        page.insert_text(pt, line, fontsize=fs, color=color, **fargs)
-                    except Exception:
-                        page.insert_text(pt, line, fontsize=fs, color=color)
+                body = '\n'.join(lines)
+                w = ann.width or 200
+                h = ann.height or max(fs * lh * max(len(lines), 1) + 6, fs + 6)
+                box = fitz.Rect(ann.x, ann.y, ann.x + w, ann.y + h)
+                align = {'center': 1, 'right': 2}.get(ann.align or '', 0)
+                annot = page.add_freetext_annot(
+                    box, body, fontsize=fs, text_color=color,
+                    fill_color=None, border_width=0, opacity=stroke_op(ann), align=align,
+                )
+                self._stamp_markup(annot, ann)
             elif ann.type == 'note':
                 annot = page.add_text_annot(fitz.Point(ann.x, ann.y), ann.text or 'Nota')
-                if annot:
-                    annot.set_colors(stroke=color)
-                    annot.update()
+                self._style_annot(annot, ann, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'image':
                 if ann.imageData and ',' in ann.imageData:
                     try:
@@ -401,60 +503,16 @@ class AnnotationsMixin:
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':
-                # Marca de conteo: (x, y) es el centro y `text` lleva la categoría.
-                # `symbol` distingue categorías por forma, no solo por color.
                 r = 9.0
-                sym = ann.symbol or 'circle'
-                op = stroke_op(ann)
-                if sym == 'square':
-                    page.draw_rect(fitz.Rect(ann.x - r * 0.85, ann.y - r * 0.85, ann.x + r * 0.85, ann.y + r * 0.85),
-                                   color=(1, 1, 1), width=r * 0.16, fill=color,
-                                   stroke_opacity=op, fill_opacity=op)
-                elif sym in ('triangle', 'diamond', 'star'):
-                    if sym == 'triangle':
-                        pts = [fitz.Point(ann.x, ann.y - r), fitz.Point(ann.x + r * 0.9, ann.y + r * 0.7),
-                               fitz.Point(ann.x - r * 0.9, ann.y + r * 0.7)]
-                    elif sym == 'diamond':
-                        pts = [fitz.Point(ann.x, ann.y - r), fitz.Point(ann.x + r, ann.y),
-                               fitz.Point(ann.x, ann.y + r), fitz.Point(ann.x - r, ann.y)]
-                    else:
-                        pts = []
-                        for i in range(10):
-                            angle = -math.pi / 2 + i * math.pi / 5
-                            f = 1.0 if i % 2 == 0 else 0.42
-                            pts.append(fitz.Point(ann.x + math.cos(angle) * r * f, ann.y + math.sin(angle) * r * f))
-                    shape = page.new_shape()
-                    shape.draw_polyline(pts)
-                    shape.finish(color=(1, 1, 1), fill=color, closePath=True, width=r * 0.16,
-                                 stroke_opacity=op, fill_opacity=op)
-                    shape.commit()
-                elif sym == 'cross':
-                    rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
-                    page.draw_oval(rect, color=color, width=r * 0.16, stroke_opacity=op)
-                    shape = page.new_shape()
-                    shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
-                    shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
-                    shape.finish(color=color, width=r * 0.2, stroke_opacity=op)
-                    shape.commit()
-                else:
-                    rect = fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r)
-                    page.draw_oval(rect, color=(1, 1, 1), width=r * 0.16, fill=color,
-                                   stroke_opacity=op, fill_opacity=op)
-                    shape = page.new_shape()
-                    shape.draw_line(fitz.Point(ann.x - r * 0.45, ann.y), fitz.Point(ann.x + r * 0.45, ann.y))
-                    shape.draw_line(fitz.Point(ann.x, ann.y - r * 0.45), fitz.Point(ann.x, ann.y + r * 0.45))
-                    shape.finish(color=(1, 1, 1), width=r * 0.2, stroke_opacity=op)
-                    shape.commit()
+                annot = page.add_circle_annot(fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r))
+                self._style_annot(annot, ann, color, color)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'measure_perimeter':
                 pts = [fitz.Point(p['x'], p['y']) for p in (ann.points or [])]
                 if len(pts) >= 2:
-                    page.draw_polyline(pts, color=color, width=ann.lineWidth or 2,
-                                       dashes=dashes_for(ann), stroke_opacity=stroke_op(ann),
-                                       lineCap=1, lineJoin=1)
-                    if ann.measurement:
-                        mid = pts[len(pts) // 2]
-                        page.insert_text((mid.x + 4, mid.y - 6), ann.measurement.label,
-                                         fontsize=9, color=color)
+                    annot = page.add_polyline_annot(pts)
+                    self._style_annot(annot, ann, color)
+                    self._stamp_markup(annot, ann)
 
         # Las fuentes TTF incrustadas por insert_text(fontfile=...) se reducen al
         # subconjunto de glifos usados (sin esto cada fuente añade cientos de KB).

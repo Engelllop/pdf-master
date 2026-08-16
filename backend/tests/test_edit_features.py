@@ -37,6 +37,9 @@ class TestSpansAndEditText:
         })
         assert resp.status_code == 200, resp.text
         assert client.get(f"/pdf/dirty/{doc_id}").json()["dirty"] is True
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.post(f"/pdf/replace-page/{doc_id}", json={"page_num": 0, "stash_id": stash_id}).status_code == 200
 
     def test_edit_text_unknown_doc_is_404(self, client):
         resp = client.post("/pdf/edit-text/no-such", json={
@@ -62,6 +65,7 @@ class TestImages:
         })
         assert resp.status_code == 200, resp.text
         assert client.get(f"/pdf/dirty/{doc_id}").json()["dirty"] is True
+        assert resp.json()["stash_id"]
         client.post(f"/pdf/close/{doc_id}")
 
     def test_transform_image_delete_samples_background(self, client, tmp_path):
@@ -109,6 +113,9 @@ class TestRedact:
         })
         assert resp.status_code == 200
         assert client.get(f"/pdf/dirty/{info['doc_id']}").json()["dirty"] is True
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.post(f"/pdf/replace-page/{info['doc_id']}", json={"page_num": 0, "stash_id": stash_id}).status_code == 200
 
     def test_redact_matches_removes_text(self, client, open_doc):
         info = open_doc(pages=1, text="secretosecreto")
@@ -118,6 +125,10 @@ class TestRedact:
         assert resp.json()["redacted"] >= 1
         text = client.get(f"/pdf/text/{doc_id}/0").json()["text"]
         assert "secretosecreto" not in text
+        stash_id = resp.json()["stash_id"]
+        assert stash_id
+        assert client.post(f"/pdf/restore-document/{doc_id}", json={"stash_id": stash_id}).status_code == 200
+        assert "secretosecreto" in client.get(f"/pdf/text/{doc_id}/0").json()["text"]
 
     def test_redact_unknown_doc_is_404(self, client):
         resp = client.post("/pdf/redact/no-such", json={

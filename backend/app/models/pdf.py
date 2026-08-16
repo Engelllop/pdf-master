@@ -97,6 +97,14 @@ class RotateRequest(BaseModel):
 
 class DeletePagesRequest(BaseModel):
     pages: List[int]
+    stash: bool = True
+
+class RestorePagesRequest(BaseModel):
+    stash_id: str
+    at: List[int]
+
+class RestoreDocumentRequest(BaseModel):
+    stash_id: str
 
 class MergeRequest(BaseModel):
     source_path: str
@@ -111,6 +119,7 @@ class InsertImageRequest(BaseModel):
     width: float
     height: float
     image_path: str
+    stash: bool = True
 
 class ReorderPagesRequest(BaseModel):
     new_order: List[int]
@@ -122,6 +131,7 @@ class WatermarkRequest(BaseModel):
     angle: int = 45
     opacity: float = 0.3
     tiled: bool = True
+    stash: bool = True
 
 class CreateBlankRequest(BaseModel):
     output_path: str
@@ -135,6 +145,7 @@ class RedactRequest(BaseModel):
     y: float
     width: float
     height: float
+    stash: bool = True
 
 class CropRequest(BaseModel):
     page_num: int
@@ -142,6 +153,11 @@ class CropRequest(BaseModel):
     right: float
     bottom: float
     left: float
+    stash: bool = True
+
+class ReplacePageRequest(BaseModel):
+    page_num: int
+    stash_id: str
 
 class RotatePagesRequest(BaseModel):
     pages: List[int]
@@ -152,6 +168,7 @@ class HeaderFooterRequest(BaseModel):
     footer: Optional[str] = None
     fontsize: float = 10.0
     color: str = "#000000"
+    stash: bool = True
 
 class OcrResult(BaseModel):
     text: str
@@ -172,6 +189,7 @@ class ReplaceTextRequest(BaseModel):
     page_num: Optional[int] = None
     case_sensitive: bool = False
     replace_all: bool = True
+    stash: bool = True
 
 class MetadataRequest(BaseModel):
     title: Optional[str] = None
@@ -179,9 +197,14 @@ class MetadataRequest(BaseModel):
     subject: Optional[str] = None
     keywords: Optional[str] = None
 
+class MetadataResult(BaseModel):
+    success: bool = True
+    previous: MetadataRequest
+
 class SaveResult(BaseModel):
     success: bool
     path: Optional[str] = None
+    stash_id: Optional[str] = None
 
 class TempFileResult(BaseModel):
     temp_path: str
@@ -198,6 +221,34 @@ class TextClipRequest(BaseModel):
 class FormFieldUpdate(BaseModel):
     field_name: str
     value: str
+    stash: bool = True
+
+class FormFieldCreate(BaseModel):
+    page_num: int
+    field_type: str  # text | checkbox | radio | combo
+    field_name: str = ""
+    x: float
+    y: float
+    width: float
+    height: float
+    options: List[str] = []
+    radio_value: Optional[str] = None
+    stash: bool = True
+
+class FormFieldResult(BaseModel):
+    success: bool = True
+    previous: str = ""
+    stash_id: Optional[str] = None
+    field_name: Optional[str] = None
+
+class FormFieldTransform(BaseModel):
+    xref: int
+    x: Optional[float] = None
+    y: Optional[float] = None
+    width: Optional[float] = None
+    height: Optional[float] = None
+    delete: bool = False
+    stash: bool = True
 
 class SavePasswordRequest(BaseModel):
     output_path: Optional[str] = None
