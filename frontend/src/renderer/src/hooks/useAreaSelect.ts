@@ -3,6 +3,7 @@ import { useStoreSlice } from './useStoreSlice'
 
 import { cropPageUndoable, redactAreaUndoable } from '../lib/pageUndo'
 import { isFormTool, placeFormField, type FormTool } from '../lib/formFields'
+import { askConfirm } from '../lib/uiPrompt'
 
 export type AreaRect = { x0: number; y0: number; x1: number; y1: number }
 export type AreaTool = 'croparea' | 'redactarea' | FormTool
@@ -18,8 +19,9 @@ export function useAreaSelect(activeDoc: ActiveDoc, pageData: PageData) {
   const areaToolRef = useRef<AreaTool | null>(null)
   const setArea = (r: AreaRect | null) => { areaSelRef.current = r; setAreaSel(r) }
 
-  const applyArea = async (tool: AreaTool, s: AreaRect) => {
-    if (!activeDoc || !pageData) return
+  /** true si se aplicó; false si se canceló, falló o la selección era chica. */
+  const applyArea = async (tool: AreaTool, s: AreaRect): Promise<boolean> => {
+    if (!activeDoc || !pageData) return false
     const sx = pageData.originalWidth / pageData.width
     const sy = pageData.originalHeight / pageData.height
     const rx0 = Math.min(s.x0, s.x1) * sx, rx1 = Math.max(s.x0, s.x1) * sx
@@ -29,10 +31,10 @@ export function useAreaSelect(activeDoc: ActiveDoc, pageData: PageData) {
         await placeFormField(activeDoc.doc_id, activeDoc.currentPage, tool, {
           x: rx0, y: ry0, width: Math.max(0, rx1 - rx0), height: Math.max(0, ry1 - ry0),
         })
-      } catch { store.showToast('No se pudo crear el campo', 'error') }
-      return
+        return true
+      } catch { store.showToast('No se pudo crear el campo', 'error'); return false }
     }
-    if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return }
+    if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return false }
     try {
       if (tool === 'croparea') {
         await cropPageUndoable(activeDoc.doc_id, activeDoc.currentPage, {
@@ -42,13 +44,20 @@ export function useAreaSelect(activeDoc: ActiveDoc, pageData: PageData) {
           left: rx0,
         })
         store.showToast('Página recortada. Ctrl+Z deshace.', 'success')
-      } else {
-        await redactAreaUndoable(activeDoc.doc_id, activeDoc.currentPage, {
-          x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0,
-        })
-        store.showToast('Área redactada. Ctrl+Z deshace.', 'success')
+        return true
       }
-    } catch { store.showToast('Error al aplicar', 'error') }
+      const ok = await askConfirm(
+        'Redactar área',
+        'Se tachará el área seleccionada de esta página. El contenido se elimina del PDF. Ctrl+Z restaura el documento anterior.',
+        'Redactar',
+      )
+      if (!ok) return false
+      await redactAreaUndoable(activeDoc.doc_id, activeDoc.currentPage, {
+        x: rx0, y: ry0, width: rx1 - rx0, height: ry1 - ry0,
+      })
+      store.showToast('Área redactada. Ctrl+Z deshace.', 'success')
+      return true
+    } catch { store.showToast('Error al aplicar', 'error'); return false }
   }
 
   return { areaSel, areaSelRef, areaDraggingRef, areaToolRef, setArea, applyArea }

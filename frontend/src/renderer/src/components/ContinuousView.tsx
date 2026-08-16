@@ -13,6 +13,7 @@ import MultiSelectionBar from './viewer/MultiSelectionBar'
 import TextBoxEditor from './viewer/TextBoxEditor'
 import ViewerEmptyState from './viewer/ViewerEmptyState'
 import { isFormTool, placeFormField } from '../lib/formFields'
+import { SEL } from '../lib/selectionChrome'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { X } from 'lucide-react'
 
@@ -307,7 +308,7 @@ function ContinuousPageOverlay({
               if (!b) return null
               return (
                 <rect x={b.x - 2} y={b.y - 2} width={b.w + 4} height={b.h + 4}
-                  fill="none" stroke="#2563eb" strokeWidth={1.5} strokeDasharray="4 2" />
+                  fill="none" stroke={SEL} strokeWidth={1.5} strokeDasharray="4 2" />
               )
             })()}
           </g>
@@ -320,7 +321,7 @@ function ContinuousPageOverlay({
           const b = toScreen(Math.max(formRect.x0, formRect.x1), Math.max(formRect.y0, formRect.y1))
           return (
             <rect x={a.x} y={a.y} width={b.x - a.x} height={b.y - a.y}
-              fill="rgba(59,130,246,0.15)" stroke="#3b82f6" strokeWidth={1} strokeDasharray="4 3" />
+              fill={SEL} fillOpacity={0.12} stroke={SEL} strokeWidth={1} strokeDasharray="4 3" />
           )
         })()}
       </svg>

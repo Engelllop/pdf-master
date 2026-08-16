@@ -1,6 +1,7 @@
 import { type Annotation } from '../../store/usePdfStore'
 import { type ResizeCorner } from '../../hooks/useAnnotationDrag'
 import { getAnnotationBounds, type PageDims, type ToScreen } from './annotationRender'
+import { SEL, SEL_PAPER } from '../../lib/selectionChrome'
 
 export interface ResizeStart {
   id: string
@@ -56,7 +57,7 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
       <rect
         x={bounds.x - 4} y={bounds.y - 4}
         width={bounds.w + 8} height={bounds.h + 8}
-        fill="none" stroke="#3b82f6" strokeWidth={2}
+        fill="none" stroke={SEL} strokeWidth={2}
         strokeDasharray="4 2" rx={4}
         pointerEvents="none"
       />
@@ -65,7 +66,7 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
           key={c.key}
           x={c.x} y={c.y}
           width={HANDLE_SIZE} height={HANDLE_SIZE}
-          fill="#3b82f6" stroke="white" strokeWidth={1}
+          fill={SEL} stroke={SEL_PAPER} strokeWidth={1}
           style={{ cursor: c.cursor }}
           onMouseDown={(e) => {
             e.stopPropagation()
@@ -84,10 +85,10 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
       ))}
       {ann.type === 'image' && onRotateStart && (
         <>
-          <line x1={rotCx} y1={bounds.y} x2={rotCx} y2={rotHy} stroke="#3b82f6" strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
+          <line x1={rotCx} y1={bounds.y} x2={rotCx} y2={rotHy} stroke={SEL} strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
           <circle
             cx={rotCx} cy={rotHy} r={6}
-            fill="#10b981" stroke="white" strokeWidth={1}
+            fill={SEL} stroke={SEL_PAPER} strokeWidth={1}
             style={{ cursor: 'grab' }}
             onMouseDown={(e) => {
               e.stopPropagation()

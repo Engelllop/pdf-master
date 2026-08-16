@@ -59,7 +59,7 @@ describe('globo de la nota', () => {
     expect(annotations()).toHaveLength(0)
   })
 
-  it('Esc cierra sin tocar lo ya guardado', () => {
+  it('Esc cierra sin tocar lo ya guardado y avisa si había borrador', () => {
     const ann = noteAnn({ text: 'original' })
     openDocWith(ann)
     let closed = false
@@ -70,6 +70,7 @@ describe('globo de la nota', () => {
 
     expect(closed).toBe(true)
     expect(annotations()[0].text).toBe('original')
+    expect(usePdfStore.getState().toasts.some((t) => /descarta el borrador/i.test(t.message))).toBe(true)
   })
 
   it('el clic de fuera solo cierra: no debe llegar a la página y poner otra nota', () => {

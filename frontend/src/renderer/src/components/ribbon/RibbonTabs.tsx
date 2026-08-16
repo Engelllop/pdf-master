@@ -20,18 +20,23 @@ export default function RibbonTabs() {
   const { activeRibbon, setActiveRibbon, docs, activeDocId, undo, redo, undoStack, redoStack, pageUndoBusy } = useStoreSlice(
     'activeRibbon', 'setActiveRibbon', 'docs', 'activeDocId', 'undo', 'redo', 'undoStack', 'redoStack', 'pageUndoBusy',
   )
-  const hasDoc = docs.some((d) => d.doc_id === activeDocId)
+  const activeDoc = docs.find((d) => d.doc_id === activeDocId)
+  const hasDoc = !!activeDoc
+  const dirty = !!activeDoc?.dirty
 
-  const QBtn = ({ icon: Icon, tip, shortcut, onClick, disabled = false }: {
+  const QBtn = ({ icon: Icon, tip, shortcut, onClick, disabled = false, emphasized = false }: {
     icon: React.ComponentType<{ size?: number }>
     tip: string
     shortcut?: string
     onClick: () => void
     disabled?: boolean
+    emphasized?: boolean
   }) => (
     <Tooltip content={tip} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip}
-        className="p-1.5 rounded transition-colors text-muted hover:text-fg hover:bg-hover disabled:opacity-30 disabled:hover:bg-transparent">
+        className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
+          emphasized ? 'bg-accent text-toolbar hover:opacity-90' : 'text-muted hover:text-fg hover:bg-hover'
+        }`}>
         <Icon size={15} />
       </button>
     </Tooltip>
@@ -42,7 +47,8 @@ export default function RibbonTabs() {
       <div className="flex items-center h-full gap-0.5 shrink-0">
         <FileMenu />
         <div className="w-px h-4 mx-1 bg-border" />
-        <QBtn icon={Save} tip="Guardar" shortcut="Ctrl+S" disabled={!hasDoc}
+        <QBtn icon={Save} tip={dirty ? 'Sin guardar · Ctrl+S' : 'Guardar'} shortcut="Ctrl+S" disabled={!hasDoc}
+          emphasized={dirty}
           onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-save'))} />
         <QBtn icon={Printer} tip="Imprimir" shortcut="Ctrl+P" disabled={!hasDoc}
           onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} />
@@ -72,7 +78,7 @@ export default function RibbonTabs() {
                 el?.focus()
               }}
               className={`relative px-3 h-full text-ui whitespace-nowrap transition-colors ${
-                active ? 'text-accent font-medium' : 'text-muted hover:text-fg'
+                active ? 'text-fg font-medium' : 'text-muted hover:text-fg'
               }`}
             >
               {t.label}

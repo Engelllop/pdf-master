@@ -78,6 +78,7 @@ export default function Toolbar() {
 
   const [searchInput, setSearchInput] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [showReplace, setShowReplace] = useState(false)
   const [replaceInput, setReplaceInput] = useState('')
   const [replaceCaseSensitive, setReplaceCaseSensitive] = useState(false)
   const [replaceAllPages, setReplaceAllPages] = useState(true)
@@ -92,8 +93,10 @@ export default function Toolbar() {
   const replaceRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (showSearch && searchRef.current) searchRef.current.focus()
-  }, [showSearch])
+    if (!showSearch) return
+    if (showReplace) replaceRef.current?.focus()
+    else searchRef.current?.focus()
+  }, [showSearch, showReplace])
 
   useEffect(() => { setCommentMenu(null) }, [activeRibbon])
 
@@ -283,7 +286,13 @@ export default function Toolbar() {
   }
 
   const handleSearchKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch() }
-  const handleCloseSearch = () => { setShowSearch(false); setSearchInput(''); setReplaceInput(''); if (activeDoc) setSearchQuery(activeDoc.doc_id, '') }
+  const handleCloseSearch = () => {
+    setShowSearch(false)
+    setShowReplace(false)
+    setSearchInput('')
+    setReplaceInput('')
+    if (activeDoc) setSearchQuery(activeDoc.doc_id, '')
+  }
 
   const handleReplace = async () => {
     if (!activeDoc || !searchInput.trim()) return
@@ -489,7 +498,7 @@ export default function Toolbar() {
                 tocando el zoom del visor oculto parecerían rotos (pasó en pruebas). */}
             <TBtn icon={ZoomOut} label="Alejar" tip="Alejar"
               onClick={() => compareMode ? setCompareZoom(compareZoom - 0.2) : setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} />
-            <span className="font-mono text-mini text-fg w-10 text-center tabular-nums">
+            <span className="text-mini text-fg w-10 text-center tabular-nums">
               {Math.round((compareMode ? compareZoom : activeDoc.zoom) * 100)}%
             </span>
             <TBtn icon={ZoomIn} label="Acercar" tip="Acercar"
@@ -505,6 +514,15 @@ export default function Toolbar() {
             <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
             <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
             <TBtn icon={GitCompare} label="Comparar" tip="Comparar PDFs" onClick={handleCompare} active={compareMode} />
+            <Sep />
+            <TBtn icon={Highlighter} label="Resaltar" tip={TOOL_LABELS.highlight}
+              shortcut={TOOL_SHORTCUTS.highlight}
+              onClick={() => { setActiveRibbon('comment'); handleToolClick('highlight') }}
+              active={activeTool === 'highlight'} disabled={compareMode} />
+            <TBtn icon={MessageSquare} label="Nota" tip={TOOL_LABELS.note}
+              shortcut={TOOL_SHORTCUTS.note}
+              onClick={() => { setActiveRibbon('comment'); handleToolClick('note') }}
+              active={activeTool === 'note'} disabled={compareMode} />
             <Sep />
             <TBtn icon={isSpeaking ? VolumeX : Volume2} label="Leer" tip={isSpeaking ? 'Detener' : 'Leer en voz alta'} onClick={handleReadAloud} active={isSpeaking} />
             <TBtn icon={Printer} label="Imprimir" tip="Imprimir" onClick={() => setShowPrint(true)} />
@@ -743,38 +761,44 @@ export default function Toolbar() {
                     onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
                     aria-label="Buscar en el documento"
                     className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
-                  <input ref={replaceRef} type="text" placeholder="Reemplazar..." value={replaceInput}
-                    onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
-                    aria-label="Reemplazar por"
-                    className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                   {activeDoc.searchResults.length > 0 && (
                     <span className="text-mini text-muted tabular-nums">{activeDoc.searchIndex + 1}/{activeDoc.searchResults.length}</span>
                   )}
                   <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
                   <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
+                  <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
+                    className={`text-micro px-2 py-0.5 rounded border ${showReplace ? 'bg-fg text-toolbar border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
+                    Reemplazar
+                  </button>
                   <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
                 </div>
-                <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
-                    <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
-                      aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                    Aa
-                  </label>
-                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
-                    <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
-                      aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                    Todos los docs
-                  </label>
-                  <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
-                    <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
-                      aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                    Todo el doc
-                  </label>
-                  <button onClick={handleReplace} disabled={!searchInput.trim()}
-                    className={`text-micro px-2 py-0.5 rounded border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
-                  <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
-                    className={`text-micro px-2 py-0.5 rounded ${searchInput.trim() ? 'bg-fg text-toolbar hover:opacity-90' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
-                </div>
+                {showReplace && (
+                  <div className="flex items-center gap-2">
+                    <input ref={replaceRef} type="text" placeholder="Reemplazar..." value={replaceInput}
+                      onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
+                      aria-label="Reemplazar por"
+                      className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
+                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
+                      <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
+                        aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                      Aa
+                    </label>
+                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
+                      <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
+                        aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                      Todos los docs
+                    </label>
+                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
+                      <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
+                        aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                      Todo el doc
+                    </label>
+                    <button onClick={handleReplace} disabled={!searchInput.trim()}
+                      className={`text-micro px-2 py-0.5 rounded border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
+                    <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
+                      className={`text-micro px-2 py-0.5 rounded ${searchInput.trim() ? 'bg-fg text-toolbar hover:opacity-90' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
+                  </div>
+                )}
               </div>
             ) : (
               <button onClick={() => setShowSearch(true)} className="p-1.5 rounded transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)" aria-label="Buscar">

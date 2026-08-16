@@ -8,5 +8,6 @@ describe('portada vacía', () => {
     render(<ViewerEmptyState containerRef={createRef()} onDragOver={() => {}} onDrop={() => {}} />)
     expect(screen.getByText(/Nunca se guarda solo/)).toBeTruthy()
     expect(screen.getByText(/Ctrl\+S escribe el PDF/)).toBeTruthy()
+    expect(screen.getByText('Marcá sin entregar')).toBeTruthy()
   })
 })

@@ -48,7 +48,7 @@ export default function TextBoxEditor({
   const barTop = y - BAR_H - 8 > 4 ? y - BAR_H - 8 : y + boxH + 8
 
   const btn = 'p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors'
-  const toggleBtn = (active: boolean) => `p-1 rounded transition-colors ${active ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+  const toggleBtn = (active: boolean) => `p-1 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
   const ListIcon = style.listStyle === 'number' ? ListOrdered : List
 
   return (
@@ -61,28 +61,30 @@ export default function TextBoxEditor({
           className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-24 shrink-0">
           {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
         </select>
-        <button title="Reducir tamaño" className={`${btn} text-micro font-semibold`}
+        <button title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
           onClick={() => onFontSize(Math.max(4, fontSize - 2))}>A</button>
         <span className="text-micro text-fg w-5 text-center tabular-nums">{fontSize}</span>
-        <button title="Aumentar tamaño" className={`${btn} text-base font-semibold`}
+        <button title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
           onClick={() => onFontSize(Math.min(72, fontSize + 2))}>A</button>
         <div className="w-px h-4 mx-0.5 bg-border" />
-        <button title="Negrita (Ctrl+B)" className={toggleBtn(style.bold)}
+        <button title="Negrita (Ctrl+B)" aria-label="Negrita" className={toggleBtn(style.bold)}
           onClick={() => onStyle({ bold: !style.bold })}><Bold size={13} /></button>
-        <button title="Cursiva (Ctrl+I)" className={toggleBtn(style.italic)}
+        <button title="Cursiva (Ctrl+I)" aria-label="Cursiva" className={toggleBtn(style.italic)}
           onClick={() => onStyle({ italic: !style.italic })}><Italic size={13} /></button>
         {/* Las tres alineaciones a la vista: el botón que rotaba obligaba a adivinar */}
         {(['left', 'center', 'right'] as const).map((a) => {
           const Icon = ALIGN_ICONS[a]
           return (
             <button key={a} title={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
+              aria-label={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
               className={toggleBtn(style.align === a)} onClick={() => onStyle({ align: a })}><Icon size={13} /></button>
           )
         })}
         <button title={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
+          aria-label={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           className={toggleBtn(style.listStyle !== 'none')}
           onClick={() => onStyle({ listStyle: LIST_NEXT[style.listStyle] })}><ListIcon size={13} /></button>
-        <select title="Interlineado" value={style.lineHeight}
+        <select title="Interlineado" aria-label="Interlineado" value={style.lineHeight}
           onChange={(e) => onStyle({ lineHeight: parseFloat(e.target.value) })}
           className="border border-border rounded px-0.5 py-0.5 text-micro bg-panel text-fg focus:outline-none w-12 shrink-0">
           {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
@@ -91,14 +93,15 @@ export default function TextBoxEditor({
         <label title="Color" className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-110 transition-transform shrink-0 cursor-pointer"
           style={{ backgroundColor: color }}>
           <input type="color" value={color} onChange={(e) => onColor(e.target.value)}
+            aria-label="Color del texto"
             className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
         </label>
         <div className="w-px h-4 mx-0.5 bg-border" />
         {onDelete && (
-          <button title="Eliminar texto" className={`${btn} hover:text-danger`} onClick={onDelete}><Trash2 size={14} /></button>
+          <button title="Eliminar texto" aria-label="Eliminar texto" className={`${btn} hover:text-danger`} onClick={onDelete}><Trash2 size={14} /></button>
         )}
-        <button title="Cancelar (Esc)" className={btn} onClick={onCancel}><X size={15} /></button>
-        <button title="Confirmar (Ctrl+Enter)" className={`${btn} text-success hover:text-success`} onClick={onCommit}>
+        <button title="Cancelar (Esc)" aria-label="Cancelar" className={btn} onClick={onCancel}><X size={15} /></button>
+        <button title="Confirmar (Ctrl+Enter)" aria-label="Confirmar" className={`${btn} text-success hover:text-success`} onClick={onCommit}>
           <Check size={16} />
         </button>
       </div>
@@ -110,11 +113,11 @@ export default function TextBoxEditor({
           width: boxW, height: boxH, lineHeight: style.lineHeight,
           fontWeight: style.bold ? 700 : 400, fontStyle: style.italic ? 'italic' : 'normal',
           textAlign: style.align,
-          border: '1.5px solid rgba(59,130,246,0.9)', borderRadius: 3,
-          boxShadow: '0 0 0 3px rgba(59,130,246,0.15)',
+          border: '2px solid rgb(var(--fg))', borderRadius: 3,
           padding: 0, whiteSpace: 'pre', caretColor: color,
         }}
-        placeholder="Escribe aquí…" value={value}
+        placeholder="Escribí acá…" value={value}
+        aria-label="Texto"
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onCommit() }

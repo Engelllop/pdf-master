@@ -20,7 +20,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
   wrapperHeight: number
   onClose: () => void
 }) {
-  const { updateAnnotation, deleteAnnotation } = useStoreSlice('updateAnnotation', 'deleteAnnotation')
+  const { updateAnnotation, deleteAnnotation, showToast } = useStoreSlice('updateAnnotation', 'deleteAnnotation', 'showToast')
   const [text, setText] = useState(ann.text || '')
   const ref = useRef<HTMLDivElement>(null)
   const textRef = useRef(text)
@@ -48,7 +48,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
     onClose()
   }
 
-  // Clic fuera = guardar. Esc = cerrar sin tocar lo que ya estaba guardado.
+  // Clic fuera = guardar. Esc = cerrar sin guardar; si había borrador, se avisa.
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!ref.current || ref.current.contains(e.target as Node)) return
@@ -59,7 +59,10 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
       commit()
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      if (textRef.current !== (ann.text || '')) showToast('Se descarta el borrador', 'info')
+      onClose()
     }
     document.addEventListener('mousedown', onDown, true)
     document.addEventListener('keydown', onKey, true)
@@ -67,7 +70,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
       document.removeEventListener('mousedown', onDown, true)
       document.removeEventListener('keydown', onKey, true)
     }
-  }, [])
+  }, [ann.text, onClose, showToast])
 
   const tint = ann.color || '#fbbf24'
 
@@ -95,6 +98,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Escribí tu comentario…"
+          aria-label="Texto de la nota"
           className="w-full bg-transparent px-3 pb-2.5 pt-1 text-base text-black placeholder:text-black/35 resize-none outline-none"
           style={{ height: height - 30 }} />
       </div>

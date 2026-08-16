@@ -89,24 +89,24 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
             className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-28">
             {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
           </select>
-          <button title="Reducir tamaño" className={`${btn} text-micro font-semibold`}
+          <button title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
             onClick={() => apply({ fontSize: Math.max(4, (ann.fontSize || 14) - 2) })}>A</button>
           <span className="text-micro text-fg w-6 text-center tabular-nums">{ann.fontSize || 14}</span>
-          <button title="Aumentar tamaño" className={`${btn} text-base font-semibold`}
+          <button title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
             onClick={() => apply({ fontSize: Math.min(72, (ann.fontSize || 14) + 2) })}>A</button>
-          <button title="Negrita" className={`p-1.5 rounded transition-colors ${ann.bold ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}
+          <button title="Negrita" aria-label="Negrita" className={`p-1.5 rounded transition-colors ${ann.bold ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}
             onClick={() => apply({ bold: !ann.bold })}><Bold size={13} /></button>
-          <button title="Cursiva" className={`p-1.5 rounded transition-colors ${ann.italic ? 'bg-hover text-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}
+          <button title="Cursiva" aria-label="Cursiva" className={`p-1.5 rounded transition-colors ${ann.italic ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}
             onClick={() => apply({ italic: !ann.italic })}><Italic size={13} /></button>
-          <button title={`Alineación: ${ann.align || 'left'}`} className={btn}
+          <button title={`Alineación: ${ann.align || 'left'}`} aria-label="Alineación" className={btn}
             onClick={() => apply({ align: ann.align === 'left' || !ann.align ? 'center' : ann.align === 'center' ? 'right' : 'left' })}>
             {ann.align === 'center' ? <AlignCenter size={13} /> : ann.align === 'right' ? <AlignRight size={13} /> : <AlignLeft size={13} />}
           </button>
           <div className="w-px h-4 mx-1 bg-border" />
         </>
       )}
-      <button title="Duplicar" className={btn} onClick={duplicate}><Copy size={14} /></button>
-      <button title="Eliminar (Supr)" className={`${btn} hover:text-danger`}
+      <button title="Duplicar" aria-label="Duplicar" className={btn} onClick={duplicate}><Copy size={14} /></button>
+      <button title="Eliminar (Supr)" aria-label="Eliminar" className={`${btn} hover:text-danger`}
         onClick={() => deleteAnnotation(docId, ann.id)}><Trash2 size={14} /></button>
     </div>
   )

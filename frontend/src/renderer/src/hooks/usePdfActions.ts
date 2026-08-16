@@ -171,7 +171,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   const handleRedact = () => {
     if (!activeDoc) return
     setActiveTool('redactarea')
-    showToast('Arrastrá el área a redactar y soltá para aplicar', 'info')
+    showToast('Arrastrá el área a redactar. Al soltar te pedimos confirmación.', 'info')
   }
 
   const handleCrop = () => {

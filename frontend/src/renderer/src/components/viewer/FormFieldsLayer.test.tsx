@@ -1,7 +1,13 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import FormFieldsLayer from './FormFieldsLayer'
 import { type FormField } from '../../hooks/useFormFields'
+import { askConfirm } from '../../lib/uiPrompt'
+
+vi.mock('../../lib/uiPrompt', () => ({
+  askConfirm: vi.fn(() => Promise.resolve(true)),
+  askForm: vi.fn(),
+}))
 
 const pageData = { width: 800, height: 600, originalWidth: 800, originalHeight: 600, image: '' }
 
@@ -86,13 +92,25 @@ describe('campos de formulario', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('en modo layout no rellena: el campo se selecciona para mover o borrar', () => {
+  it('en modo layout no rellena: el campo se selecciona para mover o borrar', async () => {
     const onTransform = vi.fn()
+    vi.mocked(askConfirm).mockResolvedValueOnce(true)
     render(<FormFieldsLayer fields={[field()]} pageData={pageData} onChange={vi.fn()}
       layoutMode onTransform={onTransform} />)
     expect(screen.queryByRole('textbox')).toBeNull()
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Campo medidores' }))
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar campo' }))
-    expect(onTransform).toHaveBeenCalledWith(11, { delete: true })
+    await waitFor(() => expect(onTransform).toHaveBeenCalledWith(11, { delete: true }))
+  })
+
+  it('cancelar el confirm de borrar no elimina el campo', async () => {
+    const onTransform = vi.fn()
+    vi.mocked(askConfirm).mockResolvedValueOnce(false)
+    render(<FormFieldsLayer fields={[field()]} pageData={pageData} onChange={vi.fn()}
+      layoutMode onTransform={onTransform} />)
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Campo medidores' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Eliminar campo' }))
+    await waitFor(() => expect(askConfirm).toHaveBeenCalled())
+    expect(onTransform).not.toHaveBeenCalled()
   })
 })

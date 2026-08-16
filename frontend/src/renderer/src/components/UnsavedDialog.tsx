@@ -70,7 +70,7 @@ export default function UnsavedDialog() {
   return (
     <div className="overlay-in fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) finish('cancel') }}>
-      <div className="panel-in w-[440px] max-w-[92vw] rounded-2xl border border-border bg-panel shadow-2xl overflow-hidden">
+      <div className="panel-in w-[440px] max-w-[92vw] rounded-lg border border-border bg-panel shadow-2xl overflow-hidden">
         <div className="flex items-start gap-3 p-5">
           <span className="mt-0.5 p-2 rounded-full bg-warning/15 text-warning shrink-0"><AlertTriangle size={18} /></span>
           <div className="min-w-0">

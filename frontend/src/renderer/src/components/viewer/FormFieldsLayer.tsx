@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { type FormField } from '../../hooks/useFormFields'
 import { type PageDims } from './annotationRender'
+import { askConfirm } from '../../lib/uiPrompt'
 
 // Widgets de formulario del PDF (inputs/checkbox/select) superpuestos al bitmap.
 // Los de texto escriben en estado local y se confirman al salir del campo o con
@@ -124,6 +125,18 @@ export default function FormFieldsLayer({
 }) {
   const [selected, setSelected] = useState<number | null>(null)
   useEffect(() => { setSelected(null) }, [fields])
+
+  const confirmDelete = async (xref: number) => {
+    const ok = await askConfirm(
+      'Borrar campo',
+      'Se eliminará este campo del formulario. Ctrl+Z deshace.',
+      'Borrar',
+    )
+    if (!ok) return
+    onTransform?.(xref, { delete: true })
+    setSelected(null)
+  }
+
   useEffect(() => {
     if (!layoutMode || selected == null) return
     const onKey = (e: KeyboardEvent) => {
@@ -131,8 +144,7 @@ export default function FormFieldsLayer({
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        onTransform?.(selected, { delete: true })
-        setSelected(null)
+        void confirmDelete(selected)
       } else if (e.key === 'Escape') {
         setSelected(null)
       }
@@ -157,7 +169,7 @@ export default function FormFieldsLayer({
           selected={selected === field.xref}
           onSelect={() => setSelected(field.xref)}
           onCommit={(rect) => onTransform?.(field.xref, rect)}
-          onDelete={() => onTransform?.(field.xref, { delete: true })}
+          onDelete={() => { void confirmDelete(field.xref) }}
         />
       )) : fields.map((field, i) => {
         const style = {

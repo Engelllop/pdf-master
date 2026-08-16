@@ -191,10 +191,10 @@ export default function ThumbnailPanel() {
         body: JSON.stringify({ pages }),
       })
       if (res.ok) {
-        showToast(`${pages.length} pagina(s) extraida(s)`, 'success')
+        showToast(`${pages.length} página(s) extraída(s)`, 'success')
         setSelectedPages(new Set())
       } else {
-        showToast('Error al extraer paginas', 'error')
+        showToast('Error al extraer páginas', 'error')
       }
     } catch (err: any) {
       showToast('Error: ' + err.message, 'error')

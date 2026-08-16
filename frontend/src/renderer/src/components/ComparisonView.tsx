@@ -313,7 +313,7 @@ export default function ComparisonView() {
             <ChevronLeft size={16} />
           </button>
         </Tooltip>
-        <span className={`text-mini w-24 text-center font-mono text-fg`}>
+        <span className={`text-mini w-24 text-center tabular-nums text-fg`}>
           {leftPage + 1} / {activeDoc.page_count}
         </span>
         <Tooltip content="Página siguiente">
@@ -329,7 +329,7 @@ export default function ComparisonView() {
             <ZoomOut size={16} />
           </button>
         </Tooltip>
-        <span className={`text-mini w-12 text-center font-mono text-fg`}>{Math.round(zoom * 100)}%</span>
+        <span className={`text-mini w-12 text-center tabular-nums text-fg`}>{Math.round(zoom * 100)}%</span>
         <Tooltip content="Acercar">
           <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomIn size={16} />
@@ -398,7 +398,7 @@ export default function ComparisonView() {
               {diff.map((d) => (
                 <button key={d.page} onClick={() => { setLeftPage(d.page); setRightPage(d.page) }}
                   className={`block w-full text-left px-3 py-1.5 border-t border-border hover:bg-hover`}>
-                  <span className={`font-mono mr-2 text-muted`}>Pág {d.page + 1}</span>
+                  <span className={`tabular-nums mr-2 text-muted`}>Pág {d.page + 1}</span>
                   {d.removed && <span className="text-danger line-through mr-2">{d.removed}</span>}
                   {d.added && <span className="text-success">{d.added}</span>}
                 </button>

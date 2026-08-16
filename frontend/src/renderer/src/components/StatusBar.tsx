@@ -98,7 +98,7 @@ export default function StatusBar() {
           <div className="relative">
             <button onClick={() => setZoomMenuOpen((o) => !o)}
               className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-hover text-fg" title="Nivel de zoom" aria-label="Nivel de zoom" aria-haspopup="menu" aria-expanded={zoomMenuOpen}>
-              <span className="font-mono w-9 text-right">{zoomPercent}%</span>
+              <span className="w-9 text-right tabular-nums">{zoomPercent}%</span>
               <ChevronDown size={12} className="text-muted" />
             </button>
             {zoomMenuOpen && (

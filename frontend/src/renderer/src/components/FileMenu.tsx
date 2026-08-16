@@ -137,7 +137,7 @@ export default function FileMenu() {
   const handleShareEmail = () => {
     if (!activeDoc) return
     window.open(`mailto:?subject=${encodeURIComponent(`PDF: ${activeDoc.file_name}`)}&body=${encodeURIComponent(`Adjunto: ${activeDoc.file_path}`)}`)
-    showToast('Cliente de email abierto', 'info')
+    showToast('Se abrió el email con la ruta. El PDF no se adjunta.', 'info')
   }
 
   // Ctrl+S / botón Guardar de la cinta llegan por este evento global.
@@ -260,7 +260,7 @@ export default function FileMenu() {
             <Item icon={Printer} label="Imprimir…" shortcut="Ctrl+P" onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} disabled={!activeDoc} />
             <div className="h-px my-1 bg-border" />
             <Item icon={Merge} label="Combinar PDFs…" onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-merge'))} disabled={!activeDoc} />
-            <Item icon={Mail} label="Compartir por email" onClick={handleShareEmail} disabled={!activeDoc} />
+            <Item icon={Mail} label="Enviar ruta por email" onClick={handleShareEmail} disabled={!activeDoc} />
             <div className="h-px my-1 bg-border" />
             <Item icon={MonitorPlay} label="Nueva ventana" onClick={() => window.api.newWindow()} />
             <Item icon={X} label="Cerrar documento" shortcut="Ctrl+W" onClick={() => activeDoc && requestCloseDoc(activeDoc.doc_id)} disabled={!activeDoc} />

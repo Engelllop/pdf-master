@@ -10,6 +10,7 @@ import { useRightPageResize } from '../hooks/useRightPageResize'
 import { useImageEdit } from '../hooks/useImageEdit'
 import { useAreaSelect } from '../hooks/useAreaSelect'
 import { isFormTool } from '../lib/formFields'
+import { SEL } from '../lib/selectionChrome'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
@@ -425,9 +426,12 @@ export default function Viewer() {
       areaDraggingRef.current = false
       const tool = areaToolRef.current
       const s = areaSelRef.current
-      setArea(null)
-      if (!isFormTool(tool)) store.setActiveTool(null)
-      if (tool && s) applyArea(tool, s)
+      if (!tool || !s) { setArea(null); return }
+      void (async () => {
+        const applied = await applyArea(tool, s)
+        setArea(null)
+        if (applied && !isFormTool(tool)) store.setActiveTool(null)
+      })()
       return
     }
     if (imgModeRef.current) {
@@ -732,7 +736,7 @@ export default function Viewer() {
                       if (!b) return null
                       return (
                         <rect key={`multi-${a.id}`} x={b.x - 3} y={b.y - 3} width={b.w + 6} height={b.h + 6}
-                          fill="rgba(59,130,246,0.08)" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="4 2" rx={3}
+                          fill={SEL} fillOpacity={0.08} stroke={SEL} strokeWidth={1.5} strokeDasharray="4 2" rx={3}
                           pointerEvents="none" />
                       )
                     })
@@ -745,7 +749,7 @@ export default function Viewer() {
                 {marquee && (
                   <rect x={Math.min(marquee.x0, marquee.x1)} y={Math.min(marquee.y0, marquee.y1)}
                     width={Math.abs(marquee.x1 - marquee.x0)} height={Math.abs(marquee.y1 - marquee.y0)}
-                    fill="rgba(59,130,246,0.12)" stroke="#3b82f6" strokeWidth={1} strokeDasharray="3 2"
+                    fill={SEL} fillOpacity={0.12} stroke={SEL} strokeWidth={1} strokeDasharray="3 2"
                     pointerEvents="none" />
                 )}
 
@@ -756,9 +760,9 @@ export default function Viewer() {
                   return (
                     <g key={`${im.xref}-${i}`} style={{ cursor: 'move' }}>
                       <rect x={r.l} y={r.t} width={r.w} height={r.h}
-                        fill={sel ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.04)'}
-                        stroke="#3b82f6" strokeWidth={sel ? 2 : 1} strokeDasharray={sel ? undefined : '4 3'} />
-                      {sel && <rect x={r.l + r.w - 5} y={r.t + r.h - 5} width={10} height={10} fill="#3b82f6" style={{ cursor: 'nwse-resize' }} />}
+                        fill={SEL} fillOpacity={sel ? 0.12 : 0.04}
+                        stroke={SEL} strokeWidth={sel ? 2 : 1} strokeDasharray={sel ? undefined : '4 3'} />
+                      {sel && <rect x={r.l + r.w - 5} y={r.t + r.h - 5} width={10} height={10} fill={SEL} style={{ cursor: 'nwse-resize' }} />}
                     </g>
                   )
                 })}
@@ -767,8 +771,9 @@ export default function Viewer() {
                 {areaSel && (store.activeTool === 'croparea' || store.activeTool === 'redactarea' || isFormTool(store.activeTool)) && (
                   <rect x={Math.min(areaSel.x0, areaSel.x1)} y={Math.min(areaSel.y0, areaSel.y1)}
                     width={Math.abs(areaSel.x1 - areaSel.x0)} height={Math.abs(areaSel.y1 - areaSel.y0)}
-                    fill={store.activeTool === 'redactarea' ? 'rgba(0,0,0,0.35)' : 'rgba(59,130,246,0.15)'}
-                    stroke={store.activeTool === 'redactarea' ? '#000000' : '#3b82f6'}
+                    fill={store.activeTool === 'redactarea' ? 'rgba(0,0,0,0.35)' : SEL}
+                    fillOpacity={store.activeTool === 'redactarea' ? undefined : 0.12}
+                    stroke={store.activeTool === 'redactarea' ? '#000000' : SEL}
                     strokeWidth={1} strokeDasharray="4 3" pointerEvents="none" />
                 )}
               </svg>
@@ -820,7 +825,7 @@ export default function Viewer() {
                       left: s.x, top: s.y, fontSize: fpx, fontFamily: editSpan.font || 'Arial',
                       color: editSpan.color || '#000', background: '#fff',
                       width: w, height: fpx * 1.5,
-                      border: '1px solid rgba(59,130,246,0.9)', padding: 0, whiteSpace: 'pre',
+                      border: '1px solid rgb(var(--fg))', padding: 0, whiteSpace: 'pre',
                     }} />
                 )
               })()}
@@ -983,11 +988,11 @@ export default function Viewer() {
       {/* Drag & Drop overlay */}
       {isDraggingFile && (
         <div className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none bg-surface/80`}>
-          <div className="border-2 border-dashed border-accent rounded-2xl p-12 flex flex-col items-center gap-4">
-            <svg className="w-16 h-16 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="border-2 border-dashed border-fg rounded-lg p-12 flex flex-col items-center gap-4">
+            <svg className="w-16 h-16 text-fg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            <span className="text-accent text-lg font-medium">Suelta el PDF aquí</span>
+            <span className="text-fg text-lg font-medium">Soltá el PDF acá</span>
           </div>
         </div>
       )}

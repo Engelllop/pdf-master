@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderOpen, FileText, Folder, History, Ruler, Tally5, GitCompare, Pin } from 'lucide-react'
+import { FolderOpen, FileText, Folder, History, Highlighter, Ruler, GitCompare, Pin } from 'lucide-react'
 import { openDocument } from '../../lib/openDocument'
 import { loadRecents, frequentFolders, type RecentEntry } from '../../lib/recents'
 import { loadLastSession, reopenLastSession } from '../../lib/session'
@@ -42,9 +42,9 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
   const visibleRecents = recents.slice(0, 6)
 
   const CAPABILITIES: Array<{ icon: typeof Ruler; title: string; text: string }> = [
-    { icon: Ruler, title: 'Mide sobre planos', text: 'Calibra la escala y mide distancias y áreas reales.' },
-    { icon: Tally5, title: 'Cuenta símbolos', text: 'Marca por categorías y exporta la tabla a Excel.' },
-    { icon: GitCompare, title: 'Compara revisiones', text: 'Dos versiones lado a lado con las diferencias de texto.' },
+    { icon: Highlighter, title: 'Marcá sin entregar', text: 'Resaltá, anotá y dibujá. El archivo en disco no cambia hasta Ctrl+S.' },
+    { icon: Ruler, title: 'Medí y contá', text: 'Calibrá la escala, medí distancias y agrupá símbolos.' },
+    { icon: GitCompare, title: 'Compará revisiones', text: 'Dos versiones lado a lado, con las diferencias de texto.' },
   ]
 
   return (
