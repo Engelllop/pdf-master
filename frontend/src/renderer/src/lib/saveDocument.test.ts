@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const apiFetch = vi.fn(async () => ({ ok: true }) as unknown as Response)
+const apiFetch = vi.fn(async (_path: string, _init?: RequestInit) => ({ ok: true }) as unknown as Response)
 const setDocDirty = vi.fn()
 
-vi.mock('./api', () => ({ apiFetch: (...args: unknown[]) => apiFetch(...(args as [])) }))
+vi.mock('./api', () => ({ apiFetch: (path: string, init?: RequestInit) => apiFetch(path, init) }))
 vi.mock('../store/usePdfStore', () => ({
   usePdfStore: {
     getState: () => ({
@@ -16,7 +16,7 @@ vi.mock('../store/usePdfStore', () => ({
 
 import { saveDocument } from './saveDocument'
 
-const rutas = (): string[] => apiFetch.mock.calls.map((c) => c[0] as unknown as string)
+const rutas = (): string[] => apiFetch.mock.calls.map((c) => c[0])
 
 beforeEach(() => { apiFetch.mockClear(); setDocDirty.mockClear() })
 
