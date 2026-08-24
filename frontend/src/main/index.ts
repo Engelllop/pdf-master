@@ -17,6 +17,16 @@ const API_BASE = 'http://localhost:8745'
 const API_TOKEN = randomBytes(24).toString('hex')
 const backendEnv = { ...process.env, PDFMASTER_API_TOKEN: API_TOKEN }
 
+/** El motor exige el token en todo lo que no sea /health. El renderer lo pone en
+ * `apiFetch`; el main tiene que ponerlo igual o recibe 401 (empaquetado siempre,
+ * porque `dev.ps1` arranca el motor sin token y ahí el middleware no aplica). */
+function engineFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    ...init,
+    headers: { ...(init?.headers as Record<string, string> | undefined), 'x-pdfmaster-token': API_TOKEN },
+  })
+}
+
 let mainWindow: BrowserWindow | null = null
 let backendProcess: ChildProcess | null = null
 const fileQueue: string[] = []
@@ -177,7 +187,9 @@ function createWindow(): void {
   })
 
   win.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    // Solo esquemas de navegación: un PDF hostil no debe poder lanzar file:// ni
+    // un protocolo registrado en el sistema cuando sus enlaces sean clicables.
+    if (/^(https?|mailto):/i.test(details.url)) shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
@@ -425,7 +437,7 @@ app.whenReady().then(async () => {
     let tempPath: string | null = null
     let printWin: BrowserWindow | null = null
     try {
-      const res = await fetch(`${API_BASE}/pdf/raw/${docId}`)
+      const res = await engineFetch(`/pdf/raw/${docId}`)
       if (!res.ok) throw new Error(`raw fetch ${res.status}`)
       const buf = Buffer.from(await res.arrayBuffer())
       tempPath = join(tmpdir(), `pdfmaster-print-${Date.now()}.pdf`)
@@ -497,7 +509,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('ai:has-key', () => readAiKey() !== null)
 
-  // Asistente IA: streaming directo a la API de Claude (claude-opus-4-8).
+  // Asistente IA: streaming directo a la API de Claude (claude-opus-5).
   // Adjunta el PDF como bloque "document" base64 para que Claude lea el documento
   // nativamente. Se hace en el main (no en el backend Python) para no tocar el
   // motor PyMuPDF ni recompilar el exe, y para mantener la API key fuera del renderer.
@@ -517,27 +529,41 @@ app.whenReady().then(async () => {
       // scope 'page' adjunta solo la imagen de la página actual (liviano, ideal para
       // planos grandes); 'doc' adjunta el PDF completo para que Claude lo lea nativo.
       let docBlock: object | null = null
+      let tooBig = false
+      // El tope de la API son 32 MB de REQUEST, y base64 infla un 37 %: medir el
+      // buffer crudo contra 28 MB dejaba pasar PDFs que la API rechazaba.
+      const MAX_RAW = 22 * 1024 * 1024
       if (docId && scope === 'page') {
-        const res = await fetch(`${API_BASE}/pdf/page-image/${docId}/${page}?zoom=2.0`)
+        const res = await engineFetch(`/pdf/page-image/${docId}/${page}?zoom=2.0`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())
-          if (buf.length <= 28 * 1024 * 1024) {
+          if (buf.length <= MAX_RAW) {
             docBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: buf.toString('base64') } }
-          }
+          } else tooBig = true
         }
       } else if (docId) {
-        const res = await fetch(`${API_BASE}/pdf/raw/${docId}`)
+        const res = await engineFetch(`/pdf/raw/${docId}`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())
-          if (buf.length <= 28 * 1024 * 1024) {
+          if (buf.length <= MAX_RAW) {
             docBlock = { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } }
-          }
+          } else tooBig = true
         }
+      }
+      if (docId && !docBlock) {
+        throw new Error(tooBig
+          ? 'El PDF pesa más de 22 MB: probá con el contexto "Página actual".'
+          : 'No se pudo leer el documento del motor.')
       }
 
       const apiMessages = messages.map((m, i) => {
         if (m.role === 'user' && docBlock && i === messages.findIndex((x) => x.role === 'user')) {
-          return { role: 'user', content: [docBlock, { type: 'text', text: m.text }] }
+          // cache_control: el documento va en cada petición; sin caché se re-lee
+          // (y se cobra) entero en cada turno de la conversación.
+          return {
+            role: 'user',
+            content: [{ ...docBlock, cache_control: { type: 'ephemeral' } }, { type: 'text', text: m.text }],
+          }
         }
         return { role: m.role, content: m.text }
       })
@@ -561,7 +587,7 @@ app.whenReady().then(async () => {
         headers,
         signal: controller.signal,
         body: JSON.stringify({
-          model: 'claude-opus-4-8',
+          model: 'claude-opus-5',
           max_tokens: 8000,
           stream: true,
           system: 'Eres un asistente experto integrado en PDF Master, un lector y editor de PDF. Respondes en español de forma precisa y concisa sobre el documento PDF adjunto. Si te piden extraer datos, devuélvelos estructurados.',

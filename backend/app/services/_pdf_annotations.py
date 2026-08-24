@@ -5,6 +5,7 @@ import math
 import uuid
 import json
 import os
+import re
 from datetime import datetime
 from typing import Dict, Optional, List
 from collections import OrderedDict
@@ -44,6 +45,34 @@ class AnnotationsMixin:
         except Exception:
             pass
         return {}
+
+    @staticmethod
+    def _read_da(doc, xref) -> dict:
+        """Tamaño y color del texto de un FreeText ajeno (Acrobat/Bluebeam, o una
+        versión vieja de la app) leyendo su /DA. Sin esto se importaban con el tamaño
+        por defecto (14 pt) y con `/C` como color — que en un FreeText es el fondo del
+        globo, no la letra: el texto salía blanco sobre blanco."""
+        out: dict = {}
+        try:
+            kind, val = doc.xref_get_key(xref, "DA")
+            if kind not in ("string", "text") or not val:
+                return out
+            da = val[1:-1] if val.startswith("(") and val.endswith(")") else val
+            m = re.search(r"/\S+\s+([\d.]+)\s+Tf", da)
+            if m and float(m.group(1)) > 0:
+                out["fontSize"] = float(m.group(1))
+            m = re.search(r"([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+rg", da)
+            if m:
+                out["color"] = '#%02x%02x%02x' % tuple(
+                    max(0, min(255, int(float(c) * 255))) for c in m.groups())
+            else:
+                m = re.search(r"(?<![\d.])([\d.]+)\s+g(?![a-zA-Z])", da)
+                if m:
+                    g = max(0, min(255, int(float(m.group(1)) * 255)))
+                    out["color"] = '#%02x%02x%02x' % (g, g, g)
+        except Exception:
+            pass
+        return out
 
     @staticmethod
     def _vertices_to_points(verts) -> List[dict]:
@@ -109,6 +138,9 @@ class AnnotationsMixin:
                             color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
                     except Exception:
                         pass
+                    da = self._read_da(doc, a.xref) if raw == 'FreeText' else {}
+                    if da.get('color') and not pm.get('color'):
+                        color = da['color']
                     text = pm.get('text') if pm.get('text') is not None else (info.get('content') or None)
                     points = pm.get('points')
                     if not points and mapped in ('draw', 'polygon', 'line', 'signature', 'check', 'cross',
@@ -152,7 +184,7 @@ class AnnotationsMixin:
                         status=pm.get('status'),
                         layer=pm.get('layer') or (None if (info.get('subject') or '').startswith('Count:') else info.get('subject')) or None,
                         symbol=pm.get('symbol'),
-                        fontSize=pm.get('fontSize'),
+                        fontSize=pm.get('fontSize') or da.get('fontSize'),
                         fontFamily=pm.get('fontFamily'),
                         lineWidth=pm.get('lineWidth'),
                         lineStyle=pm.get('lineStyle'),

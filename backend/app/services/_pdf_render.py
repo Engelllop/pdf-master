@@ -41,6 +41,15 @@ class RenderMixin:
             doc = self._acquire(doc_id)
             if not doc:
                 return None
+            # Sin cambios y sin cifrado, el documento en memoria es el archivo: leerlo
+            # de disco evita re-comprimir decenas de MB (con el lock y el único worker
+            # tomados) cada vez que PDF.js pide el PDF de un plano recién abierto.
+            if not self._dirty.get(doc_id) and not doc.is_encrypted:
+                try:
+                    with open(self._doc_path(doc_id), "rb") as fh:
+                        return fh.read()
+                except OSError:
+                    pass
             return doc.tobytes(garbage=0, deflate=True)
 
     def get_page_image_bytes(self, doc_id: str, page_num: int, zoom: float = 1.0) -> Optional[bytes]:
