@@ -27,7 +27,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
     setText('')
   }
 
-  const useStamp = (label: string, c: string) => {
+  const colocarSello = (label: string, c: string) => {
     setSelectedStamp(label)
     setStampColor(c)
     setActiveTool('stamp')
@@ -35,7 +35,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
     showToast('Haz clic en el documento para colocar el sello', 'info')
   }
 
-  const useSignature = (sig: SavedSignature) => {
+  const colocarFirma = (sig: SavedSignature) => {
     window.dispatchEvent(new CustomEvent('app:place-signature', { detail: { id: sig.id } }))
     onClose()
     showToast(`Haz clic para colocar la firma «${sig.name}»`, 'info')
@@ -72,7 +72,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
               <p className="text-micro uppercase tracking-wider text-muted mb-1.5">De fábrica</p>
               <div className="flex flex-wrap gap-1.5">
                 {BUILTIN_STAMPS.map((s) => (
-                  <button key={s} onClick={() => useStamp(s, '#22c55e')}
+                  <button key={s} onClick={() => colocarSello(s, '#22c55e')}
                     className="px-2.5 py-1 rounded border border-border text-micro text-fg hover:bg-hover transition-colors">
                     {s}
                   </button>
@@ -87,7 +87,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
                 {stamps.map((s) => (
                   <div key={s.id} className="group flex items-center gap-2 px-2 py-1.5 rounded border border-border">
                     <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                    <button onClick={() => useStamp(renderStampText(s, annotationAuthor), s.color)}
+                    <button onClick={() => colocarSello(renderStampText(s, annotationAuthor), s.color)}
                       className="flex-1 min-w-0 text-left text-mini text-fg truncate">
                       {renderStampText(s, annotationAuthor)}
                     </button>
@@ -140,7 +140,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
                 <input defaultValue={sig.name}
                   onBlur={(e) => { renameSignature(sig.id, e.target.value.trim() || sig.name); setSignatures(loadSignatures()) }}
                   className="flex-1 min-w-0 bg-transparent text-mini text-fg focus:outline-none focus:border-b focus:border-accent" />
-                <button onClick={() => useSignature(sig)} title="Colocar en el documento"
+                <button onClick={() => colocarFirma(sig)} title="Colocar en el documento"
                   className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><Check size={14} /></button>
                 <button onClick={() => { removeSignature(sig.id); setSignatures(loadSignatures()) }} aria-label="Eliminar firma"
                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted hover:text-danger transition-opacity">

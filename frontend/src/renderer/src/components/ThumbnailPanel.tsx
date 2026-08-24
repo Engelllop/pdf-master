@@ -423,7 +423,7 @@ export default function ThumbnailPanel() {
           {activeDoc.searchResults.length > 0 ? (
             <>
               <div className={`text-micro px-1 pb-1 text-muted`}>
-                {activeDoc.searchResults.length} resultado(s) para "{activeDoc.searchQuery}"
+                {activeDoc.searchResults.length} resultado(s) para &laquo;{activeDoc.searchQuery}&raquo;
               </div>
               {activeDoc.searchResults.map((r, i) => (
                 <button

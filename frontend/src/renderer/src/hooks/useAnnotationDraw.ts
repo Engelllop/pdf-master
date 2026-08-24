@@ -424,7 +424,7 @@ export function useAnnotationDraw(
     } else if ((activeTool === 'rect' || activeTool === 'circle' ||
       activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud') &&
       drawPreview.width && Math.abs(drawPreview.width) > 2) {
-      let finalPreview = { ...drawPreview }
+      const finalPreview = { ...drawPreview }
       // Normalize x,y to top-left corner for rect/circle (user may have dragged backwards)
       const nx = Math.min(finalPreview.x || 0, (finalPreview.x || 0) + (finalPreview.width || 0))
       const ny = Math.min(finalPreview.y || 0, (finalPreview.y || 0) + (finalPreview.height || 0))

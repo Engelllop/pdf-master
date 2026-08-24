@@ -77,7 +77,7 @@ async def lifespan(app: FastAPI):
     _write_breadcrumb("")
 
 
-app = FastAPI(title="PDF Master Engine", version="1.14.1", lifespan=lifespan)
+app = FastAPI(title="PDF Master Engine", version="1.14.2", lifespan=lifespan)
 
 # Electron genera un token al spawnear el motor. Si no hay token (pytest / python
 # main.py a mano) la API sigue abierta en loopback — no romper tests ni el script

@@ -2,7 +2,7 @@ import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electro
 import { join, extname } from 'path'
 import { randomBytes } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { spawn, ChildProcess } from 'child_process'
+import { spawn, execSync, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlink, unlinkSync } from 'fs'
 import { tmpdir, userInfo } from 'os'
@@ -56,7 +56,6 @@ function safeLog(level: string, msg: string): void {
 function killExistingBackend(): void {
   try {
     // Kill any existing pdf-engine.exe processes to free port 8745
-    const { execSync } = require('child_process')
     execSync('taskkill /F /IM pdf-engine.exe 2>nul', { windowsHide: true })
   } catch {
     // Ignore errors — no existing process is fine

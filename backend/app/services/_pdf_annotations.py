@@ -20,20 +20,24 @@ class AnnotationsMixin:
         return file_path + ".pdfmaster.json"
 
     def load_annotations(self, doc_id: str) -> List[Annotation]:
+        """El PDF manda: las marcas viajan incrustadas en él. El sidecar solo se lee
+        como respaldo de archivos guardados por versiones viejas que no incrustaban
+        todo — leerlo primero duplicaba las marcas que sí están en el PDF."""
         info = self._infos.get(doc_id)
         if not info:
             return []
+        native = self.import_native_annotations(doc_id)
+        if native:
+            return native
         path = self._get_annotations_path(info.file_path)
         if os.path.exists(path):
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                anns = [Annotation(**ann) for ann in data.get('annotations', [])]
-                if anns:
-                    return anns
+                return [Annotation(**ann) for ann in data.get('annotations', [])]
             except Exception:
                 logger.exception("Sidecar de anotaciones corrupto: %s", path)
-        return self.import_native_annotations(doc_id)
+        return []
 
     @staticmethod
     def _read_pm(doc, annot) -> dict:
@@ -408,10 +412,14 @@ class AnnotationsMixin:
                     anchor_x = box.x0 if tx < box.x0 else box.x1 if tx > box.x1 else (box.x0 + box.x1) / 2
                     anchor_y = box.y0 if ty < box.y0 else box.y1 if ty > box.y1 else (box.y0 + box.y1) / 2
                     callout = [fitz.Point(tx, ty), fitz.Point(anchor_x, anchor_y), fitz.Point(anchor_x, anchor_y)]
+                # Sin `border_color`: PyMuPDF 1.28 lo rechaza salvo en richtext
+                # ("cannot set border_color if rich_text is False") y la excepción
+                # tumbaba el guardado ENTERO — un solo globo dejaba el documento sin
+                # guardar. El trazo del globo lo pinta igual el color del texto.
                 annot = page.add_freetext_annot(
                     box, ann.text or '', fontsize=ann.fontSize or 12,
                     text_color=color, fill_color=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
-                    border_color=color, border_width=ann.lineWidth or 1,
+                    border_width=ann.lineWidth or 1,
                     callout=callout, opacity=stroke_op(ann),
                 )
                 self._stamp_markup(annot, ann)
@@ -442,13 +450,12 @@ class AnnotationsMixin:
                     angle = -math.pi / 2 + i * math.pi / 5
                     f = 0.5 if i % 2 == 0 else 0.21
                     pts.append(fitz.Point(cx + math.cos(angle) * w * f, cy + math.sin(angle) * h * f))
-                shape = page.new_shape()
-                shape.draw_polyline(pts + [pts[0]])
-                shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
-                             stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
-                             fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
-                             fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
-                shape.commit()
+                # Anotación, no `new_shape()`: dibujarla en el contenido la horneaba
+                # en la página — al reabrir no volvía como marca editable y, con el
+                # sidecar, se veía dos veces (la horneada + la del overlay).
+                annot = page.add_polygon_annot(pts)
+                self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
+                self._stamp_markup(annot, ann)
             elif ann.type == 'cloud':
                 # Festones semicirculares hacia afuera por todo el perímetro del rect
                 # (mismo trazado que el render SVG del frontend).
@@ -457,7 +464,10 @@ class AnnotationsMixin:
                 corners = [fitz.Point(ann.x, ann.y), fitz.Point(ann.x + w, ann.y),
                            fitz.Point(ann.x + w, ann.y + h), fitz.Point(ann.x, ann.y + h)]
                 normals = [(0, -1), (1, 0), (0, 1), (-1, 0)]
-                shape = page.new_shape()
+                # Igual que la estrella: polígono como ANOTACIÓN. Los festones son
+                # curvas, así que se muestrean en puntos (el trazo queda idéntico a
+                # ojo y la marca sí vuelve editable al reabrir).
+                outline = []
                 for e in range(4):
                     p0, p1 = corners[e], corners[(e + 1) % 4]
                     nx_, ny_ = normals[e]
@@ -467,12 +477,17 @@ class AnnotationsMixin:
                         a = fitz.Point(p0.x + (p1.x - p0.x) * i / n, p0.y + (p1.y - p0.y) * i / n)
                         b = fitz.Point(p0.x + (p1.x - p0.x) * (i + 1) / n, p0.y + (p1.y - p0.y) * (i + 1) / n)
                         ctrl = fitz.Point((a.x + b.x) / 2 + nx_ * r * 1.8, (a.y + b.y) / 2 + ny_ * r * 1.8)
-                        shape.draw_curve(a, ctrl, b)
-                shape.finish(color=color, width=ann.lineWidth or 2, dashes=dashes_for(ann),
-                             stroke_opacity=stroke_op(ann), closePath=True, lineJoin=1,
-                             fill=hex_to_rgb(ann.fillColor) if ann.fillColor else None,
-                             fill_opacity=ann.fillOpacity if ann.fillOpacity is not None else 0.3)
-                shape.commit()
+                        for k in range(6):
+                            t = k / 6
+                            u = 1 - t
+                            outline.append(fitz.Point(
+                                u * u * a.x + 2 * u * t * ctrl.x + t * t * b.x,
+                                u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y,
+                            ))
+                if len(outline) >= 3:
+                    annot = page.add_polygon_annot(outline)
+                    self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
+                    self._stamp_markup(annot, ann)
             elif ann.type in ('polygon', 'measure_area'):
                 if ann.points and len(ann.points) >= 3:
                     pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]

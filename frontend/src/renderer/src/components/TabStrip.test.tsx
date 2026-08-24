@@ -4,9 +4,9 @@ import TabStrip from './TabStrip'
 import { usePdfStore } from '../store/usePdfStore'
 
 class ResizeObserverStub {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
+  observe = vi.fn()
+  unobserve = vi.fn()
+  disconnect = vi.fn()
 }
 vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 Element.prototype.scrollIntoView = vi.fn()

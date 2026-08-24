@@ -47,9 +47,12 @@ jobs:
         working-directory: frontend
       - run: npm test
         working-directory: frontend
-      - name: Lint (warnings allowed)
-        continue-on-error: true
-        run: npx eslint . --ext .js,.jsx,.ts,.tsx --max-warnings 200
+      # Bloquea de verdad: `continue-on-error` lo hacia decorativo y ademas fallaba
+      # entero (ESLint 9 sin eslint.config.js), asi que el lint no corrio nunca.
+      # El tope de avisos evita que los 56 que quedan (casi todos exhaustive-deps)
+      # se conviertan en 500 sin que nadie lo note.
+      - name: Lint
+        run: npm run lint -- --max-warnings 60
         working-directory: frontend
 
   release:
