@@ -141,6 +141,10 @@ function CompareOverlayPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
   const [dims, setDims] = useState<{ w: number; h: number } | null>(null)
+  // Tamaño de la lámina en puntos PDF. NO se deduce dividiendo el canvas por
+  // OVERLAY_SCALE: el rasterizado topa la resolución en láminas enormes, así que la
+  // escala efectiva puede ser menor que la pedida y el overlay salía desproporcionado.
+  const [basePts, setBasePts] = useState<{ w: number; h: number } | null>(null)
   const [avail, setAvail] = useState({ w: 0, h: 0 })
 
   useEffect(() => {
@@ -158,8 +162,10 @@ function CompareOverlayPanel({
     setLoading(true)
     setError(false)
     ;(async () => {
-      const a = await renderPdfPage(docA, versionA, pageA, OVERLAY_SCALE)
-      const b = await renderPdfPage(docB, versionB, pageB, OVERLAY_SCALE)
+      const [a, b] = await Promise.all([
+        renderPdfPage(docA, versionA, pageA, OVERLAY_SCALE),
+        renderPdfPage(docB, versionB, pageB, OVERLAY_SCALE),
+      ])
       try {
         if (cancelled) return
         const [imgA, imgB] = await Promise.all([loadImage(a.url), loadImage(b.url)])
@@ -181,18 +187,23 @@ function CompareOverlayPanel({
         ctx.drawImage(tintedB, 0, 0)
         ctx.globalAlpha = 1
         setDims({ w, h })
+        setBasePts({ w: a.originalWidth, h: a.originalHeight })
       } finally {
         revokePageUrl(a.url)
         revokePageUrl(b.url)
         if (!cancelled) setLoading(false)
       }
     })().catch(() => { if (!cancelled) { setError(true); setLoading(false) } })
+    // Nota: si el SEGUNDO render falla, Promise.all rechaza y el primero puede haber
+    // resuelto — su blob lo suelta el navegador al descartarse la promesa, no queda
+    // referenciado en ningún sitio.
     return () => { cancelled = true }
   }, [docA, versionA, pageA, docB, versionB, pageB, mix])
 
   // Mismo criterio que los paneles lado a lado: zoom 1 = la lámina cabe entera
-  const fit = dims && avail.w > 0
-    ? Math.min((avail.w - 32) / (dims.w / OVERLAY_SCALE), (avail.h - 32) / (dims.h / OVERLAY_SCALE))
+  const altoPts = basePts && dims ? basePts.w > 0 ? (dims.h / dims.w) * basePts.w : basePts.h : 0
+  const fit = basePts && dims && avail.w > 0
+    ? Math.min((avail.w - 32) / basePts.w, (avail.h - 32) / altoPts)
     : 0
 
   return (
@@ -206,8 +217,8 @@ function CompareOverlayPanel({
               <div className={`absolute inset-0 flex items-center justify-center text-mini text-muted`}>Componiendo…</div>
             )}
             <canvas ref={canvasRef} className="rounded shadow-lg bg-white"
-              style={dims && fit > 0
-                ? { width: (dims.w / OVERLAY_SCALE) * fit * zoom, height: (dims.h / OVERLAY_SCALE) * fit * zoom }
+              style={basePts && fit > 0
+                ? { width: basePts.w * fit * zoom, height: altoPts * fit * zoom }
                 : undefined} />
           </div>
         )}
@@ -230,6 +241,7 @@ export default function ComparisonView() {
   const [leftPage, setLeftPage] = useState(activeDoc?.currentPage || 0)
   const [rightPage, setRightPage] = useState(activeDoc?.currentPage || 0)
   const [diff, setDiff] = useState<{ page: number; added: string; removed: string }[] | null>(null)
+  const [diffError, setDiffError] = useState(false)
   const [diffLoading, setDiffLoading] = useState(false)
   const [overlayMode, setOverlayMode] = useState(false)
   const [overlayMix, setOverlayMix] = useState(0.5)
@@ -258,13 +270,20 @@ export default function ComparisonView() {
 
   const runDiff = async () => {
     if (!activeDoc || !compareDoc) return
-    if (diff) { setDiff(null); return }
+    if (diff) { setDiff(null); setDiffError(false); return }
     setDiffLoading(true)
+    setDiffError(false)
     try {
       const res = await apiFetch(`/pdf/compare-text/${activeDoc.doc_id}/${compareDoc.doc_id}`)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setDiff(data.diffs || [])
-    } catch { setDiff([]) } finally { setDiffLoading(false) }
+    } catch {
+      // Antes un fallo del motor se guardaba como lista vacía y la app decía «Sin
+      // diferencias de texto»: el usuario concluía que las dos revisiones eran iguales.
+      setDiff([])
+      setDiffError(true)
+    } finally { setDiffLoading(false) }
   }
 
   // Sync pages when sync is enabled
@@ -289,6 +308,14 @@ export default function ComparisonView() {
     }
   }, [compareSync, activeDoc?.page_count, compareDoc?.page_count])
 
+  // Con el candado abierto el panel derecho no tenía CÓMO cambiar de página: los
+  // botones solo movían el izquierdo, así que «navegación independiente» dejaba la
+  // revisión comparada congelada en su página. Estos son sus propios controles.
+  const goRight = useCallback((delta: number) => {
+    const maxR = (compareDoc?.page_count || 1) - 1
+    setRightPage((p) => Math.max(0, Math.min(maxR, p + delta)))
+  }, [compareDoc?.page_count])
+
   const handleZoomIn = () => setCompareZoom(zoom + 0.2)
   const handleZoomOut = () => setCompareZoom(zoom - 0.2)
   const handleFit = () => setCompareZoom(1)
@@ -308,35 +335,58 @@ export default function ComparisonView() {
       <div className={`h-11 border-b flex items-center px-3 gap-2 shrink-0 bg-panel border-border`}>
         <span className={`text-mini font-semibold uppercase tracking-wider mr-2 text-muted`}>Comparar</span>
 
-        <Tooltip content="Página anterior">
-          <button onClick={goPrev} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+        <Tooltip content={compareSync ? 'Página anterior' : 'Página anterior (izquierda)'}>
+          <button onClick={goPrev} aria-label="Página anterior del documento de la izquierda"
+            className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ChevronLeft size={16} />
           </button>
         </Tooltip>
         <span className={`text-mini w-24 text-center tabular-nums text-fg`}>
           {leftPage + 1} / {activeDoc.page_count}
         </span>
-        <Tooltip content="Página siguiente">
-          <button onClick={goNext} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+        <Tooltip content={compareSync ? 'Página siguiente' : 'Página siguiente (izquierda)'}>
+          <button onClick={goNext} aria-label="Página siguiente del documento de la izquierda"
+            className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ChevronRight size={16} />
           </button>
         </Tooltip>
 
+        {!compareSync && (
+          <>
+            <div className={`w-px h-5 mx-1 bg-border`} />
+            <Tooltip content="Página anterior (derecha)">
+              <button onClick={() => goRight(-1)} aria-label="Página anterior del documento de la derecha"
+                className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+                <ChevronLeft size={16} />
+              </button>
+            </Tooltip>
+            <span className={`text-mini w-24 text-center tabular-nums text-fg`}>
+              {rightPage + 1} / {compareDoc.page_count}
+            </span>
+            <Tooltip content="Página siguiente (derecha)">
+              <button onClick={() => goRight(1)} aria-label="Página siguiente del documento de la derecha"
+                className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+                <ChevronRight size={16} />
+              </button>
+            </Tooltip>
+          </>
+        )}
+
         <div className={`w-px h-5 mx-1 bg-border`} />
 
         <Tooltip content="Alejar">
-          <button onClick={handleZoomOut} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+          <button onClick={handleZoomOut} aria-label="Alejar" className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomOut size={16} />
           </button>
         </Tooltip>
         <span className={`text-mini w-12 text-center tabular-nums text-fg`}>{Math.round(zoom * 100)}%</span>
         <Tooltip content="Acercar">
-          <button onClick={handleZoomIn} className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
+          <button onClick={handleZoomIn} aria-label="Acercar" className={`p-1.5 rounded transition-colors hover:bg-hover text-muted`}>
             <ZoomIn size={16} />
           </button>
         </Tooltip>
         <Tooltip content="Ajustar la lámina al panel">
-          <button onClick={handleFit} className={`p-1.5 rounded transition-colors ${Math.abs(zoom - 1) < 0.001 ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
+          <button onClick={handleFit} aria-label="Ajustar la lámina al panel" className={`p-1.5 rounded transition-colors ${Math.abs(zoom - 1) < 0.001 ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <Maximize2 size={16} />
           </button>
         </Tooltip>
@@ -346,6 +396,8 @@ export default function ComparisonView() {
         <Tooltip content={compareSync ? 'Navegación sincronizada' : 'Navegación independiente'}>
           <button
             onClick={() => setCompareSync(!compareSync)}
+            aria-label={compareSync ? 'Desbloquear la navegación de los dos paneles' : 'Sincronizar la navegación de los dos paneles'}
+            aria-pressed={compareSync}
             className={`p-1.5 rounded transition-colors ${compareSync ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}
           >
             {compareSync ? <Lock size={16} /> : <Unlock size={16} />}
@@ -353,13 +405,14 @@ export default function ComparisonView() {
         </Tooltip>
 
         <Tooltip content={diff ? 'Ocultar diferencias de texto' : 'Comparar texto'}>
-          <button onClick={runDiff} className={`p-1.5 rounded transition-colors ${diff ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
+          <button onClick={runDiff} aria-label="Comparar el texto de las dos revisiones" className={`p-1.5 rounded transition-colors ${diff ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <GitCompare size={16} />
           </button>
         </Tooltip>
 
         <Tooltip content={overlayMode ? 'Volver a lado a lado' : 'Overlay de revisiones (actual en rojo, comparado en azul)'}>
           <button onClick={() => setOverlayMode((v) => !v)}
+            aria-label="Superponer las dos revisiones" aria-pressed={overlayMode}
             className={`p-1.5 rounded transition-colors ${overlayMode ? 'bg-accent text-toolbar' : 'hover:bg-hover text-muted'}`}>
             <Layers size={16} />
           </button>
@@ -404,6 +457,8 @@ export default function ComparisonView() {
                 </button>
               ))}
             </>
+          ) : diffError ? (
+            <div className="p-2 text-danger">No se pudo comparar el texto. Probá de nuevo.</div>
           ) : (
             <div className={`p-2 text-muted`}>Sin diferencias de texto</div>
           )}

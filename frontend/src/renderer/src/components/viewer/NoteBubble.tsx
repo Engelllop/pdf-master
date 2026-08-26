@@ -61,7 +61,15 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
-      if (textRef.current !== (ann.text || '')) showToast('Se descarta el borrador', 'info')
+      // La herramienta Nota crea la marca vacía y abre el globo, así que Esc en una
+      // nota que nunca llegó a guardarse cancela su creación. Antes solo cerraba:
+      // quedaba un icono de nota vacío en la página, y viajaba al PDF al guardar.
+      if (!(ann.text || '').trim()) {
+        deleteAnnotation(docId, ann.id)
+        if (textRef.current.trim()) showToast('Nota descartada', 'info')
+      } else if (textRef.current !== (ann.text || '')) {
+        showToast('Se descarta el borrador', 'info')
+      }
       onClose()
     }
     document.addEventListener('mousedown', onDown, true)

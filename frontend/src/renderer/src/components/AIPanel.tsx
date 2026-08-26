@@ -6,6 +6,12 @@ const LEGACY_KEY_STORAGE = 'pdfmaster_anthropic_key'
 
 interface Msg { role: 'user' | 'assistant'; text: string }
 
+// Las conversaciones sobreviven a cerrar el panel. El panel se desmonta al cerrarlo
+// (`{aiOpen && <AIPanel/>}`), así que tenerlas solo en su estado significaba perder el
+// hilo entero por cerrarlo sin querer — justo lo contrario de la intención de
+// mantener una conversación por documento.
+const conversacionesGuardadas: Record<string, Msg[]> = {}
+
 export default function AIPanel({ onClose }: { onClose: () => void }) {
   const { docs, activeDocId } = useStoreSlice('docs', 'activeDocId')
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
@@ -31,7 +37,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     window.api.aiHasKey().then(setHasKey)
   }, [])
   // Conversación independiente por documento (clave = doc_id, o '__nodoc__' sin doc).
-  const [conversations, setConversations] = useState<Record<string, Msg[]>>({})
+  const [conversations, setConversations] = useState<Record<string, Msg[]>>(conversacionesGuardadas)
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [scope, setScope] = useState<'doc' | 'page'>('doc')
@@ -42,7 +48,11 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const convKey = activeDocId || '__nodoc__'
   const messages = conversations[convKey] || []
   const setMsgsFor = (key: string, fn: (prev: Msg[]) => Msg[]) =>
-    setConversations((c) => ({ ...c, [key]: fn(c[key] || []) }))
+    setConversations((c) => {
+      const next = { ...c, [key]: fn(c[key] || []) }
+      conversacionesGuardadas[key] = next[key]
+      return next
+    })
 
   useEffect(() => {
     const offChunk = window.api.onAiChunk(({ requestId, text }) => {
@@ -77,15 +87,18 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  // Apertura con preset desde el ribbon IA.
+  // Apertura con preset desde el ribbon IA. El listener se registra UNA vez y llama a
+  // la última versión de `send` por ref: al depender de `conversations`, se
+  // desuscribía y volvía a suscribirse con cada fragmento del streaming.
+  const sendRef = useRef<(text: string) => void>(() => {})
   useEffect(() => {
     const onPreset = (e: Event) => {
       const preset = (e as CustomEvent).detail?.preset as string | undefined
-      if (preset) send(preset)
+      if (preset) sendRef.current(preset)
     }
     window.addEventListener('app:ai-preset', onPreset as EventListener)
     return () => window.removeEventListener('app:ai-preset', onPreset as EventListener)
-  }, [hasKey, activeDocId, conversations, streaming])
+  }, [])
 
   const saveKey = async () => {
     const k = keyInput.trim()
@@ -107,6 +120,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
     setStreaming(true)
     window.api.aiChat({ requestId, docId: activeDocId, messages: history, scope, page: activeDoc?.currentPage ?? 0 })
   }
+  sendRef.current = send
 
   if (!hasKey || editingKey) {
     return (
@@ -130,7 +144,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="w-[360px] border-l border-border bg-panel flex flex-col shrink-0">
       <Header onClose={onClose} onKey={() => { setKeyInput(''); setEditingKey(true) }} />
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+      {/* live region: sin esto, un lector de pantalla no anuncia la respuesta que va
+          llegando por streaming. */}
+      <div ref={scrollRef} role="log" aria-live="polite" aria-label="Conversación con el asistente"
+        className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.length === 0 && (
           <div className="text-mini text-muted text-center mt-6 px-4 space-y-3">
             <p>{emptyHint(activeDoc?.file_name)}</p>
@@ -164,7 +181,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-1 mb-1.5 text-micro">
           <span className="text-muted">Contexto:</span>
           {(['doc', 'page'] as const).map((s) => (
-            <button key={s} onClick={() => setScope(s)}
+            <button key={s} onClick={() => setScope(s)} aria-pressed={scope === s}
               className={`px-2 py-0.5 rounded transition-colors ${scope === s ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover'}`}>
               {s === 'doc' ? 'Documento' : 'Página actual'}
             </button>
@@ -172,11 +189,12 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         </div>
         <div className="flex items-end gap-2">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
+            aria-label="Pregunta para el asistente" 
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder={activeDoc ? `Pregunta sobre ${activeDoc.file_name}…` : 'Abre un PDF para preguntar…'}
             className="flex-1 resize-none border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
           <button onClick={() => (streaming ? stop() : send(input))} disabled={!streaming && !input.trim()}
-            title={streaming ? 'Detener' : 'Enviar'}
+            title={streaming ? 'Detener' : 'Enviar'} aria-label={streaming ? 'Detener la respuesta' : 'Enviar la pregunta'}
             className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0">
             {streaming ? <Square size={16} /> : <Send size={16} />}
           </button>
@@ -200,8 +218,8 @@ function Header({ onClose, onKey }: { onClose: () => void; onKey: () => void }) 
     <div className="h-10 flex items-center gap-2 px-3 border-b border-border shrink-0">
       <Sparkles size={16} className="text-fg" />
       <span className="text-base font-semibold flex-1">Asistente IA</span>
-      <button onClick={onKey} title="Cambiar API key" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={15} /></button>
-      <button onClick={onClose} title="Cerrar" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+      <button onClick={onKey} title="Cambiar API key" aria-label="Cambiar la clave de Anthropic" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={15} /></button>
+      <button onClick={onClose} title="Cerrar" aria-label="Cerrar el asistente" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
     </div>
   )
 }

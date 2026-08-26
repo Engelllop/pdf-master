@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { type PageDims } from './annotationRender'
 import { getSpans, type SpanItem } from '../../lib/spans'
 
@@ -41,11 +41,19 @@ function TextLayer({ docId, page, version = 0, pageData, active }: {
   }, [spans, sx, sy])
 
   return (
-    <div ref={containerRef} className="absolute top-0 left-0 pdf-text-layer" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text' }}>
+    // fontSize/lineHeight 0: los <br> que separan renglones son lo único en flujo
+    // (los spans van absolutos), así que sus cajas de línea quedan a altura cero.
+    <div ref={containerRef} className="absolute top-0 left-0 pdf-text-layer" style={{ width: pageData.width, height: pageData.height, pointerEvents: 'none', zIndex: 22, userSelect: 'text', fontSize: 0, lineHeight: 0 }}>
       {spans.map((s, i) => {
         const h = (s.y1 - s.y0) * sy
+        // Los spans de MuPDF son trozos de renglón. Sin un salto entre renglones,
+        // copiar varias líneas devolvía todo pegado: "PLANTA BAJAESCALA 1:100".
+        const prev = i > 0 ? spans[i - 1] : null
+        const saltoDeLinea = !!prev && Math.abs(s.y0 - prev.y0) > Math.max(1, (prev.y1 - prev.y0) * 0.5)
         return (
-          <span key={i} data-w={(s.x1 - s.x0) * sx} style={{
+          <Fragment key={i}>
+          {saltoDeLinea && <br role="presentation" />}
+          <span data-w={(s.x1 - s.x0) * sx} style={{
             position: 'absolute',
             left: s.x0 * sx,
             top: s.y0 * sy,
@@ -58,6 +66,7 @@ function TextLayer({ docId, page, version = 0, pageData, active }: {
             cursor: 'text',
             pointerEvents: active ? 'auto' : 'none',
           }}>{s.text}</span>
+          </Fragment>
         )
       })}
     </div>

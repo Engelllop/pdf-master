@@ -145,6 +145,21 @@ describe('draw (dibujo libre)', () => {
     ])
   })
 
+  it('no guarda puntos que no aportan forma (ratón lento o parado)', async () => {
+    usePdfStore.setState({ activeTool: 'draw' })
+    const { result } = setup()
+
+    act(() => { result.current.handleMouseDown({ x: 10, y: 10 }) })
+    // 0.1 px de pantalla = 0.2 pt: por debajo del mínimo, no entra.
+    act(() => { result.current.handleMouseMove({ x: 10.1, y: 10 }) })
+    act(() => { result.current.handleMouseMove({ x: 10.1, y: 10 }) })
+    act(() => { result.current.handleMouseMove({ x: 30, y: 25 }) })
+    await act(async () => { await result.current.handleMouseUp() })
+
+    const anns = usePdfStore.getState().docs[0].annotations
+    expect(anns).toHaveLength(0)   // solo quedaron 2 puntos: no llega al mínimo de 3
+  })
+
   it('un clic sin arrastre (<3 puntos) no crea anotación', async () => {
     usePdfStore.setState({ activeTool: 'draw' })
     const { result } = setup()

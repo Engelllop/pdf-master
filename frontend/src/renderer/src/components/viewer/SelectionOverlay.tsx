@@ -23,6 +23,9 @@ export interface RotateStart {
 }
 
 const HANDLE_SIZE = 8
+// El cuadradito visible mide 8 px: agarrarlo en un plano denso era una pelea. La zona
+// sensible es mayor y transparente; el cuadrado solo se dibuja.
+const HANDLE_HIT = 20
 
 // Caja de selección + 8 handles de redimensión + handle de rotación (solo imágenes).
 // Vive dentro del <svg> de la página; se usa tanto en la página izquierda como en la
@@ -61,28 +64,39 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
         strokeDasharray="4 2" rx={4}
         pointerEvents="none"
       />
-      {corners.map((c) => (
-        <rect
-          key={c.key}
-          x={c.x} y={c.y}
-          width={HANDLE_SIZE} height={HANDLE_SIZE}
-          fill={SEL} stroke={SEL_PAPER} strokeWidth={1}
-          style={{ cursor: c.cursor }}
-          onMouseDown={(e) => {
-            e.stopPropagation()
-            onResizeStart({
-              id: ann.id,
-              corner: c.key,
-              startX: e.nativeEvent.offsetX + c.x,
-              startY: e.nativeEvent.offsetY + c.y,
-              startW: bounds.w,
-              startH: bounds.h,
-              startBoundsX: bounds.x,
-              startBoundsY: bounds.y,
-            })
-          }}
-        />
-      ))}
+      {corners.map((c) => {
+        const hitX = c.x + HANDLE_SIZE / 2 - HANDLE_HIT / 2
+        const hitY = c.y + HANDLE_SIZE / 2 - HANDLE_HIT / 2
+        return (
+          <g key={c.key}>
+            <rect
+              x={c.x} y={c.y}
+              width={HANDLE_SIZE} height={HANDLE_SIZE}
+              fill={SEL} stroke={SEL_PAPER} strokeWidth={1}
+              pointerEvents="none"
+            />
+            <rect
+              x={hitX} y={hitY}
+              width={HANDLE_HIT} height={HANDLE_HIT}
+              fill="transparent"
+              style={{ cursor: c.cursor }}
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                onResizeStart({
+                  id: ann.id,
+                  corner: c.key,
+                  startX: e.nativeEvent.offsetX + hitX,
+                  startY: e.nativeEvent.offsetY + hitY,
+                  startW: bounds.w,
+                  startH: bounds.h,
+                  startBoundsX: bounds.x,
+                  startBoundsY: bounds.y,
+                })
+              }}
+            />
+          </g>
+        )
+      })}
       {ann.type === 'image' && onRotateStart && (
         <>
           <line x1={rotCx} y1={bounds.y} x2={rotCx} y2={rotHy} stroke={SEL} strokeWidth={1} strokeDasharray="2 2" pointerEvents="none" />
@@ -94,7 +108,11 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
               e.stopPropagation()
               const centerX = bounds.x + bounds.w / 2
               const centerY = bounds.y + bounds.h / 2
-              const startAngle = Math.atan2(e.nativeEvent.offsetY - centerY, e.nativeEvent.offsetX - centerX)
+              // El ángulo de arranque se toma del propio tirador. Antes salía de
+              // `offsetX/offsetY`, que van referidos a la caja del círculo (valores de
+              // 0 a 12) y se restaban contra un centro en coordenadas del SVG: la
+              // imagen pegaba un giro al empezar a arrastrar.
+              const startAngle = Math.atan2(rotHy - centerY, rotCx - centerX)
               onRotateStart({
                 id: ann.id,
                 startAngle,

@@ -82,6 +82,27 @@ describe('globo de la nota', () => {
     expect(usePdfStore.getState().toasts.some((t) => /descarta el borrador/i.test(t.message))).toBe(true)
   })
 
+  it('Esc en una nota recién puesta la cancela en vez de dejar un icono vacío', () => {
+    const ann = noteAnn()   // recién creada por la herramienta Nota: text vacío
+    openDocWith(ann)
+    renderBubble(ann)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(annotations()).toHaveLength(0)
+  })
+
+  it('Esc tras escribir en una nota nueva tampoco deja el icono', () => {
+    const ann = noteAnn()
+    openDocWith(ann)
+    renderBubble(ann)
+
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'me arrepentí' } })
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    expect(annotations()).toHaveLength(0)
+  })
+
   it('el clic de fuera solo cierra: no debe llegar a la página y poner otra nota', () => {
     const ann = noteAnn({ text: 'x' })
     openDocWith(ann)

@@ -35,6 +35,10 @@ export default function DetailTile({
   useEffect(() => {
     if (cssScale <= 1.1) { setTile(null); return }
     if (timer.current) clearTimeout(timer.current)
+    // El render puede seguir en vuelo al desmontar o al cambiar el zoom: sin esto,
+    // su blob se asignaba a urlRef DESPUÉS del revoke de limpieza y quedaba en RAM.
+    let cancelled = false
+    const controller = new AbortController()
     timer.current = setTimeout(() => {
       const container = containerRef.current
       const wrapper = container?.querySelector('[data-page-wrapper="left"]') as HTMLElement | null
@@ -61,8 +65,9 @@ export default function DetailTile({
       const x1 = visRight * toPdf
       const y1 = visBottom * toPdf
       const tzoom = Math.min(zoom * (window.devicePixelRatio || 1), 8)
-      renderPdfTile(docId, version, page, x0, y0, x1, y1, tzoom)
+      renderPdfTile(docId, version, page, x0, y0, x1, y1, tzoom, controller.signal)
         .then((r) => {
+          if (cancelled) { revokePageUrl(r.url); return }
           revokePageUrl(urlRef.current || undefined)
           urlRef.current = r.url
           setTile({
@@ -75,7 +80,7 @@ export default function DetailTile({
         })
         .catch(() => {})
     }, 180)
-    return () => { if (timer.current) clearTimeout(timer.current) }
+    return () => { cancelled = true; controller.abort(); if (timer.current) clearTimeout(timer.current) }
   }, [docId, page, zoom, version, scrollKey, cssScale, bitmapScale, pageData.originalWidth, containerRef])
 
   // Revoca el blob del tile al desmontar

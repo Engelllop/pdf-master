@@ -1,4 +1,6 @@
 """Operaciones sobre páginas: rotar, borrar, reordenar, duplicar, insertar, recortar."""
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query
 
 from app.models.pdf import (
@@ -77,7 +79,8 @@ def duplicate_page(doc_id: str, page_num: int = Query(...)):
     return SaveResult(success=True)
 
 @router.post("/insert-blank/{doc_id}", response_model=SaveResult)
-def insert_blank(doc_id: str, index: int = Query(...), width: float = Query(595), height: float = Query(842)):
+def insert_blank(doc_id: str, index: int = Query(...),
+                 width: Optional[float] = Query(None), height: Optional[float] = Query(None)):
     if not pdf_service.insert_blank_page(doc_id, index, width, height):
         raise HTTPException(status_code=404, detail="Document not found")
     return SaveResult(success=True)

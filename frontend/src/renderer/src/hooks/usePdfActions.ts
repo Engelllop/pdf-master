@@ -1,8 +1,9 @@
 import { useStoreSlice } from './useStoreSlice'
-import { usePdfStore, type PdfDoc } from '../store/usePdfStore'
+import { usePdfStore, type PdfDoc, type Annotation } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
+import { parsePageRanges } from '../lib/pageRange'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
@@ -48,18 +49,18 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleExportWord = async () => {
     if (!activeDoc) return
+    // Era la única exportación que no preguntaba dónde guardar: se bajaba por un
+    // `data:` URL a la carpeta de descargas (y de un PDF largo, en una sola cadena
+    // base64 de varios MB).
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.docx'),
+      filters: [{ name: 'Word', extensions: ['docx'] }],
+    })
+    if (!outputPath) return
     try {
-      const res = await withProgress('Exportando a Word…', () => apiFetch(`/pdf/export-word/${activeDoc.doc_id}`))
-      if (res.ok) {
-        const data = await res.json()
-        const link = document.createElement('a')
-        link.download = data.filename || `${activeDoc.file_name.replace(/\.pdf$/i, '')}.docx`
-        link.href = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${data.data_base64}`
-        link.click()
-        showToast('Exportado a Word', 'success')
-      } else {
-        showToast('Error al exportar a Word', 'error')
-      }
+      const res = await withProgress('Exportando a Word…',
+        () => apiFetch(`/pdf/export-word/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`))
+      showToast(res.ok ? 'Exportado a Word' : 'Error al exportar a Word', res.ok ? 'success' : 'error')
     } catch (err) {
       toastActionError(err)
     }
@@ -82,19 +83,24 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleMarkupSummary = async () => {
     if (!activeDoc) return
+    if (activeDoc.annotations.length === 0) {
+      showToast('Este documento no tiene marcas que resumir', 'info')
+      return
+    }
+    // Se pregunta dónde guardarlo, como el resto de exportaciones. Antes se bajaba
+    // por un `data:` URL a la carpeta de descargas, sin decir a dónde iba.
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_marcas.pdf'),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (!outputPath) return
     try {
-      const res = await apiFetch(`/pdf/markup-summary/${activeDoc.doc_id}`, {
+      const res = await apiFetch(`/pdf/markup-summary/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ annotations: activeDoc.annotations }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        const link = document.createElement('a')
-        link.download = data.filename || 'marcas.pdf'
-        link.href = `data:application/pdf;base64,${data.data_base64}`
-        link.click()
-        showToast('Resumen de marcas generado', 'success')
-      } else showToast('Error al generar resumen', 'error')
+      if (res.ok) showToast('Resumen de marcas guardado', 'success')
+      else showToast('Error al generar resumen', 'error')
     } catch (err) { toastActionError(err) }
   }
 
@@ -129,6 +135,13 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (!v) return
     const userPw = String(v.user)
     const ownerPw = String(v.owner)
+    // Con los dos campos vacíos el motor guarda SIN cifrar (su rama es
+    // `if user_password or owner_password`), y la app decía igual «PDF protegido con
+    // contraseña guardado»: el usuario se quedaba creyendo que el archivo iba cifrado.
+    if (!userPw && !ownerPw) {
+      showToast('Escribí al menos la contraseña de usuario para proteger el PDF', 'error')
+      return
+    }
     setSaveStatus('saving')
     try {
       const embedRes = await apiFetch(`/pdf/embed/${activeDoc.doc_id}`, {
@@ -182,7 +195,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleExportExcel = async () => {
     if (!activeDoc) return
-    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.xlsx') })
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.xlsx'),
+      filters: [{ name: 'Excel', extensions: ['xlsx'] }],
+    })
     if (!outputPath) return
     try {
       const res = await withProgress('Exportando a Excel…', () => apiFetch(`/pdf/export-excel/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
@@ -198,7 +214,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleExportPptx = async () => {
     if (!activeDoc) return
-    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.pptx') })
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '.pptx'),
+      filters: [{ name: 'PowerPoint', extensions: ['pptx'] }],
+    })
     if (!outputPath) return
     try {
       const res = await withProgress('Exportando a PowerPoint…', () => apiFetch(`/pdf/export-pptx/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
@@ -230,20 +249,21 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleSavePageAsImage = async () => {
     if (!activeDoc) return
+    // Antes bajaba el blob a la carpeta de descargas y revocaba su URL en la línea
+    // siguiente al clic: la descarga podía quedarse sin leer el blob y no escribirse
+    // nada, mientras el aviso decía que la página se había guardado.
+    const outputPath = await window.api.saveFile({
+      defaultPath: `${activeDoc.file_name.replace(/\.pdf$/i, '')}_pagina_${activeDoc.currentPage + 1}.png`,
+      filters: [{ name: 'Imagen PNG', extensions: ['png'] }],
+    })
+    if (!outputPath) return
     try {
-      const res = await apiFetch(`/pdf/page-image/${activeDoc.doc_id}/${activeDoc.currentPage}?zoom=2.0`)
-      if (res.ok) {
-        const blob = await res.blob()
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `${activeDoc.file_name.replace(/\.pdf$/i, '')}_pagina_${activeDoc.currentPage + 1}.png`
-        a.click()
-        URL.revokeObjectURL(url)
-        showToast('Página guardada como imagen', 'success')
-      } else {
-        showToast('Error al exportar imagen', 'error')
-      }
+      const res = await apiFetch(
+        `/pdf/save-page-image/${activeDoc.doc_id}/${activeDoc.currentPage}`
+        + `?output_path=${encodeURIComponent(outputPath)}&zoom=2.0`,
+        { method: 'POST' },
+      )
+      showToast(res.ok ? 'Página guardada como imagen' : 'Error al exportar imagen', res.ok ? 'success' : 'error')
     } catch (err) {
       toastActionError(err)
     }
@@ -278,7 +298,13 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       { name: 'footer', label: 'Pie de página (vacío = omitir)', type: 'text', defaultValue: '' },
     ], 'Aplicar')
     if (!v) return
-    const header = String(v.header), footer = String(v.footer)
+    const header = String(v.header).trim(), footer = String(v.footer).trim()
+    // Con los dos campos vacíos no hay nada que poner: antes se llamaba igual al motor,
+    // se apilaba un paso de deshacer y el aviso decía «agregado».
+    if (!header && !footer) {
+      showToast('Escribí al menos un encabezado o un pie', 'info')
+      return
+    }
     try {
       await headerFooterUndoable(activeDoc.doc_id, header || undefined, footer || undefined)
       showToast('Encabezado/pie agregado. Ctrl+Z deshace.', 'success')
@@ -301,13 +327,30 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleCompress = async () => {
     if (!activeDoc) return
-    const outputPath = activeDoc.file_path.replace(/\.pdf$/i, '_compressed.pdf')
+    // Era la última operación que elegía la ruta ella sola: escribía
+    // `<original>_compressed.pdf` al lado del original y pisaba el de la vez anterior.
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_comprimido.pdf'),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
+    if (!outputPath) return
     try {
       const res = await withProgress('Comprimiendo…', () => apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
-      if (res.ok) {
-        showToast('Comprimido en ' + outputPath.split(/[\\/]/).pop() + ' (archivo nuevo)', 'success')
+      if (!res.ok) { showToast('Error al comprimir', 'error'); return }
+      const { size_before: antes, size_after: despues } = await res.json()
+      // Comprimir un PDF ya optimizado puede dejarlo MÁS grande: decirlo evita que el
+      // usuario se quede con la copia peor creyendo que ganó algo.
+      const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`
+      if (antes > 0 && despues > 0) {
+        const pct = Math.round((1 - despues / antes) * 100)
+        showToast(
+          pct > 0
+            ? `Comprimido: ${mb(antes)} → ${mb(despues)} (−${pct} %)`
+            : `Sin ganancia: ${mb(antes)} → ${mb(despues)}. El PDF ya estaba optimizado.`,
+          pct > 0 ? 'success' : 'info',
+        )
       } else {
-        showToast('Error al comprimir', 'error')
+        showToast('PDF comprimido', 'success')
       }
     } catch (err) {
       toastActionError(err)
@@ -389,31 +432,28 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       if (!v) return
       const input = String(v.range).trim()
       if (!input) return
-      pages = []
-      const parts = input.split(',')
-      for (const part of parts) {
-        const trimmed = part.trim()
-        if (trimmed.includes('-')) {
-          const [start, end] = trimmed.split('-').map(Number)
-          if (!isNaN(start) && !isNaN(end)) {
-            for (let p = start; p <= end; p++) pages.push(p - 1)
-          }
-        } else {
-          const p = Number(trimmed)
-          if (!isNaN(p)) pages.push(p - 1)
-        }
-      }
-      pages = [...new Set(pages)].filter(p => p >= 0 && p < activeDoc.page_count).sort((a, b) => a - b)
-      if (pages.length === 0) {
-        showToast('Rango inválido', 'error')
+      // Mismo parser que la impresión (`lib/pageRange`). El de aquí era más
+      // permisivo: «1-5, 99» en un documento de 10 páginas extraía 1-5 y descartaba
+      // el 99 sin decir nada — al extraer páginas, callarse lo que se ignora es peor
+      // que rechazarlo.
+      const rangos = parsePageRanges(input, activeDoc.page_count)
+      if (!rangos) {
+        showToast(`Rango inválido. Usá números entre 1 y ${activeDoc.page_count}, por ejemplo «1-5, 8»`, 'error')
         return
       }
+      const set = new Set<number>()
+      for (const r of rangos) for (let p = r.from; p <= r.to; p++) set.add(p)
+      pages = [...set].sort((a, b) => a - b)
     }
     if (pages.length === 0) {
       showToast('No hay páginas para dividir', 'error')
       return
     }
-    const outputPath = await window.api.saveFile()
+    // Era el único diálogo de guardado sin nombre propuesto ni filtro.
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_paginas.pdf'),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
     if (!outputPath) return
     try {
       const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
@@ -542,7 +582,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleRemovePassword = async () => {
     if (!activeDoc) return
-    const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_sin_clave.pdf') })
+    const outputPath = await window.api.saveFile({
+      defaultPath: activeDoc.file_name.replace(/\.pdf$/i, '_sin_clave.pdf'),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
     if (!outputPath) return
     try {
       const res = await apiFetch(`/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
@@ -626,18 +669,34 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       })
       if (!res.ok) { showToast('No se pudieron importar las marcas', 'error'); return }
       const data = await res.json()
-      const imported = data.annotations || []
+      const imported: Annotation[] = data.annotations || []
       if (imported.length === 0) { showToast('Ese archivo no tiene marcas compatibles', 'info'); return }
-      setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...imported])
+      // Un XFDF de otro documento puede traer marcas de páginas que aquí no existen:
+      // se colaban invisibles y luego viajaban al PDF al guardar.
+      const dentro = imported.filter((a) => a.page >= 0 && a.page < activeDoc.page_count)
+      const fuera = imported.length - dentro.length
+      if (dentro.length === 0) {
+        showToast(`Las ${fuera} marcas del archivo son de páginas que este documento no tiene`, 'error')
+        return
+      }
+      setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...dentro])
       setDocDirty(activeDoc.doc_id, true)
-      showToast(`${imported.length} anotación(es) importadas`, 'success')
+      showToast(
+        fuera > 0
+          ? `${dentro.length} marca(s) importadas; ${fuera} de páginas inexistentes se descartaron`
+          : `${dentro.length} anotación(es) importadas`,
+        fuera > 0 ? 'info' : 'success',
+      )
     } catch (err) { toastActionError(err) }
   }
 
   const handleImagesToPdf = async () => {
     const images = await window.api.openFiles([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tif', 'tiff'] }])
     if (!images || images.length === 0) return
-    const outputPath = await window.api.saveFile({ defaultPath: 'imagenes.pdf' })
+    const outputPath = await window.api.saveFile({
+      defaultPath: 'imagenes.pdf',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    })
     if (!outputPath) return
     try {
       const res = await apiFetch(`/pdf/images-to-pdf`, {
@@ -650,7 +709,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleToolClick = async (toolId: string) => {
     if (toolId === 'image') {
-      const path = await window.api.openFile([{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }])
+      const path = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }])
       if (!path) return
       setSelectedImagePath(path)
       const base64 = await window.api.readFileBase64(path)

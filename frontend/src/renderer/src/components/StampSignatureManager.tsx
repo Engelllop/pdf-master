@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, Plus, Trash2, Stamp as StampIcon, Signature as SignatureIcon, Check } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
@@ -41,8 +41,12 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
     showToast(`Haz clic para colocar la firma «${sig.name}»`, 'info')
   }
 
+  // Sin foco al abrir, el Esc del contenedor no hacía nada hasta clicar dentro.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { dialogRef.current?.focus() }, [])
+
   const tabBtn = (id: typeof tab, label: string, Icon: typeof StampIcon) => (
-    <button onClick={() => setTab(id)}
+    <button onClick={() => setTab(id)} aria-pressed={tab === id}
       className={`flex items-center gap-1.5 px-3 py-1.5 text-mini rounded transition-colors ${
         tab === id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
       }`}>
@@ -52,7 +56,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
 
   return (
     <div className="overlay-in fixed inset-0 z-[93] flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-label="Sellos y firmas" onClick={(e) => e.stopPropagation()}
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Sellos y firmas" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
         className="panel-in w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col rounded-lg border border-border shadow-2xl bg-panel text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">

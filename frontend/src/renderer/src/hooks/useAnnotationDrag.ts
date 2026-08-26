@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
+import { localPointFromClient } from '../lib/svgPoint'
 
 export type ResizeCorner = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
 
@@ -37,14 +38,11 @@ export function useAnnotationDrag(
   useEffect(() => {
     if (!draggingAnn) return
     const handleMove = (e: MouseEvent) => {
-      if (!svgRef.current) return
-      const rect = svgRef.current.getBoundingClientRect()
-      const svgX = e.clientX - rect.left
-      const svgY = e.clientY - rect.top
+      if (!svgRef.current || !pageData) return
+      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
       const newX = svgX - draggingAnn.offsetX
       const newY = svgY - draggingAnn.offsetY
 
-      if (!pageData) return
       const pdfX = newX * (pageData.originalWidth / pageData.width)
       const pdfY = newY * (pageData.originalHeight / pageData.height)
 
@@ -78,10 +76,8 @@ export function useAnnotationDrag(
   useEffect(() => {
     if (!resizingAnn) return
     const handleMove = (e: MouseEvent) => {
-      if (!svgRef.current) return
-      const rect = svgRef.current.getBoundingClientRect()
-      const svgX = e.clientX - rect.left
-      const svgY = e.clientY - rect.top
+      if (!svgRef.current || !pageData) return
+      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
       const deltaX = svgX - resizingAnn.startX
       const deltaY = svgY - resizingAnn.startY
 
@@ -89,8 +85,8 @@ export function useAnnotationDrag(
       if (!doc) return
       const ann = doc.annotations.find((a) => a.id === resizingAnn.id)
       if (!ann) return
-      const scaleX = pageData ? pageData.originalWidth / pageData.width : 1
-      const scaleY = pageData ? pageData.originalHeight / pageData.height : 1
+      const scaleX = pageData.originalWidth / pageData.width
+      const scaleY = pageData.originalHeight / pageData.height
 
       let newX = ann.x
       let newY = ann.y
@@ -99,6 +95,14 @@ export function useAnnotationDrag(
 
       const dx = deltaX * scaleX
       const dy = deltaY * scaleY
+      // Los valores de arranque llegan en px del bitmap (los mide SelectionOverlay sobre
+      // el SVG) y aquí se escribe en puntos PDF: sumarlos a `dx` sin convertir hacía que
+      // la marca saltara al tamaño del bitmap en cuanto el rasterizado no era 1:1 — que
+      // es lo normal en pantallas con escalado de Windows.
+      const startW = resizingAnn.startW * scaleX
+      const startH = resizingAnn.startH * scaleY
+      const startBoundsX = resizingAnn.startBoundsX * scaleX
+      const startBoundsY = resizingAnn.startBoundsY * scaleY
 
       // Un cuadro de texto encogido a 10 pt deja de mostrar nada y parece que
       // "desaparecio": el minimo depende del cuerpo de la letra.
@@ -107,38 +111,38 @@ export function useAnnotationDrag(
 
       switch (resizingAnn.corner) {
         case 'se':
-          newW = Math.max(MIN, resizingAnn.startW + dx)
-          newH = Math.max(MIN, resizingAnn.startH + dy)
+          newW = Math.max(MIN, startW + dx)
+          newH = Math.max(MIN, startH + dy)
           break
         case 'nw':
-          newW = Math.max(MIN, resizingAnn.startW - dx)
-          newH = Math.max(MIN, resizingAnn.startH - dy)
-          newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
-          newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
+          newW = Math.max(MIN, startW - dx)
+          newH = Math.max(MIN, startH - dy)
+          newX = startBoundsX + (startW - newW)
+          newY = startBoundsY + (startH - newH)
           break
         case 'ne':
-          newW = Math.max(MIN, resizingAnn.startW + dx)
-          newH = Math.max(MIN, resizingAnn.startH - dy)
-          newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
+          newW = Math.max(MIN, startW + dx)
+          newH = Math.max(MIN, startH - dy)
+          newY = startBoundsY + (startH - newH)
           break
         case 'sw':
-          newW = Math.max(MIN, resizingAnn.startW - dx)
-          newH = Math.max(MIN, resizingAnn.startH + dy)
-          newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
+          newW = Math.max(MIN, startW - dx)
+          newH = Math.max(MIN, startH + dy)
+          newX = startBoundsX + (startW - newW)
           break
         case 'n':
-          newH = Math.max(MIN, resizingAnn.startH - dy)
-          newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
+          newH = Math.max(MIN, startH - dy)
+          newY = startBoundsY + (startH - newH)
           break
         case 's':
-          newH = Math.max(MIN, resizingAnn.startH + dy)
+          newH = Math.max(MIN, startH + dy)
           break
         case 'e':
-          newW = Math.max(MIN, resizingAnn.startW + dx)
+          newW = Math.max(MIN, startW + dx)
           break
         case 'w':
-          newW = Math.max(MIN, resizingAnn.startW - dx)
-          newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
+          newW = Math.max(MIN, startW - dx)
+          newX = startBoundsX + (startW - newW)
           break
       }
 
@@ -154,15 +158,15 @@ export function useAnnotationDrag(
 
       // Las esquinas de una imagen mantienen su proporción (los lados siguen libres):
       // arrastrar la esquina la deformaba y no había vuelta atrás.
-      if (ann.type === 'image' && isCorner && resizingAnn.startW > 0 && resizingAnn.startH > 0) {
-        const ratio = resizingAnn.startH / resizingAnn.startW
+      if (ann.type === 'image' && isCorner && startW > 0 && startH > 0) {
+        const ratio = startH / startW
         if (newW * ratio > newH) newW = newH / ratio
         else newH = newW * ratio
         if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'sw') {
-          newX = resizingAnn.startBoundsX + (resizingAnn.startW - newW)
+          newX = startBoundsX + (startW - newW)
         }
         if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne') {
-          newY = resizingAnn.startBoundsY + (resizingAnn.startH - newH)
+          newY = startBoundsY + (startH - newH)
         }
       }
 

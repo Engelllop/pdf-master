@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { X, Keyboard } from 'lucide-react'
 
 interface ShortcutsModalProps {
@@ -81,13 +82,21 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
 ]
 
 export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
+  // Irónico pero cierto: el diálogo de ATAJOS no se cerraba con Esc — no había
+  // manejador ninguno, ni aquí ni global. Necesita el foco para recibirlo.
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useEffect(() => { dialogRef.current?.focus() }, [])
+
   return (
     <div className="overlay-in fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Atajos de teclado"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
         className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">

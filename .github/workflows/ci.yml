@@ -75,6 +75,19 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # La version de package.json es la que acaba en el nombre del instalador y en
+      # latest.yml. Si se taggea v1.15.0 sin subirla, el build sale con la anterior:
+      # el instalador se llama igual que el del release pasado y el auto-update nunca
+      # ve una version nueva. Falla callado, y es un paso manual que hasta ahora solo
+      # vivia en la doc.
+      - name: La version de package.json coincide con el tag
+        run: |
+          $version = (Get-Content frontend/package.json | ConvertFrom-Json).version
+          $esperado = $env:TAG -replace '^v', ''
+          Write-Host "tag=$env:TAG package.json=$version"
+          if ($version -ne $esperado) {
+            throw "package.json esta en $version y el tag pide $esperado. Subi la version antes de taggear."
+          }
       - name: Build pdf-engine.exe
         run: |
           pip install -r backend/requirements.txt pyinstaller

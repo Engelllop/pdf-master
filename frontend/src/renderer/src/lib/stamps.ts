@@ -13,11 +13,19 @@ export const BUILTIN_STAMPS = ['APROBADO', 'RECHAZADO', 'REVISADO', 'URGENTE', '
 const KEY = 'pdfmaster_custom_stamps'
 
 export function loadStamps(): CustomStamp[] {
-  try { return JSON.parse(localStorage.getItem(KEY) || '[]') } catch { return [] }
+  try {
+    const list = JSON.parse(localStorage.getItem(KEY) || '[]')
+    return Array.isArray(list) ? list.filter((s) => s && typeof s.text === 'string') : []
+  } catch {
+    return []
+  }
 }
 
+// slice(-30), no slice(0, 30): el tope recorta por el principio, así que al llegar a
+// 30 sellos el que se caía era el RECIÉN creado — se veía en la lista hasta cerrar el
+// gestor y luego había desaparecido. Ahora cae el más viejo, como en las firmas.
 function save(list: CustomStamp[]) {
-  try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 30))) } catch {}
+  try { localStorage.setItem(KEY, JSON.stringify(list.slice(-30))) } catch {}
 }
 
 export function addStamp(stamp: Omit<CustomStamp, 'id'>): CustomStamp {

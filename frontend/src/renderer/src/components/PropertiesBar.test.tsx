@@ -47,7 +47,7 @@ describe('edición de defaults (sin anotación seleccionada)', () => {
     openDoc()
     usePdfStore.setState({ activeTool: 'rect' })
     render(<PropertiesBar />)
-    fireEvent.click(screen.getByLabelText('Color #ef4444'))
+    fireEvent.click(screen.getByLabelText('Rojo'))
     expect(usePdfStore.getState().annotationColor.toLowerCase()).toBe('#ef4444')
   })
 })
@@ -62,5 +62,24 @@ describe('edición de la anotación seleccionada', () => {
     usePdfStore.getState().selectAnnotation(docId, 'a1')
     const { container } = render(<PropertiesBar />)
     expect(container.firstChild).toBeNull()
+  })
+
+  it('el grosor exacto respeta el mismo tope que el store', () => {
+    openDoc()
+    usePdfStore.setState({ activeTool: 'rect' })
+    render(<PropertiesBar />)
+    const campo = screen.getByLabelText('Grosor exacto') as HTMLInputElement
+    expect(campo.max).toBe('20')
+
+    fireEvent.change(campo, { target: { value: '99' } })
+    expect(usePdfStore.getState().annotationLineWidth).toBe(20)
+  })
+
+  it('los colores se anuncian por nombre, no por su código hex', () => {
+    openDoc()
+    usePdfStore.setState({ activeTool: 'rect' })
+    render(<PropertiesBar />)
+    expect(screen.getByLabelText('Ámbar')).toBeTruthy()
+    expect(screen.queryByLabelText('Color #fbbf24')).toBeNull()
   })
 })

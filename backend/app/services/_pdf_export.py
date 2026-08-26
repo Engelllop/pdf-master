@@ -117,7 +117,9 @@ class ExportMixin:
             logger.exception("export_html falló (doc %s)", doc_id)
             return False
 
-    def export_word(self, doc_id: str) -> Optional[dict]:
+    def export_word(self, doc_id: str, output_path: Optional[str] = None) -> Optional[dict]:
+        """Con output_path escribe donde el usuario eligió (como Excel y PowerPoint);
+        sin él devuelve base64, como antes."""
         doc = self._acquire(doc_id)
         if not doc:
             return None
@@ -137,12 +139,16 @@ class ExportMixin:
                             p.style.font.size = Pt(11)
                 if page_num < len(doc) - 1:
                     document.add_page_break()
+            filename = os.path.basename(self._doc_path(doc_id)).replace('.pdf', '.docx')
+            if output_path:
+                document.save(output_path)
+                return {"filename": filename, "output_path": output_path}
             buffer = io.BytesIO()
             document.save(buffer)
             buffer.seek(0)
             data = buffer.read()
             return {
-                "filename": os.path.basename(self._doc_path(doc_id)).replace('.pdf', '.docx'),
+                "filename": filename,
                 "data_base64": base64.b64encode(data).decode('utf-8'),
             }
         except DocumentNotFoundError:

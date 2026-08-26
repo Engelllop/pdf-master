@@ -52,6 +52,28 @@ class RenderMixin:
                     pass
             return doc.tobytes(garbage=0, deflate=True)
 
+    def get_pdf_bytes_with_marks(self, doc_id: str) -> Optional[bytes]:
+        """Como get_pdf_bytes pero con las marcas pendientes dibujadas encima, sobre una
+        COPIA. Lo usa la impresión: antes se imprimía `/pdf/raw`, o sea el documento sin
+        las marcas que el usuario todavía no había guardado — se marcaba un plano, se
+        mandaba a imprimir y salía limpio, sin aviso. El documento vivo no se toca (mismo
+        motivo que en embed_annotations: aplicarlas encima las apila)."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            pending = self._pending_annotations.get(doc_id)
+            if not pending:
+                return doc.tobytes(garbage=0, deflate=True)
+            marked = None
+            try:
+                marked = fitz.open(stream=doc.tobytes(), filetype="pdf")
+                self._embed_into(marked, pending)
+                return marked.tobytes(garbage=0, deflate=True)
+            finally:
+                if marked is not None:
+                    marked.close()
+
     def get_page_image_bytes(self, doc_id: str, page_num: int, zoom: float = 1.0) -> Optional[bytes]:
         with self._lock:
             doc = self._acquire(doc_id)

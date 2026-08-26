@@ -18,6 +18,10 @@ export default function RotatePreview({ degrees, all = false, children }: {
   const page = activeDoc?.currentPage ?? 0
   const cached = activeDoc?.thumbnails.get(page) || null
 
+  // Sin esto, al cambiar de página la vista previa mostraba la miniatura de la
+  // anterior hasta que llegaba la nueva.
+  useEffect(() => { setThumb(null) }, [activeDoc?.doc_id, page, activeDoc?.docVersion])
+
   useEffect(() => {
     if (!hover || !activeDoc || cached) return
     let alive = true

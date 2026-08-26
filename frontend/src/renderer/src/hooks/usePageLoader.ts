@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { reopenDeadDoc } from '../lib/openDocument'
 import { useStoreSlice } from './useStoreSlice'
-import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
+import { renderPdfPage, isDeadDocError } from '../lib/pdfjs'
 
 import { apiFetch } from '../lib/api'
 const MAX_RENDER_ZOOM = 4
@@ -38,9 +38,6 @@ export interface TextBlock {
 
 function isAbort(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { name?: string }).name === 'AbortError'
-}
-function isDeadDoc(err: unknown): boolean {
-  return err instanceof Error && err.message.includes('404')
 }
 
 export function usePageLoader() {
@@ -86,25 +83,18 @@ export function usePageLoader() {
     const signal = controller.signal
 
     // Render local con PDF.js (sin round-trip a Python).
-    const fetchEntry = (p: number): Promise<PageData> =>
-      renderPdfPage(docId, version, p, rz, signal).then((r) => ({
+    const fetchEntry = (p: number, zoomOverride?: number): Promise<PageData> =>
+      renderPdfPage(docId, version, p, zoomOverride ?? rz, signal).then((r) => ({
         image: r.url, width: r.width, height: r.height,
         originalWidth: r.originalWidth, originalHeight: r.originalHeight,
       })).catch((err) => {
-        if (isDeadDoc(err)) {
+        if (isDeadDocError(err)) {
           // El motor se reinició: reabrir y remapear; al cambiar el doc_id este
           // efecto se vuelve a ejecutar con el id nuevo.
           reopenDeadDoc(docId)
         }
         throw err
       })
-
-    // Reemplaza el bitmap cacheado de una página revocando el blob anterior.
-    const replaceCache = (p: number, entry: PageData) => {
-      const old = getCachedPage(docId, p)
-      if (old && old.image !== entry.image) revokePageUrl(old.image)
-      cachePage(docId, p, entry)
-    }
 
     const cached = getCachedPage(docId, page)
     if (cached) {
@@ -116,7 +106,7 @@ export function usePageLoader() {
       setSearchHighlight(null)
       fetchEntry(page)
         .then((entry) => {
-          replaceCache(page, entry)
+          cachePage(docId, page, entry)
           setPageData(entry)
         })
         .catch((err) => { if (!isAbort(err)) console.error('Error rendering page:', err) })
@@ -134,7 +124,7 @@ export function usePageLoader() {
         setLoadingRight(true)
         fetchEntry(rightPage)
           .then((entry) => {
-            replaceCache(rightPage, entry)
+            cachePage(docId, rightPage, entry)
             setPageDataRight(entry)
           })
           .catch((err) => { if (!isAbort(err)) console.error('Error rendering right page:', err) })
@@ -150,12 +140,15 @@ export function usePageLoader() {
       .then((data) => { if (data?.blocks) setPageText(data.blocks) })
       .catch(() => {})
 
-    // Preload adjacent pages in background (non-blocking): warm the page cache
+    // Preload adjacent pages in background (non-blocking): warm the page cache.
+    // A resolución moderada: en zoom profundo cada bitmap pesa cientos de MB y el
+    // usuario no está pasando páginas; si llega a una, el efecto de upgrade la sube.
+    const preloadZoom = Math.min(rz, 1.5)
     const preloadPage = (p: number) => {
       if (!activeDoc || p < 0 || p >= activeDoc.page_count) return
       if (getCachedPage(docId, p)) return
-      fetchEntry(p)
-        .then((entry) => replaceCache(p, entry))
+      fetchEntry(p, preloadZoom)
+        .then((entry) => cachePage(docId, p, entry))
         .catch(() => {})
     }
     preloadPage(page - 1)
@@ -190,8 +183,6 @@ export function usePageLoader() {
             image: r.url, width: r.width, height: r.height,
             originalWidth: r.originalWidth, originalHeight: r.originalHeight,
           }
-          const old = getCachedPage(docId, page)
-          if (old && old.image !== entry.image) revokePageUrl(old.image)
           cachePage(docId, page, entry)
           setPageData(entry)
         })

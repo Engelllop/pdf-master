@@ -1,4 +1,6 @@
 """Anotaciones: sidecar, embed en el PDF, resumen de marcas y XFDF."""
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
@@ -50,8 +52,8 @@ def import_xfdf(doc_id: str, req: ImportXfdfRequest):
 
 
 @router.post("/markup-summary/{doc_id}")
-def markup_summary(doc_id: str, req: AnnotationList):
-    result = pdf_service.generate_markup_summary(doc_id, req.annotations)
+def markup_summary(doc_id: str, req: AnnotationList, output_path: Optional[str] = Query(None)):
+    result = pdf_service.generate_markup_summary(doc_id, req.annotations, output_path)
     if not result:
         raise HTTPException(status_code=404, detail="Document not found")
     return result

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, X } from 'lucide-react'
 import { usePdfStore } from './store/usePdfStore'
 import { useStoreSlice } from './hooks/useStoreSlice'
 import TopBar from './components/TopBar'
@@ -129,6 +129,13 @@ function App() {
   }, [store.docs])
 
   // Persist the open-document session (paths + page + zoom) so it survives restarts.
+  //
+  // Se escribe SOLO cuando cambia algo de la sesión. El efecto depende de `docs`, que
+  // cambia con cada marca que se mueve o se dibuja — o sea, en cada mousemove de un
+  // arrastre —, y cada pasada hacía un JSON.stringify y DOS `localStorage.setItem`,
+  // que son escrituras síncronas. Comparar contra lo último escrito lo deja en cero
+  // durante el marcado, que es cuando más molesta.
+  const ultimaSesionRef = useRef('')
   useEffect(() => {
     try {
       const session = {
@@ -140,10 +147,13 @@ function App() {
           fitMode: d.fitMode,
         })),
       }
-      localStorage.setItem('pdfmaster_session', JSON.stringify(session))
+      const serializada = JSON.stringify(session)
+      if (serializada === ultimaSesionRef.current) return
+      ultimaSesionRef.current = serializada
+      localStorage.setItem('pdfmaster_session', serializada)
       // Snapshot de la última sesión con documentos, para "Reabrir última sesión"
       // (pdfmaster_session queda vacía al cerrar todas las pestañas).
-      if (session.docs.length > 0) localStorage.setItem('pdfmaster_session_last', JSON.stringify(session))
+      if (session.docs.length > 0) localStorage.setItem('pdfmaster_session_last', serializada)
     } catch {}
   }, [store.docs, store.activeDocId])
 
@@ -247,7 +257,7 @@ function App() {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && readingMode) {
+      if (e.key === 'Escape' && readingMode && !presentationMode) {
         e.preventDefault()
         store.toggleReadingMode()
         return
@@ -281,7 +291,14 @@ function App() {
       // flechas las desplazan (useKeyboardShortcuts), así que aquí no navegan.
       const activeDoc = store.docs.find((d) => d.doc_id === store.activeDocId)
       const hasSelection = usePdfStore.getState().selectedAnnotationIds.length > 0
-      if (!isMeta && activeDoc && !(hasSelection && e.key.startsWith('Arrow'))) {
+      const target = e.target as HTMLElement
+      // Escribiendo, estas teclas son del cursor, no del documento: en el globo de una
+      // nota, Inicio/Fin y las flechas cambiaban de PÁGINA (y con `preventDefault`), lo
+      // que además desmontaba el globo y se llevaba el texto sin guardar.
+      const isEditing = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable
+      // En presentación la navegación la maneja PresentationView: si App también
+      // navegara, PageUp/PageDown saltarían DOS páginas (ambos escuchan en window).
+      if (!isMeta && activeDoc && !presentationMode && !isEditing && !(hasSelection && e.key.startsWith('Arrow'))) {
         switch (e.key) {
           case 'ArrowDown':
           case 'PageDown':
@@ -306,8 +323,6 @@ function App() {
 
       // Herramientas con una sola tecla (V, H, R, M…). Comparar y presentación no dibujan.
       if (!isMeta && activeDoc && !compareMode && !presentationMode) {
-        const target = e.target as HTMLElement
-        const isEditing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
         const tool = TOOL_KEYS[(e.shiftKey ? 'shift+' : '') + e.key.toLowerCase()]
         if (!isEditing && tool) {
           e.preventDefault()
@@ -385,7 +400,7 @@ function App() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [store, readingMode])
+  }, [store, readingMode, presentationMode])
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden transition-colors bg-surface">
@@ -414,6 +429,18 @@ function App() {
       <Toasts />
       <UnsavedDialog />
       {formModal}
+      {/* En modo lectura se oculta TODO el chrome, incluido el botón que lo activó: sin
+          esta salida el único camino era saber que Esc funciona. */}
+      {readingMode && !presentationMode && (
+        <button
+          onClick={() => store.toggleReadingMode()}
+          title="Salir del modo lectura (Esc)"
+          aria-label="Salir del modo lectura"
+          className="fixed top-3 right-3 z-40 p-2 rounded-full bg-panel/80 border border-border text-muted shadow-token backdrop-blur opacity-40 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+        >
+          <X size={16} />
+        </button>
+      )}
       {presentationMode && <PresentationView />}
       {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
       {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}

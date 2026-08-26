@@ -47,6 +47,11 @@ export default function TextBoxEditor({
   const barLeft = Math.max(4, Math.min(x, wrapperWidth - barW - 4))
   const barTop = y - BAR_H - 8 > 4 ? y - BAR_H - 8 : y + boxH + 8
 
+  // Los botones de la barra no deben robarle el foco al textarea: al pulsar Negrita
+  // el cursor se perdía y lo que se seguía escribiendo iba al botón (con Espacio
+  // llegaba a re-pulsarlo). Los `select` y el color NO llevan esto: necesitan el foco
+  // para desplegarse.
+  const keepFocus = { onMouseDown: (e: React.MouseEvent) => e.preventDefault() }
   const btn = 'p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors'
   const toggleBtn = (active: boolean) => `p-1 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
   const ListIcon = style.listStyle === 'number' ? ListOrdered : List
@@ -61,26 +66,26 @@ export default function TextBoxEditor({
           className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-24 shrink-0">
           {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
         </select>
-        <button title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
+        <button {...keepFocus} title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
           onClick={() => onFontSize(Math.max(4, fontSize - 2))}>A</button>
         <span className="text-micro text-fg w-5 text-center tabular-nums">{fontSize}</span>
-        <button title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
+        <button {...keepFocus} title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
           onClick={() => onFontSize(Math.min(72, fontSize + 2))}>A</button>
         <div className="w-px h-4 mx-0.5 bg-border" />
-        <button title="Negrita (Ctrl+B)" aria-label="Negrita" className={toggleBtn(style.bold)}
+        <button {...keepFocus} title="Negrita (Ctrl+B)" aria-label="Negrita" className={toggleBtn(style.bold)}
           onClick={() => onStyle({ bold: !style.bold })}><Bold size={13} /></button>
-        <button title="Cursiva (Ctrl+I)" aria-label="Cursiva" className={toggleBtn(style.italic)}
+        <button {...keepFocus} title="Cursiva (Ctrl+I)" aria-label="Cursiva" className={toggleBtn(style.italic)}
           onClick={() => onStyle({ italic: !style.italic })}><Italic size={13} /></button>
         {/* Las tres alineaciones a la vista: el botón que rotaba obligaba a adivinar */}
         {(['left', 'center', 'right'] as const).map((a) => {
           const Icon = ALIGN_ICONS[a]
           return (
-            <button key={a} title={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
+            <button key={a} {...keepFocus} title={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
               aria-label={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
               className={toggleBtn(style.align === a)} onClick={() => onStyle({ align: a })}><Icon size={13} /></button>
           )
         })}
-        <button title={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
+        <button {...keepFocus} title={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           aria-label={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           className={toggleBtn(style.listStyle !== 'none')}
           onClick={() => onStyle({ listStyle: LIST_NEXT[style.listStyle] })}><ListIcon size={13} /></button>
@@ -98,10 +103,10 @@ export default function TextBoxEditor({
         </label>
         <div className="w-px h-4 mx-0.5 bg-border" />
         {onDelete && (
-          <button title="Eliminar texto" aria-label="Eliminar texto" className={`${btn} hover:text-danger`} onClick={onDelete}><Trash2 size={14} /></button>
+          <button {...keepFocus} title="Eliminar texto" aria-label="Eliminar texto" className={`${btn} hover:text-danger`} onClick={onDelete}><Trash2 size={14} /></button>
         )}
-        <button title="Cancelar (Esc)" aria-label="Cancelar" className={btn} onClick={onCancel}><X size={15} /></button>
-        <button title="Confirmar (Ctrl+Enter)" aria-label="Confirmar" className={`${btn} text-success hover:text-success`} onClick={onCommit}>
+        <button {...keepFocus} title="Cancelar (Esc)" aria-label="Cancelar" className={btn} onClick={onCancel}><X size={15} /></button>
+        <button {...keepFocus} title="Confirmar (Ctrl+Enter)" aria-label="Confirmar" className={`${btn} text-success hover:text-success`} onClick={onCommit}>
           <Check size={16} />
         </button>
       </div>

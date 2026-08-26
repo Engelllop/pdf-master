@@ -71,3 +71,55 @@ class TestMarcasViajanEnElPdf:
         out, got = _guardar_y_reabrir(client, open_doc, tmp_path, [marca], "imagen.pdf")
         assert not [a for a in got if a["type"] == "image"]
         assert fitz.open(out).load_page(0).get_images()
+
+    def test_el_estilo_del_cuadro_de_texto_sobrevive(self, client, open_doc, tmp_path):
+        """El FreeText nativo solo guarda tamaño, color y alineación: negrita, cursiva,
+        interlineado y viñetas viajan en el payload propio. Sin eso, guardar y reabrir
+        devolvía el texto en redonda y sin lista."""
+        marca = {
+            "id": "t1", "type": "text", "page": 0, "x": 40, "y": 60,
+            "width": 200, "height": 60, "color": "#111111",
+            "text": "Revisar niveles" + chr(10) + "Antes de imprimir",
+            "fontSize": 12, "fontFamily": "Times", "bold": True, "italic": True,
+            "align": "center", "lineHeight": 1.5, "listStyle": "bullet",
+        }
+        _, got = _guardar_y_reabrir(client, open_doc, tmp_path, [marca], "estilo.pdf")
+        texto = [a for a in got if a["type"] == "text"]
+        assert len(texto) == 1
+        a = texto[0]
+        assert a["bold"] is True and a["italic"] is True
+        assert a["align"] == "center"
+        assert a["lineHeight"] == 1.5
+        assert a["listStyle"] == "bullet"
+        assert a["fontFamily"] == "Times"
+        # El texto vuelve limpio: las viñetas se dibujan al incrustar, no se guardan
+        # dentro del texto (si no, al reeditar saldrían dobles).
+        assert not a["text"].lstrip().startswith("•")
+
+
+class TestResumenDeMarcas:
+    def test_lleva_el_valor_medido_y_el_tipo_en_castellano(self, client, open_doc, tmp_path):
+        """El resumen lo lee una persona: sin la medida, un takeoff salía como una
+        lista de 'measure_distance' sin ningún número."""
+        doc_id = open_doc(pages=1)["doc_id"]
+        marca = {
+            "id": "m1", "type": "measure_distance", "page": 0,
+            "x": 10, "y": 10, "width": 100, "height": 0, "color": "#ef4444",
+            "measurement": {"value": 12.5, "unit": "m", "label": "12.50 m"},
+        }
+        out = str(tmp_path / "resumen.pdf")
+        res = client.post(f"/pdf/markup-summary/{doc_id}?output_path={out}",
+                          json={"annotations": [marca]})
+        assert res.status_code == 200
+        assert res.json()["output_path"] == out
+
+        texto = fitz.open(out)[0].get_text()
+        assert "12.50 m" in texto
+        assert "Distancia" in texto
+        assert "measure_distance" not in texto
+
+    def test_sin_output_path_sigue_devolviendo_base64(self, client, open_doc):
+        doc_id = open_doc(pages=1)["doc_id"]
+        res = client.post(f"/pdf/markup-summary/{doc_id}", json={"annotations": []})
+        assert res.status_code == 200
+        assert res.json()["data_base64"]

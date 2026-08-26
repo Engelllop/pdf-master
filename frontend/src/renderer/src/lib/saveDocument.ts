@@ -12,6 +12,20 @@ import { apiFetch } from './api'
  *
  * Con `outputPath` guarda una copia: el documento sigue sucio porque el original
  * no se ha tocado. */
+/** Sube las marcas vigentes al motor como "pendientes", sin escribir nada a disco.
+ * Lo comparten el guardado y la impresión: el motor las dibuja sobre una copia cuando
+ * le piden el PDF, así que imprimir ya no manda el documento limpio. */
+export async function pushAnnotations(docId: string): Promise<boolean> {
+  const doc = usePdfStore.getState().docs.find((d) => d.doc_id === docId)
+  if (!doc) return false
+  if (!doc.annotations.length) return true
+  const res = await apiFetch(`/pdf/embed/${docId}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ annotations: doc.annotations }),
+  })
+  return res.ok
+}
+
 export async function saveDocument(docId: string, outputPath?: string): Promise<boolean> {
   const { docs, backupOnSave, setDocDirty } = usePdfStore.getState()
   const doc = docs.find((d) => d.doc_id === docId)

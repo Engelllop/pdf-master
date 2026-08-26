@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { usePdfStore, type Annotation } from './usePdfStore'
 
 const initialState = usePdfStore.getState()
@@ -628,5 +628,155 @@ describe('dirty / saveStatus', () => {
     usePdfStore.getState().setDocDirty('doc-1', true)
     expect(usePdfStore.getState().saveStatus).toBe('idle')
     expect(usePdfStore.getState().docs[0].dirty).toBe(true)
+  })
+})
+
+describe('bitmaps de página (blob URLs)', () => {
+  const bitmap = (image: string) => ({ image, width: 612, height: 792, originalWidth: 612, originalHeight: 792 })
+
+  it('revoca el bitmap desalojado del cache al pasar de 100 páginas', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo({ page_count: 200 }))
+    for (let i = 0; i < 101; i++) usePdfStore.getState().cachePage('doc-1', i, bitmap(`blob:p${i}`))
+    expect(revoke).toHaveBeenCalledWith('blob:p0')
+    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(100)
+    revoke.mockRestore()
+  })
+
+  it('revoca los bitmaps del documento al cerrarlo', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().cachePage('doc-1', 0, bitmap('blob:a'))
+    usePdfStore.getState().cachePage('doc-1', 1, bitmap('blob:b'))
+    revoke.mockClear()
+    usePdfStore.getState().closeDoc('doc-1')
+    expect(revoke).toHaveBeenCalledWith('blob:a')
+    expect(revoke).toHaveBeenCalledWith('blob:b')
+    revoke.mockRestore()
+  })
+
+  it('revoca los bitmaps al invalidar el cache tras una operación de página', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().cachePage('doc-1', 0, bitmap('blob:antes'))
+    revoke.mockClear()
+
+    usePdfStore.getState().invalidatePageCache('doc-1')
+
+    expect(revoke).toHaveBeenCalledWith('blob:antes')
+    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(0)
+    revoke.mockRestore()
+  })
+
+  it('revoca los bitmaps al remapear un doc_id muerto', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().cachePage('doc-1', 0, bitmap('blob:viejo'))
+    revoke.mockClear()
+    usePdfStore.getState().remapDocId('doc-1', 'doc-2')
+    expect(revoke).toHaveBeenCalledWith('blob:viejo')
+    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(0)
+    revoke.mockRestore()
+  })
+})
+
+describe('herramienta fija', () => {
+  it('el conteo se queda puesto aunque las herramientas sean de un solo uso', () => {
+    usePdfStore.getState().setStickyTools(false)
+    usePdfStore.getState().setActiveTool('count')
+    usePdfStore.getState().releaseTool()
+    expect(usePdfStore.getState().activeTool).toBe('count')
+  })
+
+  it('las demás sí se sueltan tras cada marca', () => {
+    usePdfStore.getState().setStickyTools(false)
+    usePdfStore.getState().setActiveTool('rect')
+    usePdfStore.getState().releaseTool()
+    expect(usePdfStore.getState().activeTool).toBeNull()
+  })
+
+  it('con la herramienta fija, ninguna se suelta sola', () => {
+    usePdfStore.getState().setStickyTools(true)
+    usePdfStore.getState().setActiveTool('rect')
+    usePdfStore.getState().releaseTool()
+    expect(usePdfStore.getState().activeTool).toBe('rect')
+  })
+})
+
+describe('recalibrar la escala', () => {
+  it('recalcula las mediciones que ya estaban puestas', () => {
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo())
+    s.addAnnotation('doc-1', {
+      id: 'm1', type: 'measure_distance', page: 0, x: 0, y: 0, width: 30, height: 40,
+      color: '#000', measurement: { value: 50, unit: 'px', label: '50.0 px' },
+    })
+
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    expect(usePdfStore.getState().docs[0].annotations[0].measurement).toEqual(
+      { value: 5, unit: 'm', label: '5.00 m' })
+
+    // Calibrar mal y volver a calibrar: la cota vieja tiene que corregirse.
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 5, unit: 'm' })
+    expect(usePdfStore.getState().docs[0].annotations[0].measurement).toEqual(
+      { value: 10, unit: 'm', label: '10.00 m' })
+  })
+
+  it('no toca las marcas que no son mediciones', () => {
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo())
+    s.addAnnotation('doc-1', ann({ id: 'r1' }))
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    expect(usePdfStore.getState().docs[0].annotations[0].measurement).toBeUndefined()
+  })
+})
+
+describe('deshacer con varias pestañas', () => {
+  it('Ctrl+Z deshace en el documento que se está viendo, no en el último tocado', () => {
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo({ doc_id: 'plano-a' }))
+    s.addDoc(docInfo({ doc_id: 'plano-b' }))
+
+    usePdfStore.getState().addAnnotation('plano-b', ann({ id: 'en-b' }))
+    usePdfStore.getState().addAnnotation('plano-a', ann({ id: 'en-a' }))
+
+    // Se está viendo B; su última marca es 'en-b' aunque el último comando sea de A.
+    usePdfStore.getState().setActiveDoc('plano-b')
+    usePdfStore.getState().undo()
+
+    const porId = Object.fromEntries(usePdfStore.getState().docs.map((d) => [d.doc_id, d.annotations]))
+    expect(porId['plano-b']).toHaveLength(0)
+    expect(porId['plano-a'].map((a) => a.id)).toEqual(['en-a'])
+  })
+
+  it('sin nada que deshacer en el documento activo, no toca los otros', () => {
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo({ doc_id: 'plano-a' }))
+    s.addDoc(docInfo({ doc_id: 'plano-b' }))
+    usePdfStore.getState().addAnnotation('plano-a', ann({ id: 'en-a' }))
+
+    usePdfStore.getState().setActiveDoc('plano-b')
+    usePdfStore.getState().undo()
+
+    expect(usePdfStore.getState().docs.find((d) => d.doc_id === 'plano-a')!.annotations).toHaveLength(1)
+    expect(usePdfStore.getState().undoStack).toHaveLength(1)
+  })
+
+  it('rehacer también respeta el documento activo', () => {
+    const s = usePdfStore.getState()
+    s.addDoc(docInfo({ doc_id: 'plano-a' }))
+    s.addDoc(docInfo({ doc_id: 'plano-b' }))
+    usePdfStore.getState().addAnnotation('plano-a', ann({ id: 'en-a' }))
+    usePdfStore.getState().setActiveDoc('plano-a')
+    usePdfStore.getState().undo()
+
+    usePdfStore.getState().setActiveDoc('plano-b')
+    usePdfStore.getState().redo()
+    expect(usePdfStore.getState().docs.find((d) => d.doc_id === 'plano-a')!.annotations).toHaveLength(0)
+
+    usePdfStore.getState().setActiveDoc('plano-a')
+    usePdfStore.getState().redo()
+    expect(usePdfStore.getState().docs.find((d) => d.doc_id === 'plano-a')!.annotations).toHaveLength(1)
   })
 })

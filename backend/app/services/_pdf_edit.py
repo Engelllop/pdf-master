@@ -14,6 +14,9 @@ from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 logger = logging.getLogger("pdfmaster")
 
 
+MARGEN = 18  # pt de margen mínimo desde el borde de la página
+
+
 class EditMixin:
     # Tope de repeticiones por página: con una fuente pequeña en un plano grande la
     # rejilla se dispara y el motor (1 worker, PyMuPDF) se queda colgado.
@@ -103,12 +106,17 @@ class EditMixin:
         for i in range(len(doc)):
             page = doc.load_page(i)
             rect = page.rect
+            # Centrado, pero sin dejar que un texto más ancho que la página se salga
+            # por la izquierda (x negativa): con un encabezado largo, el principio de la
+            # frase quedaba fuera del papel.
             if header:
                 tw = fitz.get_text_length(header, fontsize=fontsize)
-                page.insert_text((rect.width / 2 - tw / 2, 20), header, fontsize=fontsize, color=rgb, overlay=True)
+                page.insert_text((max(MARGEN, rect.width / 2 - tw / 2), 20), header,
+                                 fontsize=fontsize, color=rgb, overlay=True)
             if footer:
                 tw = fitz.get_text_length(footer, fontsize=fontsize)
-                page.insert_text((rect.width / 2 - tw / 2, rect.height - 10), footer, fontsize=fontsize, color=rgb, overlay=True)
+                page.insert_text((max(MARGEN, rect.width / 2 - tw / 2), rect.height - 10), footer,
+                                 fontsize=fontsize, color=rgb, overlay=True)
         self._dirty[doc_id] = True
         self._invalidate_render_cache(doc_id)
         return stash_id

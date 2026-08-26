@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import UnsavedDialog from './UnsavedDialog'
 import { askUnsaved } from '../lib/unsavedPrompt'
 import { usePdfStore } from '../store/usePdfStore'
@@ -22,6 +22,13 @@ describe('UnsavedDialog', () => {
     render(<UnsavedDialog />)
     const choice = askUnsaved(['doc-1'])
     expect(await screen.findByRole('dialog')).toBeTruthy()
+    // El listener de Escape se registra en un `useEffect`, que corre DESPUÉS del
+    // commit: `findByRole` puede resolver en cuanto el nodo existe, así que sin
+    // vaciar los efectos pendientes la tecla llegaba a veces antes que el listener y
+    // el test se colgaba los 5 s esperando una promesa que ya nadie iba a resolver.
+    // Fallaba ~1 de cada 5 corridas completas, y cambiaba de víctima según el reparto
+    // de archivos entre workers.
+    await act(async () => {})
     fireEvent.keyDown(document, { key: 'Escape' })
     await expect(choice).resolves.toBe('cancel')
     expect(screen.queryByRole('dialog')).toBeNull()

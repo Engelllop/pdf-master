@@ -6,6 +6,8 @@ import { askForm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
 import { getSpans, type SpanItem } from '../lib/spans'
 import { computeLineRects, type LineRect } from '../lib/textMarkup'
+import { addSignature } from '../lib/signatures'
+import { distance, formatDistance } from '../lib/measure'
 const SNAP_TOLERANCE_SCREEN_PX = 10
 
 const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area', 'measure_perimeter']
@@ -13,19 +15,15 @@ const MEASURE_TOOLS = ['measure_calibrate', 'measure_distance', 'measure_area', 
 const CALLOUT_W = 160
 const CALLOUT_H = 48
 const MARKUP_TOOLS = ['highlight', 'underline', 'strikethrough']
+// Distancia mínima (en puntos PDF) entre dos puntos de un trazo a mano alzada. Sin
+// esto se guardaba un punto por cada mousemove: con el ratón lento o parado se
+// acumulaban cientos que no aportan forma, el SVG se redibujaba entero en cada uno y
+// todos acababan dentro del PDF al guardar.
+const MIN_DRAW_STEP_PT = 0.5
 
 export type DrawPreview = Partial<Annotation> & { type?: Annotation['type'] | 'textselect' | 'measure_calibrate' | 'measure_distance' | 'measure_area' }
 
-function computeDistance(p1: { x: number; y: number }, p2: { x: number; y: number }): number {
-  return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2)
-}
-
-function formatDistance(value: number, unit: string): string {
-  if (value >= 1000 && unit === 'm') return `${(value / 1000).toFixed(2)} km`
-  if (value >= 100 && unit === 'cm') return `${(value / 100).toFixed(2)} m`
-  if (value < 1 && unit === 'm') return `${(value * 100).toFixed(1)} cm`
-  return `${value.toFixed(2)} ${unit}`
-}
+const computeDistance = distance
 
 export function useAnnotationDraw(
   activeDoc: PdfState['docs'][number] | undefined,
@@ -52,6 +50,9 @@ export function useAnnotationDraw(
   const snapPointsRef = useRef<Array<{ x: number; y: number }>>([])
   const [markupRects, setMarkupRects] = useState<LineRect[]>([])
   const spansRef = useRef<SpanItem[]>([])
+  // Los spans de un plano tardan: sin esto, marcar antes de que llegaran daba el aviso
+  // de «no hay texto debajo» en una página que sí lo tiene.
+  const spansListosRef = useRef(false)
 
   const isMeasureTool = !!activeTool && MEASURE_TOOLS.includes(activeTool)
   const isMarkupTool = !!activeTool && MARKUP_TOOLS.includes(activeTool)
@@ -59,11 +60,12 @@ export function useAnnotationDraw(
   // Spans de la página para anclar el marcado al texto real (estilo Acrobat).
   useEffect(() => {
     spansRef.current = []
+    spansListosRef.current = false
     setMarkupRects([])
     if (!isMarkupTool || !activeDoc) return
     let alive = true
     getSpans(activeDoc.doc_id, activeDoc.currentPage, activeDoc.docVersion).then((spans) => {
-      if (alive) spansRef.current = spans
+      if (alive) { spansRef.current = spans; spansListosRef.current = true }
     })
     return () => { alive = false }
   }, [isMarkupTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion])
@@ -219,7 +221,11 @@ export function useAnnotationDraw(
     const pdf = maybeSnap(toPdfCoords(svgPoint.x, svgPoint.y))
 
     if (activeTool === 'draw' || activeTool === 'signature') {
-      setDrawPoints((prev) => [...prev, { x: pdf.x, y: pdf.y }])
+      setDrawPoints((prev) => {
+        const last = prev[prev.length - 1]
+        if (last && Math.hypot(pdf.x - last.x, pdf.y - last.y) < MIN_DRAW_STEP_PT) return prev
+        return [...prev, { x: pdf.x, y: pdf.y }]
+      })
     } else if (
       activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect' ||
       activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' || activeTool === 'line' ||
@@ -389,9 +395,7 @@ export function useAnnotationDraw(
         const sv = await askForm('Guardar firma', [{ name: 'name', label: 'Nombre (vacío = no guardar)', type: 'text', defaultValue: '' }], 'Guardar')
         const name = sv ? String(sv.name) : ''
         if (name && name.trim()) {
-          const saved = JSON.parse(localStorage.getItem('pdfmaster_signatures') || '[]')
-          saved.push({ id: crypto.randomUUID(), name: name.trim(), points: drawPoints })
-          localStorage.setItem('pdfmaster_signatures', JSON.stringify(saved.slice(-10)))
+          addSignature(name.trim(), drawPoints)
           showToast('Firma guardada', 'success')
         }
       }
@@ -399,7 +403,12 @@ export function useAnnotationDraw(
       // Resaltar/subrayar/tachar SOLO marcan texto: sin texto debajo no se deja una
       // marca suelta en medio del plano (antes caía al rect libre de más abajo).
       if (Math.abs(drawPreview.width || 0) > 2 || Math.abs(drawPreview.height || 0) > 2) {
-        showToast('Resaltar, subrayar y tachar se anclan al texto. Para marcar un área usá Rectángulo.', 'info')
+        showToast(
+          spansListosRef.current
+            ? 'Resaltar, subrayar y tachar se anclan al texto. Para marcar un área usá Rectángulo.'
+            : 'Todavía se está leyendo el texto de la página. Probá de nuevo en un momento.',
+          'info',
+        )
       }
     } else if (isMarkupTool) {
       // Marcado anclado al texto: una anotación por línea con el rect real de la

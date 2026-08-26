@@ -50,18 +50,26 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
         className="panel-in w-[560px] max-w-[92vw] rounded-lg border border-border shadow-2xl bg-panel overflow-hidden">
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
           <Search size={15} className="text-muted shrink-0" />
+          {/* Combobox: el foco se queda en el campo mientras las flechas mueven la
+              selección, así que sin `aria-activedescendant` un lector de pantalla no
+              anuncia sobre qué comando está el usuario. */}
           <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onKeyDown}
+            role="combobox" aria-expanded aria-controls="paleta-lista" aria-autocomplete="list"
+            aria-activedescendant={results[index] ? `paleta-cmd-${results[index].id}` : undefined}
+            aria-label="Buscar una acción"
             placeholder="Buscar una acción… (p. ej. medir, marcas, comprimir)"
             className="flex-1 min-w-0 bg-transparent text-ui text-fg placeholder:text-muted focus:outline-none" />
           <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted">Esc</kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[52vh] overflow-y-auto py-1">
+        <div ref={listRef} id="paleta-lista" role="listbox" aria-label="Acciones"
+          className="max-h-[52vh] overflow-y-auto py-1">
           {results.length === 0 && (
             <div className="px-3 py-6 text-center text-mini text-muted">Sin coincidencias para “{query}”.</div>
           )}
           {results.map((cmd, i) => (
-            <button key={cmd.id} data-active={i === index}
+            <button key={cmd.id} id={`paleta-cmd-${cmd.id}`} data-active={i === index}
+              role="option" aria-selected={i === index} tabIndex={-1}
               onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
               className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
                 i === index ? 'bg-accent text-toolbar' : ''

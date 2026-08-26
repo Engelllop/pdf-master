@@ -219,12 +219,25 @@ class PagesMixin:
             self._invalidate_render_cache(doc_id)
             return True
 
-    def insert_blank_page(self, doc_id: str, index: int, width: float = 595, height: float = 842) -> bool:
+    def insert_blank_page(self, doc_id: str, index: int,
+                          width: Optional[float] = None, height: Optional[float] = None) -> bool:
+        """Sin medidas explícitas, la página en blanco copia el tamaño de su vecina.
+        Antes era A4 fijo: insertar una hoja en medio de un juego de planos metía una
+        A4 diminuta entre láminas de 3024 pt."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
                 return False
             idx = max(0, min(len(doc), index))
+            if width is None or height is None:
+                ref = max(0, min(len(doc) - 1, idx - 1)) if len(doc) else -1
+                if ref >= 0:
+                    rect = doc.load_page(ref).rect
+                    width = width if width is not None else rect.width
+                    height = height if height is not None else rect.height
+                else:
+                    width = width if width is not None else 595
+                    height = height if height is not None else 842
             doc.new_page(pno=idx, width=width, height=height)
             info = self._infos.get(doc_id)
             if info:

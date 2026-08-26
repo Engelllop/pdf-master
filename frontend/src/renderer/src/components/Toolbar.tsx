@@ -31,6 +31,7 @@ import { useState, useRef, useEffect, type ReactNode } from 'react'
 import Tooltip from './Tooltip'
 
 import { apiFetch } from '../lib/api'
+import { leerEnVozAlta, detenerLectura } from '../lib/speech'
 import { redactMatchesUndoable, replaceTextUndoable } from '../lib/pageUndo'
 
 export default function Toolbar() {
@@ -99,6 +100,20 @@ export default function Toolbar() {
 
   useEffect(() => { setCommentMenu(null); setDrawFormasOpen(false) }, [activeRibbon])
   useEffect(() => { if (commentMenu !== 'draw') setDrawFormasOpen(false) }, [commentMenu])
+
+  // Esc cerraba la herramienta pero dejaba el desplegable de formas abierto: se cierra
+  // primero el menú (en captura, para que el atajo global no suelte además la
+  // herramienta que el usuario estaba por elegir).
+  useEffect(() => {
+    if (!commentMenu) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      closeCommentMenu()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [commentMenu])
 
   // Atajo de búsqueda (Ctrl+F) desde App.tsx
   useEffect(() => {
@@ -220,7 +235,12 @@ export default function Toolbar() {
     const preview = matches.slice(0, 5).map((m) => `  · pág. ${m.page + 1}: ${(m.snippet || '').trim().slice(0, 60)}`).join('\n')
     const ok = await askConfirm(
       'Redactar coincidencias',
-      `Se tacharán ${matches.length} coincidencia(s) de "${query}" en ${pages.length} página(s): ${pageList}.\n\n${preview}${matches.length > 5 ? '\n  …' : ''}\n\nEl contenido se elimina del PDF. Ctrl+Z restaura el documento anterior.`,
+      // La vista previa se pide con limit=500. Si se llega al tope, el motor redacta
+      // igualmente TODAS las coincidencias, así que el mensaje no puede prometer 500.
+      `Se tacharán ${matches.length >= 500 ? 'todas las coincidencias' : `${matches.length} coincidencia(s)`} de "${query}"`
+      + ` en ${pages.length} página(s)${matches.length >= 500 ? ' o más' : ''}: ${pageList}.`
+      + `\n\n${preview}${matches.length > 5 ? '\n  …' : ''}`
+      + '\n\nEl contenido se elimina del PDF. Ctrl+Z restaura el documento anterior.',
       'Redactar',
     )
     if (!ok) return
@@ -232,20 +252,25 @@ export default function Toolbar() {
 
   const handleReadAloud = async () => {
     if (!activeDoc) return
-    if (isSpeaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); return }
+    if (isSpeaking) { detenerLectura(); setIsSpeaking(false); return }
     try {
       const res = await apiFetch(`/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
       const data = await res.json()
       const text: string = (data.blocks ? data.blocks.map((b: any) => b.text).join(' ') : data.text) || ''
       if (!text.trim()) { showToast('No hay texto en esta página', 'info'); return }
-      const u = new SpeechSynthesisUtterance(text)
-      u.lang = 'es-AR'
-      u.onend = () => setIsSpeaking(false)
-      window.speechSynthesis.cancel()
-      window.speechSynthesis.speak(u)
+      leerEnVozAlta(text, () => setIsSpeaking(false))
       setIsSpeaking(true)
     } catch { showToast('Error al leer la página', 'error') }
   }
+
+  // La voz seguía leyendo la página anterior al cambiar de página o de pestaña, y
+  // seguía sonando con la app cerrada de vista.
+  useEffect(() => {
+    detenerLectura()
+    setIsSpeaking(false)
+  }, [activeDoc?.doc_id, activeDoc?.currentPage])
+
+  useEffect(() => () => { detenerLectura() }, [])
 
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const handleSearch = async () => {
@@ -337,9 +362,12 @@ export default function Toolbar() {
     }
   }
 
-  const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active = false, disabled = false }: any) => (
+  // `active` sin valor por defecto a propósito: solo los botones que SON un
+  // interruptor (herramienta, lectura, presentación, comparar) lo pasan, y solo esos
+  // llevan aria-pressed — en los de acción suelta anunciaría un estado que no existe.
+  const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active, disabled = false }: any) => (
     <Tooltip content={tip || label} shortcut={shortcut}>
-      <button onClick={onClick} disabled={disabled} aria-label={tip || label}
+      <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
         className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
           active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
         }`}>
@@ -849,13 +877,18 @@ export default function Toolbar() {
               <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token">
                 <div className="flex items-center gap-1">
                   <Search size={14} className="text-muted" />
-                  <input ref={searchRef} type="text" placeholder="Buscar..." value={searchInput}
+                  <input ref={searchRef} type="text" placeholder="Buscar…" value={searchInput}
                     onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
                     aria-label="Buscar en el documento"
                     className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
-                  {activeDoc.searchResults.length > 0 && (
-                    <span className="text-mini text-muted tabular-nums">{activeDoc.searchIndex + 1}/{activeDoc.searchResults.length}</span>
-                  )}
+                  {/* Con cero resultados no se mostraba NADA: ni contador ni aviso, así
+                      que no se sabía si la búsqueda había llegado a ejecutarse. El
+                      aria-live hace que un lector de pantalla cante el resultado. */}
+                  <span className="text-mini text-muted tabular-nums" aria-live="polite">
+                    {activeDoc.searchResults.length > 0
+                      ? `${activeDoc.searchIndex + 1}/${activeDoc.searchResults.length}${activeDoc.searchResults.length >= 500 ? '+' : ''}`
+                      : activeDoc.searchQuery ? 'Sin resultados' : ''}
+                  </span>
                   <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
                   <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
                   <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
@@ -866,7 +899,7 @@ export default function Toolbar() {
                 </div>
                 {showReplace && (
                   <div className="flex items-center gap-2">
-                    <input ref={replaceRef} type="text" placeholder="Reemplazar..." value={replaceInput}
+                    <input ref={replaceRef} type="text" placeholder="Reemplazar…" value={replaceInput}
                       onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
                       aria-label="Reemplazar por"
                       className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />

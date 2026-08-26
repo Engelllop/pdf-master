@@ -32,7 +32,7 @@ export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib
   const entry = { task: null as unknown as pdfjsLib.PDFDocumentLoadingTask, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy> }
   entry.promise = (async () => {
     const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
-    if (!res.ok) throw new Error(`404 raw ${res.status}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status} en /pdf/raw`)
     const data = await res.arrayBuffer()
     entry.task = pdfjsLib.getDocument({ data })
     return entry.task.promise
@@ -56,6 +56,17 @@ export interface RenderedPage {
   originalHeight: number
 }
 
+// Tope de rasterizado de la página base. Un plano de 3024 pt a zoom 4 daría un canvas
+// de 12 000 px de lado (cientos de MB en RAM, y se rasterizan también las vecinas por
+// el preload). La nitidez en zoom profundo la cubre `DetailTile`, que rasteriza solo
+// el rectángulo visible, así que topar el lado largo aquí no se ve en pantalla.
+const MAX_RENDER_PX = 6000
+
+function cappedScale(baseWidth: number, baseHeight: number, scale: number): number {
+  const longest = Math.max(baseWidth, baseHeight)
+  return longest * scale > MAX_RENDER_PX ? MAX_RENDER_PX / longest : scale
+}
+
 // Renderiza una página a canvas localmente (GPU, sin round-trip a Python) y devuelve
 // un blob URL con la misma forma que el antiguo PNG del backend.
 export async function renderPdfPage(
@@ -64,8 +75,8 @@ export async function renderPdfPage(
   const pdf = await getPdfDocument(docId, version)
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
   const page = await pdf.getPage(pageIndex + 1)
-  const viewport = page.getViewport({ scale })
   const base = page.getViewport({ scale: 1 })
+  const viewport = page.getViewport({ scale: cappedScale(base.width, base.height, scale) })
   const canvas = document.createElement('canvas')
   canvas.width = Math.ceil(viewport.width)
   canvas.height = Math.ceil(viewport.height)
@@ -109,6 +120,11 @@ export async function renderPdfTile(
   return { url: URL.createObjectURL(blob) }
 }
 
-export function revokePageUrl(url: string | undefined): void {
-  if (url && url.startsWith('blob:')) URL.revokeObjectURL(url)
+export { revokePageUrl } from './blobUrl'
+
+// 404 al pedir el PDF crudo = el motor se reinició y el doc_id murió (el health-check
+// sí responde, porque el motor nuevo está sano). Quien renderice debe reabrir el
+// documento en vez de mostrar una página en blanco.
+export function isDeadDocError(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith('HTTP 404 ')
 }

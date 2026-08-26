@@ -30,7 +30,9 @@ describe('cierre de pestaña', () => {
   it('en la pestaña activa el cierre queda a la vista (no solo al hover)', () => {
     openDoc('doc-1', 'a.pdf')
     render(<TabStrip />)
-    const close = screen.getByLabelText('Cerrar pestaña')
+    // La etiqueta lleva el nombre del archivo: con varias pestañas abiertas,
+    // «Cerrar pestaña» repetido no dice cuál se cierra.
+    const close = screen.getByLabelText('Cerrar a.pdf')
     const classes = close.className.split(/\s+/)
     expect(classes).toContain('opacity-100')
     expect(classes).not.toContain('opacity-0')
@@ -41,7 +43,7 @@ describe('cierre de pestaña', () => {
     openDoc('doc-2', 'b.pdf')
     usePdfStore.getState().setActiveDoc('doc-2')
     render(<TabStrip />)
-    const closes = screen.getAllByLabelText('Cerrar pestaña')
+    const closes = [screen.getByLabelText('Cerrar a.pdf'), screen.getByLabelText('Cerrar b.pdf')]
     const hidden = closes.find((el) => el.className.split(/\s+/).includes('opacity-0'))
     expect(hidden).toBeTruthy()
     expect(hidden?.className).toMatch(/group-hover:opacity-100/)

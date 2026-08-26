@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { type LineStyle } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
@@ -7,9 +8,17 @@ import { FONT_OPTIONS } from '../lib/fonts'
 import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
 
 const WIDTH_PRESETS = [0.5, 1, 2, 4, 8]
+// Mismo tope que el store y que la barra flotante de la marca seleccionada: el input
+// decía 24, el store recortaba a 20 y la ficha del proyecto hablaba de 12.
+const WIDTH_MAX = 20
 const OPACITY_PRESETS = [25, 50, 75, 100]
 
 const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
+// Un lector de pantalla leyendo «Color numeral efe be be dos cuatro» no dice nada.
+const COLOR_NAMES: Record<string, string> = {
+  '#fbbf24': 'Ámbar', '#ef4444': 'Rojo', '#3b82f6': 'Azul', '#22c55e': 'Verde',
+  '#a855f7': 'Morado', '#1f2329': 'Negro', '#ffffff': 'Blanco',
+}
 const SHAPE_IDS = ['check', 'cross', 'star', 'cloud', 'polygon']
 const STROKE_TOOLS = ['draw', 'rect', 'circle', 'arrow', 'line', 'callout', 'underline', 'strikethrough', 'highlight', 'signature', 'measure_calibrate', 'measure_distance', 'measure_area', 'measure_perimeter', ...SHAPE_IDS]
 const COLOR_TOOLS = [...STROKE_TOOLS, 'note', 'text']
@@ -21,7 +30,9 @@ const LINE_STYLES: Array<{ id: LineStyle; label: string; dash?: string }> = [
 ]
 
 export default function PropertiesBar() {
-  const customStamps = loadStamps()
+  // `useMemo` sin dependencias: la lista solo cambia desde el gestor de sellos, que
+  // remonta esta barra al cerrarse. Antes se parseaba localStorage en CADA render.
+  const customStamps = useMemo(() => loadStamps(), [])
   const store = useStoreSlice(
     'docs', 'activeDocId', 'activeTool', 'selectedAnnotationId',
     'annotationColor', 'setAnnotationColor', 'annotationLineWidth', 'setAnnotationLineWidth',
@@ -65,7 +76,7 @@ export default function PropertiesBar() {
             const current = isStamp ? store.stampColor : colorVal
             const set = isStamp ? store.setStampColor : store.setAnnotationColor
             return (
-              <button key={c} onClick={() => set(c)} aria-label={`Color ${c}`}
+              <button key={c} onClick={() => set(c)} aria-label={COLOR_NAMES[c] || c} aria-pressed={current.toLowerCase() === c.toLowerCase()}
                 className={`w-5 h-5 rounded-full border transition-transform ${current.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-accent scale-110 border-transparent' : 'border-border hover:scale-110'}`}
                 style={{ backgroundColor: c }} />
             )
@@ -95,12 +106,12 @@ export default function PropertiesBar() {
               const tBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
               return (
                 <>
-                  <button title="Negrita" aria-label="Negrita" className={tBtn(sv.bold)} onClick={() => store.setTextStyle({ bold: !sv.bold })}><Bold size={13} /></button>
-                  <button title="Cursiva" aria-label="Cursiva" className={tBtn(sv.italic)} onClick={() => store.setTextStyle({ italic: !sv.italic })}><Italic size={13} /></button>
+                  <button title="Negrita" aria-label="Negrita" aria-pressed={sv.bold} className={tBtn(sv.bold)} onClick={() => store.setTextStyle({ bold: !sv.bold })}><Bold size={13} /></button>
+                  <button title="Cursiva" aria-label="Cursiva" aria-pressed={sv.italic} className={tBtn(sv.italic)} onClick={() => store.setTextStyle({ italic: !sv.italic })}><Italic size={13} /></button>
                   {(['left', 'center', 'right'] as const).map((a) => {
                     const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
                     const alignLabel = a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'
-                    return <button key={a} title={`Alinear ${alignLabel}`} aria-label={`Alinear ${alignLabel}`} className={tBtn(sv.align === a)} onClick={() => store.setTextStyle({ align: a })}><Icon size={13} /></button>
+                    return <button key={a} title={`Alinear ${alignLabel}`} aria-label={`Alinear ${alignLabel}`} aria-pressed={sv.align === a} className={tBtn(sv.align === a)} onClick={() => store.setTextStyle({ align: a })}><Icon size={13} /></button>
                   })}
                   <select title="Interlineado" aria-label="Interlineado" value={sv.lineHeight} onChange={(e) => store.setTextStyle({ lineHeight: parseFloat(e.target.value) })}
                     className="border border-border rounded px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
@@ -123,15 +134,15 @@ export default function PropertiesBar() {
           <Group>
             <Label>Grosor</Label>
             {WIDTH_PRESETS.map((w) => (
-              <button key={w} onClick={() => store.setAnnotationLineWidth(w)} title={`${w} pt`} aria-label={`Grosor ${w}`}
+              <button key={w} onClick={() => store.setAnnotationLineWidth(w)} title={`${w} pt`} aria-label={`Grosor ${w}`} aria-pressed={lineWidthVal === w}
                 className={`h-7 w-7 rounded-md flex items-center justify-center transition-colors ${
                   lineWidthVal === w ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>
                 <span className="rounded-full bg-current block" style={{ width: Math.max(2, w * 1.6), height: Math.max(2, w * 1.6) }} />
               </button>
             ))}
-            <input type="number" min={0.5} max={24} step={0.5} value={lineWidthVal}
-              onChange={(e) => store.setAnnotationLineWidth(Math.min(24, Math.max(0.5, parseFloat(e.target.value) || 1)))}
+            <input type="number" min={0.5} max={WIDTH_MAX} step={0.5} value={lineWidthVal}
+              onChange={(e) => store.setAnnotationLineWidth(parseFloat(e.target.value) || 1)}
               className="w-12 border border-border rounded px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-accent"
               title="Grosor exacto (pt)" aria-label="Grosor exacto" />
           </Group>
@@ -139,7 +150,7 @@ export default function PropertiesBar() {
           <Group>
             <Label>Estilo</Label>
             {LINE_STYLES.map((ls) => (
-              <button key={ls.id} onClick={() => store.setAnnotationLineStyle(ls.id)} title={ls.label} aria-label={`Línea ${ls.label}`}
+              <button key={ls.id} onClick={() => store.setAnnotationLineStyle(ls.id)} title={ls.label} aria-label={`Línea ${ls.label}`} aria-pressed={lineStyleVal === ls.id}
                 className={`h-7 w-9 rounded-md flex items-center justify-center transition-colors ${
                   lineStyleVal === ls.id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>

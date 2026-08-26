@@ -1,5 +1,5 @@
 """Exportación a otros formatos: Word, Excel, PowerPoint, TXT, HTML."""
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -50,8 +50,10 @@ def export_pptx(doc_id: str, output_path: str = Query(...)):
     return SaveResult(success=True, path=output_path)
 
 @router.get("/export-word/{doc_id}")
-def export_word(doc_id: str):
-    result = pdf_service.export_word(doc_id)
+def export_word(doc_id: str, output_path: Optional[str] = Query(None)):
+    if output_path:
+        _validate_output_path(output_path, {'.docx'})
+    result = pdf_service.export_word(doc_id, output_path)
     if not result:
         raise HTTPException(status_code=400, detail="Export failed")
     return result

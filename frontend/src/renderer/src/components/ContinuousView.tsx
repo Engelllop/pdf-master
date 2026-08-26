@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { usePdfStore, type Annotation, type PdfDoc } from '../store/usePdfStore'
-import { renderPdfPage, revokePageUrl } from '../lib/pdfjs'
+import { renderPdfPage, revokePageUrl, isDeadDocError } from '../lib/pdfjs'
 import { countNumbers } from '../lib/counts'
 import { getAnnotationBounds, renderAnnotation } from './viewer/annotationRender'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
@@ -15,10 +15,13 @@ import ViewerEmptyState from './viewer/ViewerEmptyState'
 import { isFormTool, placeFormField } from '../lib/formFields'
 import { SEL } from '../lib/selectionChrome'
 import { useFileDrop } from '../hooks/useFileDrop'
+import { reopenDeadDoc } from '../lib/openDocument'
 import { X } from 'lucide-react'
 
 const GAP = 16
 const BUFFER_PX = 1200
+// Páginas que se conservan rasterizadas a cada lado de la ventana visible.
+const KEEP_MARGIN = 5
 
 const CLICK_TOOLS = new Set(['note', 'count', 'stamp', 'text'])
 const DRAG_TOOLS = new Set([
@@ -516,7 +519,13 @@ export default function ContinuousView() {
           if (cancelled) { revokePageUrl(r.url); return }
           pending.delete(i)
           setLoaded((prev) => prev[i] ? (revokePageUrl(r.url), prev) : { ...prev, [i]: r.url })
-        } catch { pending.delete(i); requestedRef.current.delete(i) }
+        } catch (err) {
+          pending.delete(i)
+          requestedRef.current.delete(i)
+          // El motor se reinició y el doc_id murió: sin esto el scroll continuo se
+          // quedaba con todas las páginas en blanco hasta reabrir a mano.
+          if (isDeadDocError(err)) { reopenDeadDoc(activeDoc.doc_id); return }
+        }
       }
     })()
     return () => {
@@ -524,6 +533,29 @@ export default function ContinuousView() {
       pending.forEach((i) => requestedRef.current.delete(i))
     }
   }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, zoom])
+
+  // Los bitmaps fuera de la ventana visible se liberan: recorrer un documento de 300
+  // páginas dejaba las 300 en RAM (cada una un blob de varios MB).
+  useEffect(() => {
+    setLoaded((prev) => {
+      const from = range.start - KEEP_MARGIN
+      const to = range.end + KEEP_MARGIN
+      const next: Record<number, string> = {}
+      let dropped = false
+      for (const [key, url] of Object.entries(prev)) {
+        const i = Number(key)
+        if (i >= from && i <= to) next[i] = url
+        else { revokePageUrl(url); requestedRef.current.delete(i); dropped = true }
+      }
+      return dropped ? next : prev
+    })
+  }, [range.start, range.end])
+
+  // Al desmontar (salir de scroll continuo, cerrar la pestaña) no quedaba nada que
+  // revocara los bitmaps vivos.
+  const loadedRef = useRef<Record<number, string>>({})
+  loadedRef.current = loaded
+  useEffect(() => () => { Object.values(loadedRef.current).forEach(revokePageUrl) }, [])
 
   if (!activeDoc) {
     return <ViewerEmptyState containerRef={containerRef} onDragOver={handleDragOver} onDrop={handleDrop} />

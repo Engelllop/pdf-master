@@ -82,7 +82,7 @@ export default function CountPanel({ activeDoc }: { activeDoc: PdfDoc }) {
         return (
           <div key={cat} className="border-b border-border">
             <div className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-hover">
-              <button onClick={() => setOpen((o) => ({ ...o, [cat]: !isOpen }))} className="text-muted shrink-0" aria-label="Desplegar">
+              <button onClick={() => setOpen((o) => ({ ...o, [cat]: !isOpen }))} className="text-muted shrink-0" aria-label={`${isOpen ? 'Contraer' : 'Desplegar'} la categoría ${cat}`}>
                 {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: color }} />
@@ -99,12 +99,12 @@ export default function CountPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                     <span className="text-micro text-muted shrink-0">Pág. {a.page + 1}</span>
                     <span className="text-micro text-fg truncate">{comment(a)}</span>
                   </button>
-                  <button onClick={() => { setEditing(a.id); setDraft(comment(a)) }} title="Comentar"
-                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-fg hover:bg-active">
+                  <button onClick={() => { setEditing(a.id); setDraft(comment(a)) }} title="Comentar" aria-label="Comentar esta marca"
+                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-active">
                     <MessageSquarePlus size={13} />
                   </button>
-                  <button onClick={() => deleteAnnotation(activeDoc.doc_id, a.id)} title="Eliminar marca"
-                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 hover:text-danger hover:bg-active">
+                  <button onClick={() => deleteAnnotation(activeDoc.doc_id, a.id)} title="Eliminar marca" aria-label="Eliminar esta marca de conteo"
+                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-active">
                     <Trash2 size={13} />
                   </button>
                 </div>

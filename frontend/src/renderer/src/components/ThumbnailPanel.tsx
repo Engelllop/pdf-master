@@ -297,17 +297,27 @@ export default function ThumbnailPanel() {
       </div>
 
       {tab === 'pages' && (
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-2 space-y-2 relative">
+        <div ref={scrollRef} role="listbox" aria-label="Páginas del documento"
+          className="flex-1 overflow-y-auto p-2 space-y-2 relative">
           {Array.from({ length: activeDoc.page_count }, (_, i) => {
             const isSelected = selectedPages.has(i)
             const isVisible = i >= visibleRange.start && i < visibleRange.end
             return (
-              <div key={i}>
+              // presentation: el envoltorio (que solo aloja la guía de arrastre) sale del
+              // árbol de accesibilidad para que la opción cuelgue del listbox.
+              <div key={i} role="presentation">
                 {dragOverIndex === i && dragIndex !== i && (
                   <div className="h-0.5 bg-accent rounded mb-1" />
                 )}
                 <div
                   data-page={i}
+                  role="option"
+                  aria-selected={activeDoc.currentPage === i}
+                  aria-label={`Página ${i + 1} de ${activeDoc.page_count}`}
+                  tabIndex={activeDoc.currentPage === i ? 0 : -1}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPage(activeDoc.doc_id, i) }
+                  }}
                   draggable
                   onDragStart={() => setDragIndex(i)}
                   onDragOver={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== i) setDragOverIndex(i) }}
@@ -331,7 +341,7 @@ export default function ThumbnailPanel() {
                   } ${dragIndex === i ? 'opacity-50' : ''}`}
                 >
                   {isVisible && activeDoc.thumbnails.has(i) ? (
-                    <img src={activeDoc.thumbnails.get(i)} alt={`Pagina ${i + 1}`} className="w-full h-auto rounded pointer-events-none" />
+                    <img src={activeDoc.thumbnails.get(i)} alt="" className="w-full h-auto rounded pointer-events-none" />
                   ) : (
                     <div className="skeleton w-full aspect-[3/4] flex items-center justify-center rounded">
                       <span className={`text-mini text-muted`}>{i + 1}</span>
@@ -410,7 +420,7 @@ export default function ThumbnailPanel() {
             bookmarks.filter((b) => b.docId === activeDoc.doc_id).map((b) => (
               <div key={b.id} className="flex items-center gap-1 group">
                 <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
-                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
+                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
               </div>
             ))
           ) : (

@@ -64,9 +64,18 @@ export default function TabStrip() {
             <ChevronLeft size={16} />
           </button>
         )}
-        <div className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar px-1 min-w-0" ref={tabStripRef} onWheel={onWheel}>
+        <div role="tablist" aria-label="Documentos abiertos"
+          className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar px-1 min-w-0" ref={tabStripRef} onWheel={onWheel}>
           {docs.map((doc, i) => (
+            // La pestaña era un div con onClick: para un lector de pantalla no existía
+            // ni se sabía cuál estaba activa. tabIndex rotativo, como en las miniaturas.
             <div key={doc.doc_id} data-tab-id={doc.doc_id} onClick={() => setActiveDoc(doc.doc_id)}
+              role="tab"
+              aria-selected={doc.doc_id === activeDocId}
+              tabIndex={doc.doc_id === activeDocId ? 0 : -1}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveDoc(doc.doc_id) }
+              }}
               draggable
               onDragStart={(e) => { setDragId(doc.doc_id); e.dataTransfer.effectAllowed = 'move' }}
               onDragEnd={() => setDragId(null)}
@@ -90,7 +99,8 @@ export default function TabStrip() {
               {doc.dirty && (
                 <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning dark:bg-warning" title="Cambios sin guardar" role="img" aria-label="Sin guardar" />
               )}
-              <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }} aria-label="Cerrar pestaña"
+              <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }}
+                aria-label={`Cerrar ${doc.file_name}`}
                 className={`shrink-0 p-0.5 rounded transition-opacity hover:bg-hover ${
                   doc.doc_id === activeDocId
                     ? 'opacity-100'

@@ -66,16 +66,21 @@ class DocumentsMixin:
         doc.close()
         return self.open_document(output_path)
 
-    def compress(self, doc_id: str, output_path: str) -> bool:
+    def compress(self, doc_id: str, output_path: str) -> Optional[dict]:
+        """None = falló. Devuelve los tamaños para poder decir cuánto se ahorró."""
         doc = self._acquire(doc_id)
         if not doc:
-            return False
+            return None
         try:
+            try:
+                size_before = os.path.getsize(self._doc_path(doc_id))
+            except OSError:
+                size_before = 0
             doc.save(output_path, garbage=4, deflate=True, clean=True)
-            return True
+            return {"size_before": size_before, "size_after": os.path.getsize(output_path)}
         except Exception:
             logger.exception("compress falló (doc %s → %s)", doc_id, output_path)
-            return False
+            return None
 
     def save(self, doc_id: str, output_path: Optional[str] = None, backup: bool = False) -> Optional[str]:
         with self._lock:

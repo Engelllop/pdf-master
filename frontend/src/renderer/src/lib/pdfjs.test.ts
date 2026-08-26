@@ -19,7 +19,7 @@ vi.mock('./api', () => ({
   apiFetch: vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })),
 }))
 
-import { renderPdfPage, renderPdfTile } from './pdfjs'
+import { renderPdfPage, renderPdfTile, isDeadDocError } from './pdfjs'
 
 beforeEach(() => {
   render.mockClear()
@@ -39,5 +39,17 @@ describe('render con PDF.js', () => {
     await renderPdfTile('doc-b', 1, 0, 0, 0, 50, 50, 2)
     expect(render).toHaveBeenCalledTimes(1)
     expect(render.mock.calls[0][0]).toMatchObject({ annotationMode: 0 })
+  })
+})
+
+// El disparador de "reabrir el documento" era `message.includes('404')`, y el propio
+// mensaje de error contenía siempre la palabra 404 — cualquier fallo del motor
+// (500, timeout) se trataba como doc_id muerto y provocaba una reapertura inútil.
+describe('detección de doc_id muerto', () => {
+  it('solo un 404 cuenta como documento muerto', () => {
+    expect(isDeadDocError(new Error('HTTP 404 en /pdf/raw'))).toBe(true)
+    expect(isDeadDocError(new Error('HTTP 500 en /pdf/raw'))).toBe(false)
+    expect(isDeadDocError(new Error('Failed to fetch'))).toBe(false)
+    expect(isDeadDocError('404')).toBe(false)
   })
 })

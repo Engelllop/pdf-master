@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, execSync, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync, unlink, unlinkSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, unlink, unlinkSync } from 'fs'
 import { tmpdir, userInfo } from 'os'
 
 // GPU & performance flags
@@ -43,10 +43,33 @@ const forceClosing = new Set<number>()
 // Safe logging to file (avoids EPIPE when no console is attached)
 const logDir = join(app.getPath('userData'), 'logs')
 const logFile = join(logDir, 'backend.log')
+// El log no se rotaba nunca: aquí va a parar también la consola del renderer, así que
+// tras meses de uso diario es un archivo de cientos de MB en %APPDATA% — y un log que
+// no se puede abrir no sirve para diagnosticar, que es justo para lo que está.
+const LOG_MAX_BYTES = 5 * 1024 * 1024
+const logFilePrevio = join(logDir, 'backend.1.log')
+let bytesDesdeUltimaRevision = 0
+
+function rotarLogSiHaceFalta(bytesNuevos: number): void {
+  // Se consulta el tamaño real cada 256 KB escritos, no en cada línea: un `statSync`
+  // por línea sería una llamada al sistema por cada mensaje del renderer.
+  bytesDesdeUltimaRevision += bytesNuevos
+  if (bytesDesdeUltimaRevision < 262144) return
+  bytesDesdeUltimaRevision = 0
+  try {
+    if (!existsSync(logFile) || statSync(logFile).size < LOG_MAX_BYTES) return
+    if (existsSync(logFilePrevio)) unlinkSync(logFilePrevio)
+    renameSync(logFile, logFilePrevio)
+  } catch {
+    // si no se puede rotar se sigue escribiendo: quedarse sin log es peor
+  }
+}
+
 function safeLog(level: string, msg: string): void {
   try {
     if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
     const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`
+    rotarLogSiHaceFalta(Buffer.byteLength(line))
     appendFileSync(logFile, line)
   } catch {
     // silently ignore logging failures
@@ -436,7 +459,9 @@ app.whenReady().then(async () => {
     let tempPath: string | null = null
     let printWin: BrowserWindow | null = null
     try {
-      const res = await engineFetch(`/pdf/raw/${docId}`)
+      // marks=1: con las marcas sin guardar dibujadas. Sin esto se imprimía el
+      // documento limpio y el usuario descubría en el papel que faltaban.
+      const res = await engineFetch(`/pdf/raw/${docId}?marks=1`)
       if (!res.ok) throw new Error(`raw fetch ${res.status}`)
       const buf = Buffer.from(await res.arrayBuffer())
       tempPath = join(tmpdir(), `pdfmaster-print-${Date.now()}.pdf`)
@@ -541,7 +566,9 @@ app.whenReady().then(async () => {
           } else tooBig = true
         }
       } else if (docId) {
-        const res = await engineFetch(`/pdf/raw/${docId}`)
+        // marks=1: con las marcas sin guardar dibujadas. Sin esto se imprimía el
+      // documento limpio y el usuario descubría en el papel que faltaban.
+      const res = await engineFetch(`/pdf/raw/${docId}?marks=1`)
         if (res.ok) {
           const buf = Buffer.from(await res.arrayBuffer())
           if (buf.length <= MAX_RAW) {

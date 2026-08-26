@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { revokePageUrl } from '../lib/blobUrl'
+import { measurementFor } from '../lib/measure'
 import { apiFetch } from '../lib/api'
 
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
@@ -359,6 +361,20 @@ export interface PdfState {
   setStampSize: (size: number) => void
 }
 
+// La pila de deshacer es única para toda la app, pero cada comando sabe de qué
+// documento es: Ctrl+Z tiene que deshacer en el que se está viendo. Antes se tomaba
+// siempre el último comando de la pila, así que marcabas en un plano, cambiabas de
+// pestaña y el deshacer se aplicaba al plano anterior — sin que se viera nada.
+function ultimoDelDoc(pila: Array<{ docId: string }>, docId: string | null): number {
+  if (!docId) return -1
+  for (let i = pila.length - 1; i >= 0; i--) if (pila[i].docId === docId) return i
+  return -1
+}
+
+function sinIndice<T>(pila: T[], idx: number): T[] {
+  return [...pila.slice(0, idx), ...pila.slice(idx + 1)]
+}
+
 const SCALES_KEY = 'pdfmaster_scales'
 const STROKE_KEY = 'pdfmaster_stroke'
 const STICKY_KEY = 'pdfmaster_sticky_tools'
@@ -404,6 +420,11 @@ function loadThemePreference(): ThemePreference {
 // Herramientas que siempre se sueltan tras un uso aunque el modo pegajoso esté
 // activo: piden un archivo, una calibración o una selección de área puntual.
 const ONE_SHOT_TOOLS = ['image', 'measure_calibrate', 'croparea', 'redactarea']
+// El conteo es una herramienta de repetición por definición: se va haciendo clic
+// elemento por elemento. Con la herramienta «de un solo uso» se soltaba tras cada
+// marca, así que contar 50 piezas pedía elegir la herramienta 50 veces. Se queda
+// puesta y sale con Esc, como en Bluebeam.
+const ALWAYS_STICKY_TOOLS = ['count']
 
 function loadStrokePrefs(): Record<string, unknown> {
   try { return JSON.parse(localStorage.getItem(STROKE_KEY) || '{}') } catch { return {} }
@@ -573,6 +594,9 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   closeDoc: (docId) => {
     // Notify backend to free memory
     apiFetch(`/pdf/close/${docId}`, { method: 'POST' }).catch(() => {})
+    // Los bitmaps de página son blob URLs: si no se revocan, cerrar la pestaña deja
+    // en RAM todas las páginas que el usuario llegó a ver.
+    get().docs.find((d) => d.doc_id === docId)?.pageCache.forEach((e) => revokePageUrl(e.image))
     set((state) => {
       const remaining = state.docs.filter((d) => d.doc_id !== docId)
       const newActiveId =
@@ -611,9 +635,11 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   // Tras un reinicio del motor el doc_id queda muerto (404). Reabrimos el archivo y
   // sustituimos el id conservando todo el estado local (anotaciones, página, zoom).
-  // El pageCache se vacía porque sus URLs contienen el id viejo; docVersion sube
-  // para bustear el caché de <img> del navegador.
+  // El pageCache se vacía porque sus bitmaps son de la sesión muerta del motor;
+  // se revocan sus blob URLs al hacerlo y docVersion sube para invalidar el
+  // documento cacheado en PDF.js.
   remapDocId: (oldId, newId) => {
+    get().docs.find((d) => d.doc_id === oldId)?.pageCache.forEach((e) => revokePageUrl(e.image))
     set((state) => ({
       docs: state.docs.map((d) =>
         d.doc_id === oldId ? { ...d, doc_id: newId, pageCache: new Map(), docVersion: d.docVersion + 1 } : d
@@ -685,10 +711,16 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       docs: state.docs.map((d) => {
         if (d.doc_id !== docId) return d
         const cache = new Map(d.pageCache)
+        const replaced = cache.get(getPageCacheKey(page))
+        if (replaced && replaced.image !== data.image) revokePageUrl(replaced.image)
         cache.set(getPageCacheKey(page), data)
         if (cache.size > 100) {
           const first = cache.keys().next().value
-          if (first !== undefined) cache.delete(first)
+          if (first !== undefined) {
+            // Los bitmaps son blob URLs: borrar la entrada no libera los MB del blob.
+            revokePageUrl(cache.get(first)?.image)
+            cache.delete(first)
+          }
         }
         return { ...d, pageCache: cache }
       }),
@@ -789,6 +821,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   releaseTool: () => {
     const { activeTool, stickyTools } = get()
     if (!activeTool) return
+    if (ALWAYS_STICKY_TOOLS.includes(activeTool)) return
     if (!stickyTools || ONE_SHOT_TOOLS.includes(activeTool)) set({ activeTool: null })
   },
   setActiveRibbon: (tab) => set({ activeRibbon: tab }),
@@ -1010,6 +1043,11 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   invalidatePageCache: (docId) => {
+    // Corre tras CADA operación de página (rotar, borrar, insertar, recortar, marca de
+    // agua, numerar, combinar, OCR…). Vaciar el Map no libera los blobs de los bitmaps:
+    // era la fuga más frecuente de todas, justo en la sesión de editar un juego de
+    // planos. Se revoca fuera del updater para no meter efectos en él.
+    get().docs.find((d) => d.doc_id === docId)?.pageCache.forEach((e) => revokePageUrl(e.image))
     set((state) => ({
       docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, pageCache: new Map() } : d)),
     }))
@@ -1119,9 +1157,21 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       const doc = state.docs.find((d) => d.doc_id === docId)
       if (doc) persistScale(doc.file_path, scale)
       return {
-        docs: state.docs.map((d) =>
-          d.doc_id === docId ? { ...d, measurementScale: scale } : d
-        ),
+        docs: state.docs.map((d) => {
+          if (d.doc_id !== docId) return d
+          // Las mediciones ya puestas se recalculan con la escala nueva. Antes se
+          // quedaban con el valor del momento en que se trazaron: medías, te dabas
+          // cuenta de que calibraste mal, recalibrabas… y las cotas viejas seguían
+          // mostrando los metros equivocados sin decir nada. El dato crudo (píxeles)
+          // se saca de la propia geometría, así que recalcular no pierde precisión.
+          // No apila undo a propósito: es dato derivado de la calibración, no una
+          // edición que el usuario haya hecho a las marcas.
+          const annotations = d.annotations.map((a) => {
+            const measurement = measurementFor(a, scale)
+            return measurement ? { ...a, measurement } : a
+          })
+          return { ...d, measurementScale: scale, annotations }
+        }),
       }
     })
   },
@@ -1247,11 +1297,14 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   undo: () => {
     const state = get()
-    if (state.undoStack.length === 0 || state.pageUndoBusy) return
-    const cmd = state.undoStack[state.undoStack.length - 1]
+    if (state.pageUndoBusy) return
+    const idx = ultimoDelDoc(state.undoStack, state.activeDocId)
+    if (idx < 0) return
+    const cmd = state.undoStack[idx]
+    const resto = sinIndice(state.undoStack, idx)
     if (isPageCommand(cmd)) {
       set({
-        undoStack: state.undoStack.slice(0, -1),
+        undoStack: resto,
         redoStack: [...state.redoStack, cmd],
         pageUndoBusy: true,
         selectedAnnotationId: null,
@@ -1262,7 +1315,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     }
     set({
       docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.before, dirty: true } : d)),
-      undoStack: state.undoStack.slice(0, -1),
+      undoStack: resto,
       redoStack: [...state.redoStack, cmd],
       selectedAnnotationId: null,
       selectedAnnotationIds: [],
@@ -1271,11 +1324,14 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   redo: () => {
     const state = get()
-    if (state.redoStack.length === 0 || state.pageUndoBusy) return
-    const cmd = state.redoStack[state.redoStack.length - 1]
+    if (state.pageUndoBusy) return
+    const idx = ultimoDelDoc(state.redoStack, state.activeDocId)
+    if (idx < 0) return
+    const cmd = state.redoStack[idx]
+    const resto = sinIndice(state.redoStack, idx)
     if (isPageCommand(cmd)) {
       set({
-        redoStack: state.redoStack.slice(0, -1),
+        redoStack: resto,
         undoStack: [...state.undoStack, cmd],
         pageUndoBusy: true,
         selectedAnnotationId: null,
@@ -1286,7 +1342,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     }
     set({
       docs: state.docs.map((d) => (d.doc_id === cmd.docId ? { ...d, annotations: cmd.after, dirty: true } : d)),
-      redoStack: state.redoStack.slice(0, -1),
+      redoStack: resto,
       undoStack: [...state.undoStack, cmd],
       selectedAnnotationId: null,
       selectedAnnotationIds: [],

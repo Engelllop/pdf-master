@@ -190,6 +190,11 @@ class AnnotationsMixin:
                         symbol=pm.get('symbol'),
                         fontSize=pm.get('fontSize') or da.get('fontSize'),
                         fontFamily=pm.get('fontFamily'),
+                        bold=pm.get('bold'),
+                        italic=pm.get('italic'),
+                        align=pm.get('align'),
+                        lineHeight=pm.get('lineHeight'),
+                        listStyle=pm.get('listStyle'),
                         lineWidth=pm.get('lineWidth'),
                         lineStyle=pm.get('lineStyle'),
                         opacity=pm.get('opacity'),
@@ -272,6 +277,15 @@ class AnnotationsMixin:
             "text": ann.text,
             "fontSize": ann.fontSize,
             "fontFamily": ann.fontFamily,
+            # Estilo del cuadro de texto. Sin esto, guardar y reabrir devolvía el texto
+            # en redonda, alineado a la izquierda y con interlineado por defecto: el
+            # FreeText nativo solo lleva tamaño, color y alineación, y las viñetas van
+            # como caracteres dentro del propio texto (al reeditar se duplicaban).
+            "bold": ann.bold,
+            "italic": ann.italic,
+            "align": ann.align,
+            "lineHeight": ann.lineHeight,
+            "listStyle": ann.listStyle,
             "x": ann.x,
             "y": ann.y,
             "width": ann.width,
@@ -570,7 +584,21 @@ class AnnotationsMixin:
 
         return True
 
-    def generate_markup_summary(self, doc_id: str, annotations: List[Annotation]) -> Optional[dict]:
+    # El resumen lo lee una persona: los identificadores internos del tipo de marca
+    # ("measure_distance", "strikethrough") no significan nada fuera del código.
+    TIPO_ES = {
+        'highlight': 'Resaltado', 'underline': 'Subrayado', 'strikethrough': 'Tachado',
+        'note': 'Nota', 'text': 'Cuadro de texto', 'callout': 'Llamada',
+        'rect': 'Rectángulo', 'circle': 'Círculo', 'line': 'Línea', 'arrow': 'Flecha',
+        'draw': 'Dibujo', 'signature': 'Firma', 'stamp': 'Sello', 'image': 'Imagen',
+        'check': 'Check', 'cross': 'Cruz', 'star': 'Estrella', 'cloud': 'Nube',
+        'polygon': 'Polígono', 'count': 'Conteo',
+        'measure_distance': 'Distancia', 'measure_area': 'Área',
+        'measure_perimeter': 'Perímetro',
+    }
+
+    def generate_markup_summary(self, doc_id: str, annotations: List[Annotation],
+                                output_path: Optional[str] = None) -> Optional[dict]:
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
@@ -590,7 +618,12 @@ class AnnotationsMixin:
                 page = out.new_page()
                 y = 60
             text = (ann.text or "").replace("\n", " ").strip()
-            line = f"{idx}.  Pág {ann.page + 1}  ·  {ann.type}" + (f"  ·  {text[:90]}" if text else "")
+            # La medida va en `measurement.label`, no en `text`: sin esto el resumen
+            # de un takeoff listaba las cotas SIN el valor medido.
+            if ann.measurement and ann.measurement.label:
+                text = f"{ann.measurement.label}" + (f"  ·  {text}" if text else "")
+            tipo = self.TIPO_ES.get(ann.type, ann.type)
+            line = f"{idx}.  Pág {ann.page + 1}  ·  {tipo}" + (f"  ·  {text[:90]}" if text else "")
             page.insert_text((50, y), line, fontsize=9, color=(0.1, 0.1, 0.1))
             y += 15
             # Segunda línea con los metadatos de revisión, solo si los hay.
@@ -615,10 +648,17 @@ class AnnotationsMixin:
                 page.insert_text((80, y), f"↳ {r.author or 'Sin autor'}: {reply_text[:80]}",
                                  fontsize=8, color=(0.45, 0.45, 0.45))
                 y += 13
+        filename = source_name.replace('.pdf', '') + "_marcas.pdf"
+        # Con output_path se escribe donde el usuario eligió, igual que el resto de las
+        # exportaciones. Sin él se devuelve en base64, como antes.
+        if output_path:
+            out.save(output_path)
+            out.close()
+            return {"filename": filename, "output_path": output_path}
         data = out.tobytes()
         out.close()
         return {
-            "filename": source_name.replace('.pdf', '') + "_marcas.pdf",
+            "filename": filename,
             "data_base64": base64.b64encode(data).decode('utf-8'),
         }
 

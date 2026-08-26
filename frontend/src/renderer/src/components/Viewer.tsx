@@ -57,13 +57,14 @@ export default function Viewer() {
   const svgRef = useRef<SVGSVGElement>(null)
   const svgRightRef = useRef<SVGSVGElement>(null)
 
-  // Rotación de anotaciones (compartida por ambas páginas)
-  const { setRotatingAnn } = useRotateAnnotation(svgRef, activeDocId)
-
   // Page loading
   const {
     loading, pageData, loadingRight, pageDataRight, pageText,
   } = usePageLoader()
+
+  // Rotación de anotaciones (compartida por ambas páginas). Va después del loader:
+  // necesita el ancho local de la página para des-escalar el ratón.
+  const { setRotatingAnn } = useRotateAnnotation(svgRef, activeDocId, pageData)
 
   // Pan & zoom
   const { isPanning, startPan, handleWheel } = usePanZoom(containerRef, activeDoc, pageData)
@@ -787,7 +788,7 @@ export default function Viewer() {
                     <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
                       className="px-2 py-1 text-mini rounded bg-danger text-white shadow hover:bg-danger">Eliminar</button>
                     <button onMouseDown={(e) => e.stopPropagation()}
-                      onClick={async () => { const p = await window.api.openFile([{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
+                      onClick={async () => { const p = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
                       className="px-2 py-1 text-mini rounded bg-fg text-toolbar shadow hover:opacity-90">Reemplazar</button>
                   </div>
                 )

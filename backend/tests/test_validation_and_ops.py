@@ -359,3 +359,70 @@ class TestReplaceCaseSensitive:
             assert r.json()["replaced"] == 2
         finally:
             client.post(f"/pdf/close/{doc_id}")
+
+
+class TestInsertarEnBlanco:
+    def test_la_pagina_en_blanco_copia_el_tamano_del_plano(self, client, open_doc):
+        """Era A4 fijo: insertar una hoja en un juego de planos metía una A4 diminuta
+        entre láminas grandes."""
+        doc_id = open_doc(pages=2, width=1000, height=700)["doc_id"]
+        assert client.post(f"/pdf/insert-blank/{doc_id}?index=1").status_code == 200
+
+        info = client.get(f"/pdf/info/{doc_id}").json()
+        assert info["page_count"] == 3
+        nueva = info["page_sizes"][1]
+        assert round(nueva["width"]) == 1000
+        assert round(nueva["height"]) == 700
+
+    def test_con_medidas_explicitas_manda_lo_pedido(self, client, open_doc):
+        doc_id = open_doc(pages=1, width=1000, height=700)["doc_id"]
+        assert client.post(f"/pdf/insert-blank/{doc_id}?index=1&width=595&height=842").status_code == 200
+        info = client.get(f"/pdf/info/{doc_id}").json()
+        assert round(info["page_sizes"][1]["width"]) == 595
+
+
+class TestExportarWord:
+    def test_con_output_path_escribe_el_docx(self, client, open_doc, tmp_path):
+        """Word era la única exportación que solo devolvía base64 y se bajaba sola a la
+        carpeta de descargas."""
+        doc_id = open_doc(pages=2)["doc_id"]
+        out = str(tmp_path / "salida.docx")
+        res = client.get(f"/pdf/export-word/{doc_id}?output_path={out}")
+        assert res.status_code == 200
+        assert res.json()["output_path"] == out
+        import os
+        assert os.path.getsize(out) > 0
+
+    def test_sin_output_path_sigue_devolviendo_base64(self, client, open_doc):
+        doc_id = open_doc(pages=1)["doc_id"]
+        res = client.get(f"/pdf/export-word/{doc_id}")
+        assert res.status_code == 200
+        assert res.json()["data_base64"]
+
+
+class TestGuardarPaginaComoImagen:
+    def test_escribe_el_png_donde_se_pide(self, client, open_doc, tmp_path):
+        doc_id = open_doc(pages=1)["doc_id"]
+        out = str(tmp_path / "pagina.png")
+        res = client.post(f"/pdf/save-page-image/{doc_id}/0?output_path={out}&zoom=1.0")
+        assert res.status_code == 200
+        with open(out, "rb") as fh:
+            assert fh.read(8) == b"\x89PNG\r\n\x1a\n"
+
+    def test_rechaza_una_extension_que_no_sea_png(self, client, open_doc, tmp_path):
+        doc_id = open_doc(pages=1)["doc_id"]
+        out = str(tmp_path / "pagina.exe")
+        assert client.post(f"/pdf/save-page-image/{doc_id}/0?output_path={out}").status_code == 422
+
+
+class TestComprimir:
+    def test_devuelve_los_tamanos_para_saber_si_valio_la_pena(self, client, open_doc, tmp_path):
+        doc_id = open_doc(pages=3)["doc_id"]
+        out = str(tmp_path / "comprimido.pdf")
+        res = client.post(f"/pdf/compress/{doc_id}?output_path={out}")
+        assert res.status_code == 200
+        cuerpo = res.json()
+        assert cuerpo["size_before"] > 0
+        assert cuerpo["size_after"] > 0
+        import os
+        assert cuerpo["size_after"] == os.path.getsize(out)

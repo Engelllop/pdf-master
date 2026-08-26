@@ -21,6 +21,14 @@ function save(list: SavedSignature[]) {
   try { localStorage.setItem(KEY, JSON.stringify(list.slice(-10))) } catch {}
 }
 
+/** Guarda una firma nueva. Vive aquí y no en el hook de dibujo para que la clave de
+ * localStorage y el tope estén en un solo sitio (estaban duplicados). */
+export function addSignature(name: string, points: SavedSignature['points']): SavedSignature {
+  const created = { id: crypto.randomUUID(), name, points }
+  save([...loadSignatures(), created])
+  return created
+}
+
 export function renameSignature(id: string, name: string): void {
   save(loadSignatures().map((s) => (s.id === id ? { ...s, name } : s)))
 }

@@ -71,10 +71,10 @@ def split_pdf(doc_id: str, req: SplitRequest, output_path: Optional[str] = Query
 @router.post("/compress/{doc_id}", response_model=SaveResult)
 def compress_pdf(doc_id: str, output_path: str = Query(...)):
     _validate_output_path(output_path, {'.pdf'})
-    ok = pdf_service.compress(doc_id, output_path)
-    if not ok:
+    sizes = pdf_service.compress(doc_id, output_path)
+    if not sizes:
         raise HTTPException(status_code=400, detail="Compress failed")
-    return SaveResult(success=True, path=output_path)
+    return SaveResult(success=True, path=output_path, **sizes)
 
 @router.post("/save/{doc_id}", response_model=SaveResult)
 def save_pdf(doc_id: str, output_path: Optional[str] = Query(None), backup: bool = Query(False)):

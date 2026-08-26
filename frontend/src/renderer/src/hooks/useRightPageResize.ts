@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStoreSlice } from './useStoreSlice'
+import { localPointFromClient } from '../lib/svgPoint'
 import { type ResizeCorner } from './useAnnotationDrag'
 
 type PageData = { width: number; height: number; originalWidth: number; originalHeight: number } | null
@@ -23,10 +24,9 @@ export function useRightPageResize(
   useEffect(() => {
     if (!resizingAnnRight) return
     const handleMove = (e: MouseEvent) => {
-      if (!svgRightRef.current) return
-      const rect = svgRightRef.current.getBoundingClientRect()
-      const svgX = e.clientX - rect.left
-      const svgY = e.clientY - rect.top
+      if (!svgRightRef.current || !pageDataRight) return
+      const { x: svgX, y: svgY } = localPointFromClient(
+        svgRightRef.current, e.clientX, e.clientY, pageDataRight.width)
       const deltaX = svgX - resizingAnnRight.startX
       const deltaY = svgY - resizingAnnRight.startY
 
@@ -34,8 +34,14 @@ export function useRightPageResize(
       if (!doc) return
       const ann = doc.annotations.find((a) => a.id === resizingAnnRight.id)
       if (!ann) return
-      const scaleX = pageDataRight ? pageDataRight.originalWidth / pageDataRight.width : 1
-      const scaleY = pageDataRight ? pageDataRight.originalHeight / pageDataRight.height : 1
+      const scaleX = pageDataRight.originalWidth / pageDataRight.width
+      const scaleY = pageDataRight.originalHeight / pageDataRight.height
+      // Igual que en la página izquierda: los valores de arranque vienen en px del
+      // bitmap y aquí se escribe en puntos PDF.
+      const startW = resizingAnnRight.startW * scaleX
+      const startH = resizingAnnRight.startH * scaleY
+      const startBoundsX = resizingAnnRight.startBoundsX * scaleX
+      const startBoundsY = resizingAnnRight.startBoundsY * scaleY
 
       let newX = ann.x
       let newY = ann.y
@@ -47,38 +53,38 @@ export function useRightPageResize(
 
       switch (resizingAnnRight.corner) {
         case 'se':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
-          newH = Math.max(10, resizingAnnRight.startH + dy)
+          newW = Math.max(10, startW + dx)
+          newH = Math.max(10, startH + dy)
           break
         case 'nw':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
+          newW = Math.max(10, startW - dx)
+          newH = Math.max(10, startH - dy)
+          newX = startBoundsX + (startW - newW)
+          newY = startBoundsY + (startH - newH)
           break
         case 'ne':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
+          newW = Math.max(10, startW + dx)
+          newH = Math.max(10, startH - dy)
+          newY = startBoundsY + (startH - newH)
           break
         case 'sw':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newH = Math.max(10, resizingAnnRight.startH + dy)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
+          newW = Math.max(10, startW - dx)
+          newH = Math.max(10, startH + dy)
+          newX = startBoundsX + (startW - newW)
           break
         case 'n':
-          newH = Math.max(10, resizingAnnRight.startH - dy)
-          newY = resizingAnnRight.startBoundsY + (resizingAnnRight.startH - newH)
+          newH = Math.max(10, startH - dy)
+          newY = startBoundsY + (startH - newH)
           break
         case 's':
-          newH = Math.max(10, resizingAnnRight.startH + dy)
+          newH = Math.max(10, startH + dy)
           break
         case 'e':
-          newW = Math.max(10, resizingAnnRight.startW + dx)
+          newW = Math.max(10, startW + dx)
           break
         case 'w':
-          newW = Math.max(10, resizingAnnRight.startW - dx)
-          newX = resizingAnnRight.startBoundsX + (resizingAnnRight.startW - newW)
+          newW = Math.max(10, startW - dx)
+          newX = startBoundsX + (startW - newW)
           break
       }
 

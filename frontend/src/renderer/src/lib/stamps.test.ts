@@ -20,4 +20,15 @@ describe('sellos personalizados', () => {
   it('sin autor configurado no añade el separador vacío', () => {
     expect(renderStampText({ id: 's', text: 'COPIA', color: '#000', withAuthor: true }, '')).toBe('COPIA')
   })
+
+  it('al llegar al tope, el sello nuevo entra y se cae el más viejo', () => {
+    for (let i = 0; i < 30; i++) addStamp({ text: `SELLO-${i}`, color: '#000000' })
+    const creado = addStamp({ text: 'EL-NUEVO', color: '#000000' })
+
+    const guardados = loadStamps()
+    expect(guardados).toHaveLength(30)
+    expect(guardados.map((s) => s.text)).toContain('EL-NUEVO')
+    expect(guardados.some((s) => s.id === creado.id)).toBe(true)
+    expect(guardados.map((s) => s.text)).not.toContain('SELLO-0')
+  })
 })

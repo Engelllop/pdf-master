@@ -160,3 +160,19 @@ class TestNativeAnnotsAndOutline:
         toc = client.get(f"/pdf/outline/{info['doc_id']}").json()
         titles = [i["title"] for i in toc]
         assert "Portada" in titles and "Detalle" in titles
+
+
+class TestEncabezadoYPie:
+    def test_un_encabezado_largo_no_se_sale_por_la_izquierda(self, client, open_doc):
+        """Se centra restando la mitad del ancho del texto: si el texto es más ancho
+        que la página, la x salía negativa y el principio quedaba fuera del papel."""
+        doc_id = open_doc(pages=1)["doc_id"]
+        largo = "PROYECTO " * 30
+        res = client.post(f"/pdf/header-footer/{doc_id}", json={"header": largo, "footer": "pie"})
+        assert res.status_code == 200
+
+        raw = client.get(f"/pdf/raw/{doc_id}")
+        pagina = fitz.open(stream=raw.content, filetype="pdf")[0]
+        bloques = [b for b in pagina.get_text("blocks") if "PROYECTO" in b[4]]
+        assert bloques, "no se escribió el encabezado"
+        assert min(b[0] for b in bloques) >= 0

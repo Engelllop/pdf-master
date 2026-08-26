@@ -205,6 +205,10 @@ class SaveResult(BaseModel):
     success: bool
     path: Optional[str] = None
     stash_id: Optional[str] = None
+    # Solo los rellena comprimir: sin decir cuánto se ahorró, el usuario no sabe si
+    # valió la pena (con un PDF ya optimizado, el resultado puede ser MAYOR).
+    size_before: Optional[int] = None
+    size_after: Optional[int] = None
 
 class TempFileResult(BaseModel):
     temp_path: str

@@ -179,8 +179,11 @@ export function renderAnnotation(
     }
     case 'underline': {
       const ulH = (ann.height || 16) * sy
+      // El margen va en puntos PDF (por eso el * sy): fijo en px de pantalla, a poco
+      // zoom se metía dentro del texto y a mucho quedaba pegado al borde.
+      const ulY = s.y + ulH - 2 * sy
       return (
-        <line key={key} x1={s.x} y1={s.y + ulH - 2} x2={s.x + ((ann.width || 0) * sx)} y2={s.y + ulH - 2}
+        <line key={key} x1={s.x} y1={ulY} x2={s.x + ((ann.width || 0) * sx)} y2={ulY}
           stroke={ann.color || '#3b82f6'} {...stroke} {...clickProps} />
       )
     }

@@ -17,10 +17,14 @@ export function getSpans(docId: string, page: number, version = 0): Promise<Span
   const key = `${docId}:${version}:${page}`
   let p = cache.get(key)
   if (!p) {
+    // Un fallo NO se cachea: si el motor se reinició (o hubo un corte puntual), la
+    // promesa vacía se quedaba pegada a esa clave y la página perdía la capa de texto
+    // para siempre, sin forma de recuperarla salvo cambiar de docVersion.
+    const olvidar = (): SpanItem[] => { if (cache.get(key) === p) cache.delete(key); return [] }
     p = apiFetch(`/pdf/spans/${docId}/${page}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.spans ?? [])
-      .catch(() => [])
+      .then((d) => (d?.spans as SpanItem[] | undefined) ?? olvidar())
+      .catch(olvidar)
     cache.set(key, p)
     if (cache.size > 60) {
       const first = cache.keys().next().value
