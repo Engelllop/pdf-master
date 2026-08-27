@@ -7,7 +7,7 @@ import json
 import os
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
@@ -61,6 +61,7 @@ class ReadMixin:
             walk(items, 1)
             doc.set_toc(toc)
             self._dirty[doc_id] = True
+        # Sin invalidar el cache de render: el índice/TOC no se dibuja en la página.
         return True
 
     def search_text(self, doc_id: str, query: str, limit: int = 500) -> List[dict]:
@@ -208,6 +209,17 @@ class ReadMixin:
             return True
         except Exception:
             return False
+
+    def pages_without_text(self, doc_id: str) -> Optional[List[int]]:
+        """Índices de las páginas sin capa de texto, o sea las que el OCR tendría que
+        procesar. Barato (no rasteriza nada) y sirve para poder decirle al usuario
+        cuánto va a tardar ANTES de arrancar: el OCR de un documento entero son
+        minutos con la app tomada y no se puede cancelar."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            return [i for i in range(len(doc)) if not doc.load_page(i).get_text().strip()]
 
     def make_searchable(self, doc_id: str, pages: Optional[List[int]] = None, stash: bool = True):
         """OCR scanned pages and embed an invisible text layer so they become

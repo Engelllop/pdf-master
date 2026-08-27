@@ -60,6 +60,14 @@ def compare_text(doc_id_a: str, doc_id_b: str):
         raise HTTPException(status_code=404, detail="Document not found")
     return result
 
+@router.get("/ocr-pending/{doc_id}")
+def ocr_pending(doc_id: str):
+    """Cuántas (y cuáles) páginas no tienen texto: lo que el OCR procesaría."""
+    pages = pdf_service.pages_without_text(doc_id)
+    if pages is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"pages": pages, "count": len(pages)}
+
 @router.get("/ocr-available")
 def ocr_available():
     return {"available": pdf_service.ocr_available()}

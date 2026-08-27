@@ -23,6 +23,24 @@ export function strokePropsFor(ann: Annotation, sx: number, defaultWidth = 2) {
   }
 }
 
+/** Grosor mínimo de la caja para poder interactuar: una cota horizontal o una línea
+ * vertical tienen un lado de 0 px, y con eso no hay dónde pinchar ni qué dibujar. */
+export const MIN_BOX_PX = 10
+
+/** Bounds inflados al mínimo interactivo, centrados sobre los reales. Los usan la caja
+ * de selección y el arrastre; el redimensionado sigue partiendo del tamaño real. */
+export function getInteractiveBounds(
+  ann: Annotation,
+  pageData: PageDims,
+  toScreen: ToScreen,
+): { x: number; y: number; w: number; h: number } | null {
+  const b = getAnnotationBounds(ann, pageData, toScreen)
+  if (!b) return null
+  const w = Math.max(b.w, MIN_BOX_PX)
+  const h = Math.max(b.h, MIN_BOX_PX)
+  return { x: b.x - (w - b.w) / 2, y: b.y - (h - b.h) / 2, w, h }
+}
+
 export function getAnnotationBounds(
   ann: Annotation,
   pageData: PageDims,
@@ -67,8 +85,13 @@ export function getAnnotationBounds(
       const s = toScreen(ann.x, ann.y)
       return { x: s.x, y: s.y, w: (ann.width || 200) * sx, h: (ann.height || 150) * sy }
     }
+    // `measure_distance` se dibuja igual que una línea (x/y + ancho/alto). No tenía
+    // caso acá: se devolvía null y con eso se caían la caja de selección, la barra de
+    // propiedades y el arrastre —que usa estos bounds para saber qué marca tocaste—.
+    // O sea que una cota puesta un poco corrida no se podía ni seleccionar ni mover.
     case 'arrow':
-    case 'line': {
+    case 'line':
+    case 'measure_distance': {
       const s1 = toScreen(ann.x, ann.y)
       const s2 = toScreen(ann.x + (ann.width || 0), ann.y + (ann.height || 0))
       return { x: Math.min(s1.x, s2.x), y: Math.min(s1.y, s2.y), w: Math.abs(s2.x - s1.x), h: Math.abs(s2.y - s1.y) }
@@ -79,8 +102,11 @@ export function getAnnotationBounds(
       const h = (ann.height || 0) * sy
       return { x: w < 0 ? s.x + w : s.x, y: h < 0 ? s.y + h : s.y, w: Math.abs(w), h: Math.abs(h) }
     }
+    // Lo mismo le pasaba a `measure_area` y a `signature`, que se dibujan por puntos.
     case 'draw':
     case 'polygon':
+    case 'measure_area':
+    case 'signature':
     case 'measure_perimeter': {
       if (!ann.points || ann.points.length === 0) return null
       const pts = ann.points.map((p) => toScreen(p.x, p.y))

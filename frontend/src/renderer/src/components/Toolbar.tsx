@@ -15,7 +15,8 @@ import {
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
   TextCursorInput, CircleDot, List, MoreHorizontal,
 } from 'lucide-react'
-import { type CountSymbol } from '../store/usePdfStore'
+import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
+import { correrCola } from '../lib/batchQueue'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
 import {
   DRAW_BASIC_IDS, DRAW_SHAPE_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
@@ -275,29 +276,44 @@ export default function Toolbar() {
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const handleSearch = async () => {
     if (!activeDoc || !searchInput.trim()) return
+    const { startProgress, updateProgress, endProgress, isCancelRequested } = usePdfStore.getState()
     if (searchAllDocs) {
-      // Secuencial a propósito: el motor tiene un solo worker de fitz
+      // Secuencial a propósito: el motor tiene un solo worker de fitz. Buscar en 60
+      // planos abiertos son minutos, y no había ni progreso ni forma de cancelar: la
+      // app se veía colgada. Se reusa la barra de las operaciones por lotes.
+      startProgress(`Buscar «${searchInput}»`, docs.length)
       let total = 0
-      let failed = 0
-      for (const d of docs) {
-        setSearchQuery(d.doc_id, searchInput)
-        try {
-          const res = await apiFetch(`/pdf/search/${d.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
-          if (res.ok) {
+      let resultado
+      try {
+        resultado = await correrCola(docs, async (d) => {
+          setSearchQuery(d.doc_id, searchInput)
+          try {
+            const res = await apiFetch(`/pdf/search/${d.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
+            if (!res.ok) return false
             const results = await res.json()
             setSearchResults(d.doc_id, results)
             total += results.length
             if (d.doc_id === activeDoc.doc_id && results.length > 0) setPage(d.doc_id, results[0].page)
-          } else {
-            failed += 1
-          }
-        } catch { failed += 1 }
+            return true
+          } catch { return false }
+        }, {
+          avanzar: (n, d) => updateProgress(n, d.file_name),
+          cancelado: isCancelRequested,
+        })
+      } finally {
+        endProgress()
       }
-      if (failed && total === 0) showToast('No se pudo buscar', 'error')
+      const { ok, hechos, cancelado } = resultado
+      if (ok === 0 && hechos > 0) showToast('No se pudo buscar', 'error')
+      else if (cancelado) showToast(`Cancelado: ${total} resultado(s) en ${hechos} de ${docs.length} documento(s)`, 'info')
       else showToast(`${total} resultado(s) en ${docs.length} documento(s)`, total > 0 ? 'success' : 'info')
       return
     }
     setSearchQuery(activeDoc.doc_id, searchInput)
+    // Un plano de 300 páginas también tarda: el motor recorre el documento entero
+    // cuando el texto no aparece. Progreso indeterminado, sin cancelar (es una sola
+    // llamada al motor y cortarla del lado del cliente no lo detiene).
+    startProgress(`Buscar «${searchInput}»`, 0, false)
     try {
       const res = await apiFetch(`/pdf/search/${activeDoc.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
       if (res.ok) {
@@ -307,7 +323,9 @@ export default function Toolbar() {
       } else {
         showToast('No se pudo buscar', 'error')
       }
-    } catch { showToast('No se pudo buscar', 'error') }
+    } catch { showToast('No se pudo buscar', 'error') } finally {
+      endProgress()
+    }
   }
 
   const handleSearchKey = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch() }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { reopenDeadDoc } from '../lib/openDocument'
 import { useStoreSlice } from './useStoreSlice'
+import { revokePageUrl } from '../lib/blobUrl'
 import { renderPdfPage, isDeadDocError } from '../lib/pdfjs'
 
 import { apiFetch } from '../lib/api'
@@ -146,9 +147,20 @@ export function usePageLoader() {
     const preloadZoom = Math.min(rz, 1.5)
     const preloadPage = (p: number) => {
       if (!activeDoc || p < 0 || p >= activeDoc.page_count) return
+      // En vista doble, `page + 1` ES el panel derecho: se estaba rasterizando dos
+      // veces la misma página (una de verdad y otra como «preload») y las dos
+      // carreras se pisaban en la misma entrada del cache.
+      if (store.viewMode === 'double' && p === rightPage) return
       if (getCachedPage(docId, p)) return
       fetchEntry(p, preloadZoom)
-        .then((entry) => cachePage(docId, p, entry))
+        .then((entry) => {
+          // El preload no pisa lo que ya hay: si mientras rasterizaba a baja resolución
+          // la página se rasterizó de verdad, `cachePage` revocaría el blob que se está
+          // MOSTRANDO y el visor se quedaba en blanco. El bitmap de más se descarta —y
+          // se libera, que borrar la referencia no libera los MB del blob.
+          if (getCachedPage(docId, p)) { revokePageUrl(entry.image); return }
+          cachePage(docId, p, entry)
+        })
         .catch(() => {})
     }
     preloadPage(page - 1)

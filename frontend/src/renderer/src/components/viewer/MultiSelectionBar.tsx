@@ -6,10 +6,10 @@ import { useStoreSlice } from '../../hooks/useStoreSlice'
  * marca concreta, porque la selección puede estar repartida por toda la página). */
 export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: string[] }) {
   const {
-    updateAnnotations, deleteAnnotations, copyAnnotations, pasteAnnotations,
+    updateAnnotationsUndoable, deleteAnnotations, copyAnnotations, pasteAnnotations,
     selectAnnotation, showToast, docs,
   } = useStoreSlice(
-    'updateAnnotations', 'deleteAnnotations', 'copyAnnotations', 'pasteAnnotations',
+    'updateAnnotationsUndoable', 'deleteAnnotations', 'copyAnnotations', 'pasteAnnotations',
     'selectAnnotation', 'showToast', 'docs',
   )
   const colorRef = useRef<HTMLInputElement>(null)
@@ -31,10 +31,10 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
       <button title="Color" onClick={() => colorRef.current?.click()}
         className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-110 transition-transform"
         style={{ background: 'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)' }}>
-        <input ref={colorRef} type="color" onChange={(e) => updateAnnotations(docId, ids, { color: e.target.value })}
+        <input ref={colorRef} type="color" onChange={(e) => updateAnnotationsUndoable(docId, ids, { color: e.target.value })}
           className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
       </button>
-      <button className={btn} onClick={() => updateAnnotations(docId, ids, { status: resolvedAll ? 'open' : 'resolved' })}>
+      <button className={btn} onClick={() => updateAnnotationsUndoable(docId, ids, { status: resolvedAll ? 'open' : 'resolved' })}>
         <Check size={13} /> {resolvedAll ? 'Reabrir' : 'Resolver'}
       </button>
       <button className={btn} onClick={duplicate}><Copy size={13} /> Duplicar</button>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { usePdfStore, type Annotation, type PdfDoc } from '../store/usePdfStore'
+import { esCapaOculta, usePdfStore, type Annotation, type PdfDoc } from '../store/usePdfStore'
 import { renderPdfPage, revokePageUrl, isDeadDocError } from '../lib/pdfjs'
 import { countNumbers } from '../lib/counts'
 import { getAnnotationBounds, renderAnnotation } from './viewer/annotationRender'
@@ -60,7 +60,7 @@ function ContinuousPageOverlay({
     'activeTool', 'annotationColor', 'annotationLineWidth', 'annotationLineStyle',
     'annotationOpacity', 'annotationFillColor', 'annotationFillOpacity',
     'addAnnotation', 'selectAnnotation', 'selectAnnotations', 'selectedAnnotationIds',
-    'selectedAnnotationId', 'updateAnnotation', 'deleteAnnotation',
+    'selectedAnnotationId', 'updateAnnotation', 'updateAnnotationUndoable', 'deleteAnnotation',
     'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory',
     'countSymbol', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
     'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
@@ -79,7 +79,8 @@ function ContinuousPageOverlay({
 
   const pd = { width, height, originalWidth: pw, originalHeight: ph }
   const toScreen = (x: number, y: number) => ({ x: (x / pw) * width, y: (y / ph) * height })
-  const anns = doc.annotations.filter((a) => a.page === page)
+  // Mismo criterio que el visor de página única: las capas apagadas no se dibujan.
+  const anns = doc.annotations.filter((a) => a.page === page && !esCapaOculta(doc, a))
   const countNums = useMemo(() => countNumbers(doc.annotations), [doc.annotations])
   const selected = new Set(store.selectedAnnotationIds)
   const selectedAnn = anns.find((a) => a.id === store.selectedAnnotationId)
@@ -370,7 +371,7 @@ function ContinuousPageOverlay({
           <TextBoxEditor x={s.x} y={s.y} zoom={zoom} wrapperWidth={width}
             value={editValue} onChange={setEditValue}
             onCommit={() => {
-              store.updateAnnotation(doc.doc_id, ann.id, { text: editValue })
+              store.updateAnnotationUndoable(doc.doc_id, ann.id, { text: editValue })
               setEditingId(null)
               setEditValue('')
             }}
@@ -382,10 +383,10 @@ function ContinuousPageOverlay({
               bold: !!ann.bold, italic: !!ann.italic, align: ann.align || 'left',
               lineHeight: ann.lineHeight || 1.3, listStyle: ann.listStyle || 'none',
             }}
-            onFontFamily={(f) => store.updateAnnotation(doc.doc_id, ann.id, { fontFamily: f })}
-            onFontSize={(v) => store.updateAnnotation(doc.doc_id, ann.id, { fontSize: v })}
-            onColor={(c) => store.updateAnnotation(doc.doc_id, ann.id, { color: c })}
-            onStyle={(s) => store.updateAnnotation(doc.doc_id, ann.id, s)} />
+            onFontFamily={(f) => store.updateAnnotationUndoable(doc.doc_id, ann.id, { fontFamily: f })}
+            onFontSize={(v) => store.updateAnnotationUndoable(doc.doc_id, ann.id, { fontSize: v })}
+            onColor={(c) => store.updateAnnotationUndoable(doc.doc_id, ann.id, { color: c })}
+            onStyle={(s) => store.updateAnnotationUndoable(doc.doc_id, ann.id, s)} />
         )
       })()}
     </div>

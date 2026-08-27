@@ -1,10 +1,17 @@
 import { apiFetch } from './api'
+import { correrCola } from './batchQueue'
 import {
   usePdfStore,
   type Annotation,
   type PageCommand,
   type PageOp,
 } from '../store/usePdfStore'
+
+/** `?pages=0&pages=1` — FastAPI lee el parámetro repetido como lista. Vacío o sin
+ * definir: el motor sella el documento entero, que es lo que hacía siempre. */
+function pagesQuery(pages?: number[]): string {
+  return pages?.length ? pages.map((p) => `&pages=${p}`).join('') : ''
+}
 
 export function remapAnnsAfterDelete(anns: Annotation[], deleted: number[]): Annotation[] {
   const del = new Set(deleted)
@@ -145,7 +152,7 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
     const res = await apiFetch(`/pdf/watermark/${docId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: op.text, stash: false }),
+      body: JSON.stringify({ text: op.text, stash: false, pages: op.pages ?? null }),
     })
     if (!res.ok) throw new Error('No se pudo aplicar la marca de agua')
     return
@@ -161,7 +168,7 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
     const res = await apiFetch(`/pdf/header-footer/${docId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ header: op.header, footer: op.footer, stash: false }),
+      body: JSON.stringify({ header: op.header, footer: op.footer, stash: false, pages: op.pages ?? null }),
     })
     if (!res.ok) throw new Error('No se pudo aplicar encabezado/pie')
     return
@@ -169,7 +176,7 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
 
   if (op.type === 'pageNumbers') {
     const res = await apiFetch(
-      `/pdf/page-numbers/${docId}?prefix=${encodeURIComponent(op.prefix)}&start=${op.start}&position=${op.position}&stash=false`,
+      `/pdf/page-numbers/${docId}?prefix=${encodeURIComponent(op.prefix)}&start=${op.start}&position=${op.position}&stash=false${pagesQuery(op.pages)}`,
       { method: 'POST' },
     )
     if (!res.ok) throw new Error('No se pudo numerar')
@@ -514,15 +521,15 @@ function commitDocStash(docId: string, stashId: string, forward: PageOp) {
   }, anns)
 }
 
-export async function watermarkUndoable(docId: string, text: string) {
+export async function watermarkUndoable(docId: string, text: string, pages?: number[]) {
   const res = await apiFetch(`/pdf/watermark/${docId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, stash: true }),
+    body: JSON.stringify({ text, stash: true, pages: pages ?? null }),
   })
   if (!res.ok) throw new Error('No se pudo aplicar la marca de agua')
   const data = await res.json()
-  commitDocStash(docId, data.stash_id || '', { type: 'watermark', text })
+  commitDocStash(docId, data.stash_id || '', { type: 'watermark', text, pages })
   await refreshDocLayout(docId)
 }
 
@@ -537,26 +544,26 @@ export async function redactMatchesUndoable(docId: string, query: string): Promi
   return data.redacted ?? 0
 }
 
-export async function headerFooterUndoable(docId: string, header?: string, footer?: string) {
+export async function headerFooterUndoable(docId: string, header?: string, footer?: string, pages?: number[]) {
   const res = await apiFetch(`/pdf/header-footer/${docId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ header, footer, stash: true }),
+    body: JSON.stringify({ header, footer, stash: true, pages: pages ?? null }),
   })
   if (!res.ok) throw new Error('No se pudo aplicar encabezado/pie')
   const data = await res.json()
-  commitDocStash(docId, data.stash_id || '', { type: 'headerFooter', header, footer })
+  commitDocStash(docId, data.stash_id || '', { type: 'headerFooter', header, footer, pages })
   await refreshDocLayout(docId)
 }
 
-export async function pageNumbersUndoable(docId: string, prefix: string, start: number, position: string) {
+export async function pageNumbersUndoable(docId: string, prefix: string, start: number, position: string, pages?: number[]) {
   const res = await apiFetch(
-    `/pdf/page-numbers/${docId}?prefix=${encodeURIComponent(prefix)}&start=${start}&position=${position}&stash=true`,
+    `/pdf/page-numbers/${docId}?prefix=${encodeURIComponent(prefix)}&start=${start}&position=${position}&stash=true${pagesQuery(pages)}`,
     { method: 'POST' },
   )
   if (!res.ok) throw new Error('No se pudo numerar')
   const data = await res.json()
-  commitDocStash(docId, data.stash_id || '', { type: 'pageNumbers', prefix, start, position })
+  commitDocStash(docId, data.stash_id || '', { type: 'pageNumbers', prefix, start, position, pages })
   await refreshDocLayout(docId)
 }
 
@@ -706,6 +713,41 @@ export async function makeSearchableUndoable(docId: string, page?: number): Prom
   return words
 }
 
+/**
+ * OCR de varias páginas, una llamada al motor por página, con progreso y cancelación
+ * y UN solo paso de deshacer.
+ *
+ * Antes era una sola petición para todo el documento: minutos con el motor tomado, sin
+ * progreso real y sin forma de cortar. El stash se toma una vez al principio (por eso
+ * existe `/pdf/stash-document`), así deshacer devuelve el documento como estaba —no
+ * una página a la vez— y lo ya reconocido se conserva si el usuario cancela.
+ */
+export async function makeSearchableAllUndoable(
+  docId: string,
+  paginas: number[],
+  ctrl: { avanzar: (procesadas: number, page: number) => void; cancelado: () => boolean },
+): Promise<{ palabras: number; hechas: number; cancelado: boolean }> {
+  const st = await apiFetch(`/pdf/stash-document/${docId}`, { method: 'POST' })
+  const stashId: string = st.ok ? (await st.json()).stash_id || '' : ''
+
+  let palabras = 0
+  const r = await correrCola(paginas, async (p) => {
+    const res = await apiFetch(`/pdf/make-searchable/${docId}?page=${p}&stash=false`, { method: 'POST' })
+    if (res.status === 503) throw new Error('Tesseract OCR no está instalado')
+    if (!res.ok) return false
+    palabras += (await res.json()).words ?? 0
+    return true
+  }, ctrl)
+
+  // Sin palabras nuevas no hubo cambio: apilar un paso que no deshace nada solo
+  // estorba (y se comería un hueco de la pila de 100).
+  if (palabras > 0 && stashId) {
+    commitDocStash(docId, stashId, { type: 'makeSearchable' })
+  }
+  await refreshDocLayout(docId)
+  return { palabras, hechas: r.hechos, cancelado: r.cancelado }
+}
+
 export async function formFieldUndoable(docId: string, page: number, fieldName: string, value: string) {
   const res = await apiFetch(`/pdf/widgets/${docId}/${page}`, {
     method: 'POST',
@@ -716,7 +758,14 @@ export async function formFieldUndoable(docId: string, page: number, fieldName: 
   const data = await res.json()
   if ((data.previous ?? '') === value) return
   if (data.stash_id) {
-    commitPageStash(docId, page, data.stash_id, { type: 'formField', page, fieldName, value })
+    const forward: PageOp = { type: 'formField', page, fieldName, value }
+    // Si el campo tenía widgets en varias páginas, el motor stashea el documento
+    // entero: restaurar una sola página dejaría las otras hojas con el valor nuevo.
+    // Se exige la bandera explícita en vez de deducirlo de que falte `stash_page`: un
+    // motor viejo no manda ninguno de los dos campos, y ahí el stash ES de una página
+    // — restaurarlo como documento lo dejaría de una hoja.
+    if (data.stash_scope === 'document') commitDocStash(docId, data.stash_id, forward)
+    else commitPageStash(docId, page, data.stash_id, forward)
   }
   const s = usePdfStore.getState()
   s.setDocDirty(docId, true)

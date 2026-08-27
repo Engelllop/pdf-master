@@ -4,8 +4,12 @@ import { randomBytes } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, execSync, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync, unlink, unlinkSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, unlink, unlinkSync } from 'fs'
 import { tmpdir, userInfo } from 'os'
+import { dirtyWindowCount, forgetWindow, isWindowDirty, setWindowDirty } from './dirtyWindows'
+import { createAiStreamParser } from './aiStream'
+import { avisoActualizacionLista, respuestaEsReiniciar } from './updatePrompt'
+import { debeBorrarse, esTempDeImpresion } from './tempSweep'
 
 // GPU & performance flags
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -36,7 +40,6 @@ const fileQueue: string[] = []
 let rendererReady = false
 // El renderer reporta si hay documentos con cambios sin guardar; al cerrar la
 // ventana se confirma antes de descartarlos (no hay autoguardado).
-let hasUnsavedChanges = false
 /** Ventanas que ya confirmaron la salida en el aviso propio de la app. */
 const forceClosing = new Set<number>()
 
@@ -98,20 +101,28 @@ function startBackend(): Promise<void> {
     }
 
     let exePath: string
+    // `child` es la referencia estable de ESTE proceso. Los handlers de abajo la usan
+    // en vez de `backendProcess`: al reiniciar el motor, el 'exit' del proceso viejo
+    // llegaba después de haber lanzado el nuevo y ponía `backendProcess = null`, así
+    // que al salir de la app ya no había a quién matar y quedaba un pdf-engine.exe
+    // huérfano ocupando el 8745 (en dev, donde no corre el taskkill, el arranque
+    // siguiente no podía abrir el puerto).
+    let child: ChildProcess
     if (is.dev) {
       exePath = join(process.cwd(), '..', 'backend', 'venv', 'Scripts', 'python.exe')
-      backendProcess = spawn(exePath, ['main.py'], {
+      child = spawn(exePath, ['main.py'], {
         cwd: join(process.cwd(), '..', 'backend'),
         windowsHide: true,
         env: backendEnv,
       })
     } else {
       exePath = join(process.resourcesPath, 'backend', 'pdf-engine.exe')
-      backendProcess = spawn(exePath, [], {
+      child = spawn(exePath, [], {
         windowsHide: true,
         env: backendEnv,
       })
     }
+    backendProcess = child
 
     let resolved = false
     const maybeResolve = () => {
@@ -121,7 +132,7 @@ function startBackend(): Promise<void> {
       }
     }
 
-    backendProcess.stdout?.on('data', (data) => {
+    child.stdout?.on('data', (data) => {
       const str = String(data)
       safeLog('INFO', str.trim())
       if (str.includes('Uvicorn running on')) {
@@ -129,24 +140,26 @@ function startBackend(): Promise<void> {
       }
     })
 
-    backendProcess.stderr?.on('data', (data) => {
+    child.stderr?.on('data', (data) => {
       safeLog('ERROR', String(data).trim())
     })
 
     // Prevent EPIPE crash when console is not attached
-    backendProcess.stdout?.on('error', () => {})
-    backendProcess.stderr?.on('error', () => {})
+    child.stdout?.on('error', () => {})
+    child.stderr?.on('error', () => {})
 
-    backendProcess.on('error', (err) => {
+    child.on('error', (err) => {
       if (!resolved) {
         resolved = true
         reject(err)
       }
     })
 
-    backendProcess.on('exit', (code) => {
+    child.on('exit', (code) => {
       safeLog('INFO', `Backend exited with code ${code}`)
-      backendProcess = null
+      // Solo si sigue siendo el proceso vigente: el 'exit' de uno ya reemplazado no
+      // puede borrar la referencia al que está corriendo.
+      if (backendProcess === child) backendProcess = null
       if (!resolved) {
         resolved = true
         reject(new Error(`Backend exited with code ${code}`))
@@ -183,6 +196,8 @@ function createWindow(): void {
   mainWindow = win
   win.on('focus', () => { mainWindow = win })
   win.on('closed', () => {
+    forgetWindow(win.id)
+    forceClosing.delete(win.id)
     if (mainWindow === win) mainWindow = BrowserWindow.getAllWindows()[0] || null
   })
 
@@ -193,7 +208,7 @@ function createWindow(): void {
   // El aviso de cambios sin guardar lo pinta la propia app (con opción de guardar):
   // el cuadro nativo de Windows desentonaba y solo ofrecía perder el trabajo.
   win.on('close', (e) => {
-    if (!hasUnsavedChanges || win.isDestroyed() || forceClosing.has(win.id)) return
+    if (!isWindowDirty(win.id) || win.isDestroyed() || forceClosing.has(win.id)) return
     e.preventDefault()
     win.webContents.send('app:confirm-close')
   })
@@ -241,6 +256,14 @@ function createWindow(): void {
   }
 }
 
+/** Los avisos del updater usaban `mainWindow!`: si el usuario cerró la ventana antes
+ * de que llegara la comprobación (10 s tras arrancar), Electron recibía null como
+ * padre y reventaba. Sin ventana, el cuadro va sin padre. */
+function mostrarAviso(opts: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  const padre = mainWindow && !mainWindow.isDestroyed() ? mainWindow : BrowserWindow.getAllWindows()[0]
+  return padre && !padre.isDestroyed() ? dialog.showMessageBox(padre, opts) : dialog.showMessageBox(opts)
+}
+
 function initAutoUpdater(): void {
   if (is.dev) {
     safeLog('INFO', '[Updater] Skipped in development')
@@ -253,7 +276,7 @@ function initAutoUpdater(): void {
 
   autoUpdater.on('update-available', (info) => {
     safeLog('INFO', '[Updater] Update available: ' + info.version)
-    dialog.showMessageBox(mainWindow!, {
+    mostrarAviso({
       type: 'info',
       title: 'Actualización disponible',
       message: `Hay una nueva versión de PDF Master (${info.version}).`,
@@ -277,18 +300,17 @@ function initAutoUpdater(): void {
 
   autoUpdater.on('update-downloaded', (info) => {
     safeLog('INFO', '[Updater] Update downloaded: ' + info.version)
-    dialog.showMessageBox(mainWindow!, {
-      type: 'info',
-      title: 'Actualización lista',
-      message: `La versión ${info.version} se ha descargado.`,
-      detail: '¿Deseas reiniciar la aplicación ahora para instalarla?',
-      buttons: ['Reiniciar ahora', 'Más tarde'],
-      defaultId: 0,
-      cancelId: 1,
-    }).then(({ response }) => {
-      if (response === 0) {
-        autoUpdater.quitAndInstall(false, true)
+    const sucias = dirtyWindowCount()
+    mostrarAviso(avisoActualizacionLista(info.version, sucias)).then(({ response }) => {
+      if (!respuestaEsReiniciar(response, sucias)) return
+      // `quitAndInstall` cierra las ventanas y sale. El guard de `close` haría
+      // preventDefault por los cambios sucios y la instalación quedaba a medias, así
+      // que la decisión ya tomada se marca como salida confirmada.
+      for (const w of BrowserWindow.getAllWindows()) {
+        forceClosing.add(w.id)
+        setWindowDirty(w.id, false)
       }
+      autoUpdater.quitAndInstall(false, true)
     })
   })
 
@@ -350,30 +372,66 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  ipcMain.handle('dialog:openFile', async (_event, filters?: Electron.FileFilter[]) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  // Los cuadros de archivo iban sin ventana padre: en Windows eso los deja
+  // NO modales, así que podían quedar detrás de la app (el usuario veía la app
+  // congelada esperando una respuesta a un cuadro que no encontraba) y con varias
+  // ventanas abiertas no se sabía cuál había pedido el archivo.
+  const ventanaDe = (event: Electron.IpcMainInvokeEvent): BrowserWindow | null =>
+    BrowserWindow.fromWebContents(event.sender)
+
+  ipcMain.handle('dialog:openFile', async (event, filters?: Electron.FileFilter[]) => {
+    const opts: Electron.OpenDialogOptions = {
       properties: ['openFile'],
       filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }]
-    })
+    }
+    const padre = ventanaDe(event)
+    const { canceled, filePaths } = padre
+      ? await dialog.showOpenDialog(padre, opts)
+      : await dialog.showOpenDialog(opts)
     if (canceled) return null
     return filePaths[0]
   })
 
-  ipcMain.handle('dialog:openFiles', async (_event, filters?: Electron.FileFilter[], defaultPath?: string) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
+  ipcMain.handle('dialog:openFiles', async (event, filters?: Electron.FileFilter[], defaultPath?: string) => {
+    const opts: Electron.OpenDialogOptions = {
       properties: ['openFile', 'multiSelections'],
       filters: filters || [{ name: 'PDF Files', extensions: ['pdf'] }],
       ...(defaultPath ? { defaultPath } : {})
-    })
+    }
+    const padre = ventanaDe(event)
+    const { canceled, filePaths } = padre
+      ? await dialog.showOpenDialog(padre, opts)
+      : await dialog.showOpenDialog(opts)
     if (canceled) return null
     return filePaths
   })
 
-  ipcMain.handle('dialog:saveFile', async (_event, options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
+  // Carpeta de destino para las operaciones por lotes. Sin esto, exportar 60 planos a
+  // Word se bajaba por 60 `data:` URLs a la carpeta de Descargas, sin decir a dónde
+  // iban ni poder elegir — el mismo camino que el resto de exportaciones ya había
+  // abandonado por poco fiable.
+  ipcMain.handle('dialog:chooseFolder', async (event, defaultPath?: string) => {
+    const opts: Electron.OpenDialogOptions = {
+      properties: ['openDirectory', 'createDirectory'],
+      ...(defaultPath ? { defaultPath } : {}),
+    }
+    const padre = ventanaDe(event)
+    const { canceled, filePaths } = padre
+      ? await dialog.showOpenDialog(padre, opts)
+      : await dialog.showOpenDialog(opts)
+    if (canceled || filePaths.length === 0) return null
+    return filePaths[0]
+  })
+
+  ipcMain.handle('dialog:saveFile', async (event, options?: { defaultPath?: string; filters?: Electron.FileFilter[] }) => {
+    const opts: Electron.SaveDialogOptions = {
       filters: options?.filters || [{ name: 'PDF Files', extensions: ['pdf'] }],
       defaultPath: options?.defaultPath || 'document.pdf'
-    })
+    }
+    const padre = ventanaDe(event)
+    const { canceled, filePath } = padre
+      ? await dialog.showSaveDialog(padre, opts)
+      : await dialog.showSaveDialog(opts)
     if (canceled || !filePath) return null
     return filePath
   })
@@ -432,15 +490,16 @@ app.whenReady().then(async () => {
     safeLog('RENDERER', String(message).slice(0, 2000))
   })
 
-  ipcMain.on('app:dirty-state', (_event, dirty: boolean) => {
-    hasUnsavedChanges = !!dirty
+  ipcMain.on('app:dirty-state', (event, dirty: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) setWindowDirty(win.id, !!dirty)
   })
 
   ipcMain.on('app:force-close', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
     forceClosing.add(win.id)
-    hasUnsavedChanges = false
+    setWindowDirty(win.id, false)
     win.close()
   })
 
@@ -629,30 +688,20 @@ app.whenReady().then(async () => {
       }
 
       const decoder = new TextDecoder()
-      let buffer = ''
+      const parse = createAiStreamParser()
+      let stopReason: string | null = null
       // @ts-ignore — resp.body es async-iterable en undici (Node 18+)
       for await (const chunk of resp.body) {
-        buffer += decoder.decode(chunk as Buffer, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          const t = line.trim()
-          if (!t.startsWith('data:')) continue
-          const data = t.slice(5).trim()
-          if (data === '[DONE]') continue
-          try {
-            const ev = JSON.parse(data)
-            if (ev.type === 'content_block_delta' && ev.delta?.type === 'text_delta') {
-              send('ai:chunk', { text: ev.delta.text })
-            } else if (ev.type === 'error') {
-              throw new Error(ev.error?.message || 'Error de la API')
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== 'Unexpected end of JSON input') throw e
-          }
+        for (const ev of parse(decoder.decode(chunk as Buffer, { stream: true }))) {
+          if (ev.kind === 'text') send('ai:chunk', { text: ev.text })
+          else if (ev.kind === 'stop') stopReason = ev.reason
+          else throw new Error(ev.message)
         }
       }
-      send('ai:done', {})
+      // La respuesta se corta al llegar a max_tokens y antes se avisaba igual que un
+      // final normal: el usuario veía la frase cortada a la mitad y parecía un fallo
+      // de la app. Ahora el panel lo dice.
+      send('ai:done', { truncated: stopReason === 'max_tokens' })
     } catch (err) {
       // El usuario detuvo la generación: cierre normal, no error.
       if (err instanceof Error && err.name === 'AbortError') {
@@ -681,6 +730,22 @@ app.whenReady().then(async () => {
       return null
     }
   })
+
+  // Los temporales de impresión que quedaron de sesiones muertas: son copias del
+  // documento CON las marcas sin guardar, así que no pueden vivir en %TEMP% para
+  // siempre. Se barre al arrancar, nunca mientras se imprime.
+  try {
+    const ahora = Date.now()
+    for (const nombre of readdirSync(tmpdir())) {
+      if (!esTempDeImpresion(nombre)) continue
+      const ruta = join(tmpdir(), nombre)
+      try {
+        if (debeBorrarse(nombre, statSync(ruta).mtimeMs, ahora)) unlinkSync(ruta)
+      } catch { /* en uso o sin permiso: se intenta el próximo arranque */ }
+    }
+  } catch (err) {
+    safeLog('ERROR', `[Main] No se pudo barrer los temporales: ${err}`)
+  }
 
   // Check for file arguments on launch
   process.argv

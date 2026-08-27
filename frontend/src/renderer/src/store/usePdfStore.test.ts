@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { usePdfStore, type Annotation } from './usePdfStore'
+import { usePdfStore, scaleForPage, type Annotation } from './usePdfStore'
 
 const initialState = usePdfStore.getState()
 
@@ -355,13 +355,36 @@ describe('pageCache', () => {
 })
 
 describe('escala de medición', () => {
+  const guardado = () => JSON.parse(localStorage.getItem('pdfmaster_scales')!)['C:\\planos\\plano-a.pdf']
+
   it('setMeasurementScale persiste por ruta y se borra al pasar null', () => {
     usePdfStore.getState().addDoc(docInfo())
     usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 3, unit: 'cm' })
-    expect(JSON.parse(localStorage.getItem('pdfmaster_scales')!)['C:\\planos\\plano-a.pdf'])
-      .toEqual({ pixelsPerUnit: 3, unit: 'cm' })
+    // Formato nuevo: escala del documento + las de páginas sueltas.
+    expect(guardado()).toEqual({ doc: { pixelsPerUnit: 3, unit: 'cm' }, pages: {} })
     usePdfStore.getState().setMeasurementScale('doc-1', null)
     expect(JSON.parse(localStorage.getItem('pdfmaster_scales')!)).toEqual({})
+  })
+
+  it('persiste también las escalas de página', () => {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 3 }))
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 3, unit: 'cm' })
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 9, unit: 'cm' }, 2)
+    expect(guardado()).toEqual({
+      doc: { pixelsPerUnit: 3, unit: 'cm' },
+      pages: { 2: { pixelsPerUnit: 9, unit: 'cm' } },
+    })
+  })
+
+  // Lo guardado por versiones anteriores es la escala suelta, sin envoltorio.
+  it('lee el formato viejo como escala del documento', () => {
+    localStorage.setItem('pdfmaster_scales', JSON.stringify({
+      'C:\\planos\\plano-a.pdf': { pixelsPerUnit: 7, unit: 'm' },
+    }))
+    usePdfStore.getState().addDoc(docInfo())
+    const doc = usePdfStore.getState().docs[0]
+    expect(doc.measurementScale).toEqual({ pixelsPerUnit: 7, unit: 'm' })
+    expect(doc.pageScales).toEqual({})
   })
 })
 
@@ -678,6 +701,356 @@ describe('bitmaps de página (blob URLs)', () => {
     expect(revoke).toHaveBeenCalledWith('blob:viejo')
     expect(usePdfStore.getState().docs[0].pageCache.size).toBe(0)
     revoke.mockRestore()
+  })
+})
+
+describe('miniaturas (blob URLs)', () => {
+  // El Map de miniaturas no tenía tope ni revocado: recorrer el panel de páginas de un
+  // documento de 300 páginas dejaba las 300 en RAM, y cerrar la pestaña no devolvía
+  // ninguna. Ahora son bitmaps locales de PDF.js (blob:), no base64 del motor.
+  it('desaloja la miniatura menos usada al pasar del tope y revoca su blob', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo({ page_count: 300 }))
+    for (let i = 0; i < 81; i++) usePdfStore.getState().addThumbnail('doc-1', i, `blob:t${i}`)
+    expect(revoke).toHaveBeenCalledWith('blob:t0')
+    expect(usePdfStore.getState().docs[0].thumbnails.size).toBe(80)
+    revoke.mockRestore()
+  })
+
+  it('volver a una miniatura la refresca: la evictada es otra', () => {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 300 }))
+    for (let i = 0; i < 80; i++) usePdfStore.getState().addThumbnail('doc-1', i, `blob:t${i}`)
+    usePdfStore.getState().addThumbnail('doc-1', 0, 'blob:t0') // la vuelve a ver
+    usePdfStore.getState().addThumbnail('doc-1', 80, 'blob:t80')
+    const thumbs = usePdfStore.getState().docs[0].thumbnails
+    expect(thumbs.has(0)).toBe(true)
+    expect(thumbs.has(1)).toBe(false)
+  })
+
+  it('revoca las miniaturas al cerrar el documento y al invalidarlas', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addThumbnail('doc-1', 0, 'blob:m0')
+    revoke.mockClear()
+    usePdfStore.getState().invalidateThumbnails('doc-1')
+    expect(revoke).toHaveBeenCalledWith('blob:m0')
+
+    usePdfStore.getState().addThumbnail('doc-1', 1, 'blob:m1')
+    revoke.mockClear()
+    usePdfStore.getState().closeDoc('doc-1')
+    expect(revoke).toHaveBeenCalledWith('blob:m1')
+    revoke.mockRestore()
+  })
+
+  it('revoca las miniaturas al remapear un doc_id muerto', () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addThumbnail('doc-1', 0, 'blob:mv')
+    revoke.mockClear()
+    usePdfStore.getState().remapDocId('doc-1', 'doc-2')
+    expect(revoke).toHaveBeenCalledWith('blob:mv')
+    expect(usePdfStore.getState().docs[0].thumbnails.size).toBe(0)
+    revoke.mockRestore()
+  })
+})
+
+// Arrastrar, redimensionar y girar una marca no apilaban ningún paso de deshacer:
+// Ctrl+Z después de mover una cota sin querer deshacía la acción ANTERIOR (podía ser
+// borrar una marca en otra página) y la cota se quedaba movida.
+describe('deshacer un gesto sobre una marca', () => {
+  const marca = (id: string, x: number, y: number): Annotation => ({ id, type: 'rect', page: 0, x, y })
+
+  it('mover y soltar deja UN paso, y Ctrl+Z devuelve la marca a su sitio', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', marca('m1', 10, 10))
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+
+    const antes = usePdfStore.getState().docs[0].annotations
+    // Un arrastre son decenas de mousemove: cada uno mueve, ninguno apila.
+    for (let i = 0; i < 30; i++) usePdfStore.getState().moveAnnotations('doc-1', ['m1'], 1, 2)
+    expect(usePdfStore.getState().undoStack.length).toBe(0)
+
+    usePdfStore.getState().commitAnnotationGesture('doc-1', antes)
+    expect(usePdfStore.getState().undoStack.length).toBe(1)
+
+    usePdfStore.getState().undo()
+    const m = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'm1')!
+    expect([m.x, m.y]).toEqual([10, 10])
+  })
+
+  it('rehacer vuelve a aplicar el gesto completo', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', marca('m1', 0, 0))
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+    const antes = usePdfStore.getState().docs[0].annotations
+    usePdfStore.getState().moveAnnotations('doc-1', ['m1'], 25, 40)
+    usePdfStore.getState().commitAnnotationGesture('doc-1', antes)
+
+    usePdfStore.getState().undo()
+    usePdfStore.getState().redo()
+    const m = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'm1')!
+    expect([m.x, m.y]).toEqual([25, 40])
+  })
+
+  it('un clic sin arrastre no apila nada', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', marca('m1', 5, 5))
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+    const antes = usePdfStore.getState().docs[0].annotations
+    usePdfStore.getState().commitAnnotationGesture('doc-1', antes)
+    expect(usePdfStore.getState().undoStack.length).toBe(0)
+  })
+
+  it('redimensionar (updateAnnotation) también se deshace', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', { ...marca('m1', 0, 0), width: 100, height: 50 })
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+    const antes = usePdfStore.getState().docs[0].annotations
+    usePdfStore.getState().updateAnnotation('doc-1', 'm1', { width: 300, height: 200 })
+    usePdfStore.getState().commitAnnotationGesture('doc-1', antes)
+    usePdfStore.getState().undo()
+    const m = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'm1')!
+    expect([m.width, m.height]).toEqual([100, 50])
+  })
+})
+
+// Ninguna edición del panel flotante (color, grosor, estilo, fuente, texto de una
+// nota) apilaba paso de deshacer. Y los controles continuos —el selector de color y
+// el deslizador de opacidad— disparan un evento por píxel: apilar uno por evento
+// habría llenado la pila y Ctrl+Z avanzaría de a un tono.
+describe('deshacer ediciones de propiedades', () => {
+  const marca = (id: string): Annotation => ({ id, type: 'rect', page: 0, x: 0, y: 0, color: '#000000' })
+
+  function conMarca() {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().addAnnotation('doc-1', marca('m1'))
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+  }
+
+  it('un ajuste continuo se fusiona en un solo paso y vuelve al valor original', () => {
+    conMarca()
+    for (const c of ['#111111', '#222222', '#333333', '#f0f0f0']) {
+      usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { color: c })
+    }
+    expect(usePdfStore.getState().undoStack.length).toBe(1)
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations[0].color).toBe('#000000')
+  })
+
+  it('propiedades distintas son pasos distintos', () => {
+    conMarca()
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { color: '#ff0000' })
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { lineWidth: 5 })
+    expect(usePdfStore.getState().undoStack.length).toBe(2)
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations[0].lineWidth).toBeUndefined()
+    expect(usePdfStore.getState().docs[0].annotations[0].color).toBe('#ff0000')
+  })
+
+  it('pasada la ventana de fusión, el mismo ajuste es un paso nuevo', () => {
+    vi.useFakeTimers()
+    try {
+      conMarca()
+      usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { color: '#111111' })
+      vi.advanceTimersByTime(2000)
+      usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { color: '#222222' })
+      expect(usePdfStore.getState().undoStack.length).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('editar el texto de una nota se deshace', () => {
+    conMarca()
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { text: 'revisar detalle' })
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations[0].text).toBeUndefined()
+  })
+
+  it('una edición invalida el rehacer pendiente', () => {
+    conMarca()
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { color: '#ff0000' })
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().redoStack.length).toBe(1)
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'm1', { lineWidth: 3 })
+    expect(usePdfStore.getState().redoStack.length).toBe(0)
+  })
+})
+
+// La barra de selección múltiple cambia color y estado de varias marcas a la vez y
+// tampoco apilaba paso de deshacer (y su selector de color es continuo, igual que el
+// de una sola marca).
+describe('deshacer ediciones de varias marcas a la vez', () => {
+  function conTresMarcas() {
+    usePdfStore.getState().addDoc(docInfo())
+    for (const id of ['m1', 'm2', 'm3']) {
+      usePdfStore.getState().addAnnotation('doc-1', { id, type: 'rect', page: 0, x: 0, y: 0, color: '#000000' })
+    }
+    usePdfStore.setState({ undoStack: [], redoStack: [] })
+  }
+
+  it('un paso para las tres, y Ctrl+Z devuelve el color a todas', () => {
+    conTresMarcas()
+    usePdfStore.getState().updateAnnotationsUndoable('doc-1', ['m1', 'm2', 'm3'], { color: '#ff0000' })
+    expect(usePdfStore.getState().undoStack.length).toBe(1)
+    expect(usePdfStore.getState().docs[0].annotations.every((a) => a.color === '#ff0000')).toBe(true)
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations.every((a) => a.color === '#000000')).toBe(true)
+  })
+
+  it('el arrastre del selector de color se fusiona en un paso', () => {
+    conTresMarcas()
+    for (const c of ['#111111', '#222222', '#333333']) {
+      usePdfStore.getState().updateAnnotationsUndoable('doc-1', ['m1', 'm2'], { color: c })
+    }
+    expect(usePdfStore.getState().undoStack.length).toBe(1)
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations[0].color).toBe('#000000')
+  })
+
+  it('otra selección no se fusiona con la anterior', () => {
+    conTresMarcas()
+    usePdfStore.getState().updateAnnotationsUndoable('doc-1', ['m1', 'm2'], { color: '#ff0000' })
+    usePdfStore.getState().updateAnnotationsUndoable('doc-1', ['m3'], { color: '#ff0000' })
+    expect(usePdfStore.getState().undoStack.length).toBe(2)
+  })
+
+  it('marcar como resuelta se puede deshacer', () => {
+    conTresMarcas()
+    usePdfStore.getState().setAnnotationStatus('doc-1', 'm1', 'resolved')
+    expect(usePdfStore.getState().docs[0].annotations[0].status).toBe('resolved')
+    usePdfStore.getState().undo()
+    expect(usePdfStore.getState().docs[0].annotations[0].status).toBeUndefined()
+  })
+})
+
+// Un juego de planos mezcla escalas (sitio 1:500, plantas 1:100, detalles 1:20). La
+// escala era del DOCUMENTO: calibrar en la lámina de detalles reescribía con esa
+// escala las cotas ya tomadas en las plantas, sin avisar.
+describe('escala por página', () => {
+  const cota = (id: string, page: number): Annotation => ({
+    id, type: 'measure_distance', page, x: 0, y: 0, width: 100, height: 0,
+  })
+
+  function conCotas() {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 3 }))
+    usePdfStore.getState().addAnnotation('doc-1', cota('c0', 0))
+    usePdfStore.getState().addAnnotation('doc-1', cota('c1', 1))
+  }
+  const valorDe = (id: string) =>
+    usePdfStore.getState().docs[0].annotations.find((a) => a.id === id)!.measurement!.value
+
+  it('calibrar una página no toca las cotas de las otras', () => {
+    conCotas()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    expect(valorDe('c0')).toBeCloseTo(10)
+    expect(valorDe('c1')).toBeCloseTo(10)
+
+    // La lámina 2 va a otra escala.
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 2, unit: 'm' }, 1)
+    expect(valorDe('c1')).toBeCloseTo(50)
+    expect(valorDe('c0')).toBeCloseTo(10)
+  })
+
+  it('recalibrar el documento respeta las páginas con escala propia', () => {
+    conCotas()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 2, unit: 'm' }, 1)
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 5, unit: 'm' })
+    expect(valorDe('c0')).toBeCloseTo(20)
+    expect(valorDe('c1')).toBeCloseTo(50)
+  })
+
+  it('la página sin escala propia usa la del documento', () => {
+    const doc = { measurementScale: { pixelsPerUnit: 10, unit: 'm' as const }, pageScales: { 1: { pixelsPerUnit: 2, unit: 'm' as const } } }
+    expect(scaleForPage(doc, 0)!.pixelsPerUnit).toBe(10)
+    expect(scaleForPage(doc, 1)!.pixelsPerUnit).toBe(2)
+    expect(scaleForPage(undefined, 0)).toBeNull()
+  })
+
+  it('quitar la escala de una página la devuelve a la del documento', () => {
+    conCotas()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 2, unit: 'm' }, 1)
+    usePdfStore.getState().setMeasurementScale('doc-1', null, 1)
+    expect(usePdfStore.getState().docs[0].pageScales?.[1]).toBeUndefined()
+    expect(valorDe('c1')).toBeCloseTo(10)
+  })
+})
+
+// La recuperación tras un reinicio del motor se apoya en `remapDocId`. La versión vieja
+// de la recuperación copiaba a mano página y marcas y perdía el resto; lo que ya cubría
+// el describe de arriba (marcas, página, zoom, undo) sigue igual, así que acá van solo
+// las dos que se perdían y no estaban cubiertas.
+describe('remapDocId conserva el sucio y las escalas por página', () => {
+  it('un documento con marcas sin guardar sigue marcado como sucio', () => {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 3 }))
+    usePdfStore.getState().addAnnotation('doc-1', ann({ page: 1 }))
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 4, unit: 'm' }, 1)
+    expect(usePdfStore.getState().docs[0].dirty).toBe(true)
+
+    usePdfStore.getState().remapDocId('doc-1', 'doc-nuevo')
+
+    const d = usePdfStore.getState().docs[0]
+    // Sin esto, tras un reinicio del motor un plano con marcas sin guardar dejaba de
+    // avisar al cerrar la app.
+    expect(d.dirty).toBe(true)
+    expect(d.pageScales?.[1]?.pixelsPerUnit).toBe(4)
+  })
+})
+
+// El rótulo de una cota se calculaba al crearla (y al recalibrar), pero no al
+// redimensionarla: estirabas la cota y seguía mostrando los metros de antes. Peor que
+// no mostrar nada, porque el número parece bueno.
+describe('redimensionar una medición recalcula su valor', () => {
+  function conCota() {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 2 }))
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    usePdfStore.getState().addAnnotation('doc-1', {
+      id: 'c1', type: 'measure_distance', page: 0, x: 0, y: 0, width: 100, height: 0,
+      measurement: { value: 10, unit: 'm', label: '10.00 m' },
+    })
+  }
+  const cota = () => usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'c1')!
+
+  it('al cambiar el ancho, el valor y el rótulo siguen la geometría', () => {
+    conCota()
+    usePdfStore.getState().updateAnnotation('doc-1', 'c1', { width: 250 })
+    expect(cota().measurement!.value).toBeCloseTo(25)
+    expect(cota().measurement!.label).toContain('25')
+  })
+
+  it('también por el camino deshacible', () => {
+    conCota()
+    usePdfStore.getState().updateAnnotationUndoable('doc-1', 'c1', { width: 50 })
+    expect(cota().measurement!.value).toBeCloseTo(5)
+  })
+
+  it('usa la escala de SU página', () => {
+    conCota()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 2, unit: 'm' }, 0)
+    usePdfStore.getState().updateAnnotation('doc-1', 'c1', { width: 100 })
+    expect(cota().measurement!.value).toBeCloseTo(50)
+  })
+
+  it('un cambio que no es geometría no toca la medición', () => {
+    conCota()
+    usePdfStore.getState().updateAnnotation('doc-1', 'c1', { color: '#00ff00' })
+    expect(cota().measurement!.label).toBe('10.00 m')
+  })
+
+  it('desplazar no cambia el valor (la geometría se mueve entera)', () => {
+    conCota()
+    usePdfStore.getState().moveAnnotations('doc-1', ['c1'], 40, 25)
+    expect(cota().measurement!.value).toBeCloseTo(10)
+  })
+
+  it('una marca que no es medición se queda como está', () => {
+    conCota()
+    usePdfStore.getState().addAnnotation('doc-1', { id: 'r1', type: 'rect', page: 0, x: 0, y: 0, width: 10, height: 10 })
+    usePdfStore.getState().updateAnnotation('doc-1', 'r1', { width: 999 })
+    const r = usePdfStore.getState().docs[0].annotations.find((a) => a.id === 'r1')!
+    expect(r.measurement).toBeUndefined()
   })
 })
 

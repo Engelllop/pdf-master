@@ -5,21 +5,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 // distintas: el texto se veía fantasmeado). Por eso el render va con
 // annotationMode 0 (AnnotationMode.DISABLE).
 const render = vi.fn((_opts: Record<string, unknown>) => ({ promise: Promise.resolve() }))
-const getViewport = vi.fn(() => ({ width: 100, height: 100 }))
+const getViewport = vi.fn((opts: { scale: number }) => ({ width: 612 * opts.scale, height: 792 * opts.scale }))
 
 vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: 'worker.js' }))
 vi.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: vi.fn(() => ({
     promise: Promise.resolve({ getPage: vi.fn(async () => ({ render, getViewport })) }),
-    destroy: vi.fn(),
+    destroy: vi.fn(async () => {}),
   })),
 }))
 vi.mock('./api', () => ({
   apiFetch: vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) })),
 }))
 
-import { renderPdfPage, renderPdfTile, isDeadDocError } from './pdfjs'
+import { renderPdfPage, renderPdfTile, renderPdfThumbnail, isDeadDocError } from './pdfjs'
 
 beforeEach(() => {
   render.mockClear()
@@ -51,5 +51,17 @@ describe('detección de doc_id muerto', () => {
     expect(isDeadDocError(new Error('HTTP 500 en /pdf/raw'))).toBe(false)
     expect(isDeadDocError(new Error('Failed to fetch'))).toBe(false)
     expect(isDeadDocError('404')).toBe(false)
+  })
+})
+
+// El tope de 300 px del lado largo lo aplicaba el motor (`_capped_scale`) y su test
+// vivía en pytest. Las miniaturas se rasterizan en local, así que la cobertura viaja
+// aquí: sin tope, un plano de 3024 pt daría una miniatura de varios megapíxeles.
+describe('miniaturas', () => {
+  it('topa el lado largo en 300 px', async () => {
+    getViewport.mockImplementationOnce(() => ({ width: 3024, height: 2160 }))
+    const r = await renderPdfThumbnail('plano', 1, 0)
+    expect(Math.max(r.width, r.height)).toBeLessThanOrEqual(300)
+    expect(r.originalWidth).toBe(3024)
   })
 })

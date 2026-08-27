@@ -88,3 +88,30 @@ describe('chrome de zoom', () => {
     expect(screen.queryByLabelText('Scroll continuo')).toBeNull()
   })
 })
+
+// Un juego de planos mezcla escalas. Si la lámina tiene su propia calibración hay que
+// verlo (recalibrar el documento no la toca) y poder devolverla a la del documento: el
+// store lo soportaba desde que existe la escala por página, pero no había forma de
+// llegar ahí desde la UI.
+describe('escala de medición por página', () => {
+  it('con la escala del documento no anuncia página ni ofrece quitarla', () => {
+    openDoc()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    render(<StatusBar />)
+    expect(screen.getByText(/1 m = 10.00 pt/)).toBeTruthy()
+    expect(screen.queryByText('usar la del documento')).toBeNull()
+  })
+
+  it('con escala propia lo dice y deja volver a la del documento', () => {
+    openDoc()
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
+    usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 2, unit: 'm' }, 0)
+    render(<StatusBar />)
+    expect(screen.getByText(/1 m = 2.00 pt/)).toBeTruthy()
+    expect(screen.getByText(/pág. 1/)).toBeTruthy()
+
+    fireEvent.click(screen.getByText('usar la del documento'))
+    expect(usePdfStore.getState().docs[0].pageScales?.[0]).toBeUndefined()
+    expect(screen.getByText(/1 m = 10.00 pt/)).toBeTruthy()
+  })
+})

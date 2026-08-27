@@ -20,11 +20,21 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
   wrapperHeight: number
   onClose: () => void
 }) {
-  const { updateAnnotation, deleteAnnotation, showToast } = useStoreSlice('updateAnnotation', 'deleteAnnotation', 'showToast')
+  const { updateAnnotationUndoable, deleteAnnotation, showToast } = useStoreSlice('updateAnnotationUndoable', 'deleteAnnotation', 'showToast')
   const [text, setText] = useState(ann.text || '')
   const ref = useRef<HTMLDivElement>(null)
   const textRef = useRef(text)
   textRef.current = text
+
+  // El borrador vive en el componente, pero el globo se reutiliza para otra nota si la
+  // selección cambia sin pasar por el cierre (el panel de revisión salta a otra marca,
+  // por ejemplo): `useState(ann.text)` solo corre al montar, así que la nota nueva
+  // aparecía con el texto de la anterior — y al guardar, ese texto se escribía en ella.
+  // Solo `ann.id` en las deps, a propósito: con `ann.text` dentro, cualquier cambio del
+  // texto en el store (el propio guardado, un deshacer) pisaría el borrador que el
+  // usuario está escribiendo.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setText(ann.text || '') }, [ann.id])
 
   const sx = pageData.width / pageData.originalWidth
   const sy = pageData.height / pageData.originalHeight
@@ -44,7 +54,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
   const commit = () => {
     const value = textRef.current.trim()
     if (!value) deleteAnnotation(docId, ann.id)
-    else if (value !== (ann.text || '')) updateAnnotation(docId, ann.id, { text: value })
+    else if (value !== (ann.text || '')) updateAnnotationUndoable(docId, ann.id, { text: value })
     onClose()
   }
 
@@ -78,7 +88,9 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
       document.removeEventListener('mousedown', onDown, true)
       document.removeEventListener('keydown', onKey, true)
     }
-  }, [ann.text, onClose, showToast])
+    // `ann.id` y `docId` van en las deps: si el globo pasa a otra nota, los listeners
+    // tienen que guardar (o borrar) la de ahora, no la de antes.
+  }, [ann.id, ann.text, docId, onClose, showToast])
 
   const tint = ann.color || '#fbbf24'
 

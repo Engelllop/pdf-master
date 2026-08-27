@@ -30,6 +30,20 @@ if (!globalThis.ResizeObserver) {
   } as unknown as typeof ResizeObserver
 }
 
+// jsdom no trae IntersectionObserver y el organizador de páginas rasteriza solo lo
+// que entra al viewport.
+if (!globalThis.IntersectionObserver) {
+  globalThis.IntersectionObserver = class {
+    observe = vi.fn()
+    unobserve = vi.fn()
+    disconnect = vi.fn()
+    takeRecords = vi.fn(() => [])
+    root = null
+    rootMargin = ''
+    thresholds = []
+  } as unknown as typeof IntersectionObserver
+}
+
 // jsdom no implementa la API de blob URLs y el store ahora revoca los bitmaps de
 // página al cerrar/reciclar documentos.
 if (!URL.createObjectURL) URL.createObjectURL = vi.fn(() => 'blob:test')

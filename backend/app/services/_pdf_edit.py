@@ -7,14 +7,25 @@ import json
 import os
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
-from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
+from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError, texto_estampable
 
 logger = logging.getLogger("pdfmaster")
 
 
 MARGEN = 18  # pt de margen mínimo desde el borde de la página
+
+
+def _paginas_objetivo(doc, pages: Optional[List[int]]) -> List[int]:
+    """Índices sobre los que aplicar la operación. `None` (o lista vacía) = todo el
+    documento, que es como se comportaban marca de agua, encabezado/pie y numeración
+    antes de que se pudiera elegir rango. Se descartan los índices fuera del
+    documento en vez de reventar: el rango lo escribe el usuario a mano."""
+    total = len(doc)
+    if not pages:
+        return list(range(total))
+    return sorted({i for i in pages if 0 <= i < total})
 
 
 class EditMixin:
@@ -23,14 +34,16 @@ class EditMixin:
     MAX_WATERMARK_TILES = 400
 
     def add_watermark(self, doc_id: str, text: str, color: str = "#888888", fontsize: float = 48,
-                      angle: int = 45, opacity: float = 0.3, tiled: bool = True, stash: bool = True) -> Optional[str]:
+                      angle: int = 45, opacity: float = 0.3, tiled: bool = True, stash: bool = True,
+                      pages: Optional[List[int]] = None) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc:
             return None
         stash_id = self._stash_document(doc) if stash else ''
         rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0.5, 0.5, 0.5)
+        text = texto_estampable(text)
         text_width = fitz.get_text_length(text, fontsize=fontsize)
-        for i in range(len(doc)):
+        for i in _paginas_objetivo(doc, pages):
             page = doc.load_page(i)
             rect = page.rect
             # insert_text(rotate=...) solo acepta múltiplos de 90; el diagonal de 45°
@@ -97,13 +110,15 @@ class EditMixin:
         self._invalidate_render_cache(doc_id)
         return stash_id
 
-    def add_header_footer(self, doc_id: str, header: Optional[str] = None, footer: Optional[str] = None, fontsize: float = 10, color: str = "#000000", stash: bool = True) -> Optional[str]:
+    def add_header_footer(self, doc_id: str, header: Optional[str] = None, footer: Optional[str] = None, fontsize: float = 10, color: str = "#000000", stash: bool = True, pages: Optional[List[int]] = None) -> Optional[str]:
         doc = self._acquire(doc_id)
         if not doc:
             return None
         stash_id = self._stash_document(doc) if stash else ''
         rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0, 0, 0)
-        for i in range(len(doc)):
+        header = texto_estampable(header) if header else header
+        footer = texto_estampable(footer) if footer else footer
+        for i in _paginas_objetivo(doc, pages):
             page = doc.load_page(i)
             rect = page.rect
             # Centrado, pero sin dejar que un texto más ancho que la página se salga
@@ -149,12 +164,21 @@ class EditMixin:
             # Redact old text
             for rect in rects:
                 page.add_redact_annot(rect)
-            page.apply_redactions()
+            # LINE_ART_NONE: `apply_redactions()` por omisión BORRA el dibujo vectorial
+            # que quede contenido en el rect (`REMOVE_IF_COVERED`). Acá el rect es el de
+            # un texto, no una redacción: reemplazar «REV B» por «REV C» en un plano se
+            # llevaba el achurado o el guion que hubiera detrás, en silencio. Las
+            # herramientas de redactar de verdad (área y buscar-y-redactar) sí lo borran.
+            # IMAGE_NONE por lo mismo: por omisión (`IMAGE_PIXELS`) se blanquean los
+            # píxeles de las imágenes que toca el rect, así que reemplazar un texto sobre
+            # un plano ESCANEADO dejaba un rectángulo blanco en el escaneo.
+            page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                                  images=fitz.PDF_REDACT_IMAGE_NONE)
             if rects:
                 size, fontname, rgb = self._style_at(page, rects[0])
                 font = self._base14_font(fontname)
                 page.insert_text(
-                    rects[0].tl, replace, fontsize=size, color=rgb,
+                    rects[0].tl, texto_estampable(replace), fontsize=size, color=rgb,
                     fontname=font, overlay=True,
                 )
                 count += len(rects)
@@ -195,6 +219,7 @@ class EditMixin:
             if subject is not None:
                 info.subject = subject or None
         self._dirty[doc_id] = True
+        # Sin invalidar el cache de render: los metadatos no se ven en la página.
         return previous
 
     @staticmethod
@@ -260,10 +285,14 @@ class EditMixin:
             except Exception:
                 pass
             page.add_redact_annot(rect, fill=fill)
-            page.apply_redactions()
+            # Editar un span redacta como paso intermedio: ni el dibujo contenido en
+            # el rect ni los píxeles del escaneo de abajo son suyos (ver replace_text).
+            page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                                  images=fitz.PDF_REDACT_IMAGE_NONE)
             c = color.lstrip("#")
             rgb = tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(c) == 6 else (0, 0, 0)
             fs = size or max(6.0, (y1 - y0) * 0.85)
+            text = texto_estampable(text)
             try:
                 page.insert_text((x0, y1 - max(1.0, (y1 - y0) * 0.2)), text,
                                  fontsize=fs, color=rgb, fontname=self._base14_font(font), overlay=True)
@@ -271,6 +300,10 @@ class EditMixin:
                 page.insert_text((x0, y1 - max(1.0, (y1 - y0) * 0.2)), text,
                                  fontsize=fs, color=rgb, overlay=True)
             self._dirty[doc_id] = True
+            # Editar un span cambia el bitmap: sin invalidar, `/pdf/page-image` (export
+            # a PNG, contexto «página actual» de la IA) y los puntos de snap seguían
+            # siendo los de antes de la edición.
+            self._invalidate_render_cache(doc_id)
             return stash_id
 
     def list_page_images(self, doc_id: str, page_num: int) -> List[dict]:
@@ -344,26 +377,39 @@ class EditMixin:
             old_rect = fitz.Rect(*old)
             page.add_redact_annot(old_rect, fill=self._sample_bg_color(page, old_rect))
             try:
-                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE)
+                # Igual que arriba: se está moviendo/rotando una imagen, no redactando.
+                # Borrar el dibujo que quedaba debajo de su posición vieja era destruir
+                # contenido del plano.
+                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE,
+                                      graphics=fitz.PDF_REDACT_LINE_ART_NONE)
             except Exception:
-                page.apply_redactions()
+                # Sin IMAGE_NONE a propósito: si el borrado de la imagen vieja falló,
+                # que al menos se blanqueen sus píxeles (lo que hace `IMAGE_PIXELS` por
+                # omisión). Si no, quedaría el fantasma de la imagen en su sitio viejo.
+                page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE)
             if not delete and img_bytes:
                 try:
                     page.insert_image(fitz.Rect(*(new or old)), stream=img_bytes)
                 except Exception:
                     return None
             self._dirty[doc_id] = True
+            # Mover, rotar o borrar una imagen también cambia el bitmap de la página.
+            self._invalidate_render_cache(doc_id)
             return stash_id
 
-    def add_page_numbers(self, doc_id: str, prefix: str = "", start: int = 1, position: str = "bottom", fontsize: float = 10, color: str = "#000000", stash: bool = True) -> Optional[str]:
+    def add_page_numbers(self, doc_id: str, prefix: str = "", start: int = 1, position: str = "bottom", fontsize: float = 10, color: str = "#000000", stash: bool = True, pages: Optional[List[int]] = None) -> Optional[str]:
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc:
                 return None
             stash_id = self._stash_document(doc) if stash else ''
             rgb = tuple(int(color.lstrip('#')[i:i+2], 16) / 255.0 for i in (0, 2, 4)) if color.startswith('#') else (0, 0, 0)
+            prefix = texto_estampable(prefix)
             n = len(doc)
-            for i in range(n):
+            # El número sigue siendo el de la página dentro del documento (`start + i`),
+            # no el de la enésima página sellada: al numerar solo las láminas 5-10, lo
+            # útil es que digan 5..10, no 1..6.
+            for i in _paginas_objetivo(doc, pages):
                 page = doc.load_page(i)
                 # Bates-style fixed-width number when a prefix is given, else "k / n"
                 label = f"{prefix}{start + i:06d}" if prefix else f"{start + i} / {n}"

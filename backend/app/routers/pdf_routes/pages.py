@@ -46,6 +46,16 @@ def restore_pages(doc_id: str, req: RestorePagesRequest):
         raise HTTPException(status_code=404, detail="No se pudo restaurar la página")
     return SaveResult(success=True)
 
+@router.post("/stash-document/{doc_id}", response_model=SaveResult)
+def stash_document(doc_id: str):
+    """Copia del documento vivo para deshacer, sin modificarlo. La pide el cliente
+    cuando parte una operación larga en varias llamadas (OCR página por página) y
+    quiere UN solo paso de deshacer."""
+    stash_id = pdf_service.stash_document_now(doc_id)
+    if not stash_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return SaveResult(success=True, stash_id=stash_id)
+
 @router.post("/restore-document/{doc_id}", response_model=SaveResult)
 def restore_document(doc_id: str, req: RestoreDocumentRequest):
     if not pdf_service.restore_document(doc_id, req.stash_id):

@@ -24,6 +24,25 @@ export interface MeasurementScale {
   unit: 'm' | 'cm' | 'mm' | 'ft' | 'in'
 }
 
+/** ¿La marca está en una capa apagada? La capa por defecto es «Marcas». */
+export function esCapaOculta(
+  doc: { hiddenLayers?: string[] } | undefined,
+  ann: { layer?: string },
+): boolean {
+  if (!doc?.hiddenLayers?.length) return false
+  return doc.hiddenLayers.includes(ann.layer || 'Marcas')
+}
+
+/** Escala vigente para una página: la suya si fue calibrada aparte, si no la del
+ * documento. */
+export function scaleForPage(
+  doc: { measurementScale?: MeasurementScale | null; pageScales?: Record<number, MeasurementScale> } | undefined,
+  page: number,
+): MeasurementScale | null {
+  if (!doc) return null
+  return doc.pageScales?.[page] ?? doc.measurementScale ?? null
+}
+
 export interface ViewerScroll {
   left: number
   top: number
@@ -125,7 +144,17 @@ export interface PdfDoc {
   dirty: boolean
   outline: OutlineItem[]
   measurementScale?: MeasurementScale | null
+  /** Capas de marcas ocultas EN PANTALLA. Ocultar es estado de vista: las marcas siguen
+   * en el documento y se guardan igual (si no, ocultar sería borrar sin decirlo). */
+  hiddenLayers?: string[]
+  /** Escalas propias de páginas sueltas. Un juego de láminas mezcla escalas (sitio
+   * 1:500, plantas 1:100, detalles 1:20) y calibrar en una no puede cambiar las cotas
+   * ya tomadas en las otras. Lo que no tenga entrada usa `measurementScale`. */
+  pageScales?: Record<number, MeasurementScale>
   docVersion: number
+  /** Fecha y tamaño del archivo cuando se abrió (o cuando se guardó por última vez).
+   * Sirve para detectar que alguien más lo tocó antes de sobrescribirlo. */
+  diskState?: { mtime: number; size: number }
   navHistory: number[]
   navHistoryIndex: number
 }
@@ -157,10 +186,10 @@ export type PageOp =
   | { type: 'crop'; page: number; top: number; right: number; bottom: number; left: number }
   | { type: 'redact'; page: number; x: number; y: number; width: number; height: number }
   | { type: 'restoreDoc'; stashId: string }
-  | { type: 'watermark'; text: string }
+  | { type: 'watermark'; text: string; pages?: number[] }
   | { type: 'redactMatches'; query: string }
-  | { type: 'headerFooter'; header?: string; footer?: string }
-  | { type: 'pageNumbers'; prefix: string; start: number; position: string }
+  | { type: 'headerFooter'; header?: string; footer?: string; pages?: number[] }
+  | { type: 'pageNumbers'; prefix: string; start: number; position: string; pages?: number[] }
   | { type: 'replaceText'; query: string; replace: string; page?: number; caseSensitive: boolean; replaceAll: boolean }
   | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string }
   | { type: 'transformImage'; page: number; xref: number; old: number[]; new?: number[]; delete?: boolean; replacePath?: string }
@@ -175,6 +204,12 @@ export interface AnnCommand {
   docId: string
   before: Annotation[]
   after: Annotation[]
+  /** `<annId>:<props>` del cambio, para fusionar ediciones consecutivas de la misma
+   * propiedad de la misma marca (arrastrar el selector de color o el deslizador de
+   * opacidad dispara un evento por píxel: sin fusionar, un solo ajuste llenaba la
+   * pila de deshacer y Ctrl+Z avanzaba de a un tono). */
+  mergeKey?: string
+  at?: number
 }
 
 export interface PageCommand {
@@ -317,7 +352,9 @@ export interface PdfState {
   deleteAnnotation: (docId: string, annId: string) => void
   setAnnotations: (docId: string, anns: Annotation[]) => void
   getAnnotationsForPage: (docId: string, page: number) => Annotation[]
+  toggleLayerVisible: (docId: string, layer: string) => void
   setDocDirty: (docId: string, dirty: boolean) => void
+  setDiskState: (docId: string, estado: { mtime: number; size: number }) => void
   updateDocPageCount: (docId: string, count: number) => void
   updateDocPageSizes: (docId: string, sizes: PageSize[]) => void
   setOutline: (docId: string, outline: OutlineItem[]) => void
@@ -325,7 +362,6 @@ export interface PdfState {
   selectedAnnotationIds: string[]
   selectAnnotations: (docId: string, ids: string[]) => void
   toggleAnnotationSelection: (docId: string, annId: string) => void
-  updateAnnotations: (docId: string, ids: string[], updates: Partial<Annotation>) => void
   moveAnnotations: (docId: string, ids: string[], dx: number, dy: number) => void
   deleteAnnotations: (docId: string, ids: string[]) => void
   annotationClipboard: Annotation[]
@@ -334,7 +370,10 @@ export interface PdfState {
   invalidatePageCache: (docId: string) => void
   invalidateThumbnails: (docId: string) => void
   updateAnnotation: (docId: string, annId: string, updates: Partial<Annotation>) => void
-  setMeasurementScale: (docId: string, scale: MeasurementScale | null) => void
+  commitAnnotationGesture: (docId: string, before: Annotation[]) => void
+  updateAnnotationUndoable: (docId: string, annId: string, updates: Partial<Annotation>) => void
+  updateAnnotationsUndoable: (docId: string, ids: string[], updates: Partial<Annotation>) => void
+  setMeasurementScale: (docId: string, scale: MeasurementScale | null, page?: number) => void
   incrementDocVersion: (docId: string) => void
   setTextFontFamily: (family: string) => void
   setTextFontSize: (size: number) => void
@@ -436,19 +475,29 @@ function persistStrokePrefs(partial: Record<string, unknown>) {
 
 const strokePrefs = loadStrokePrefs()
 
-function loadPersistedScale(filePath: string): MeasurementScale | null {
+interface EscalasGuardadas {
+  doc: MeasurementScale | null
+  pages: Record<number, MeasurementScale>
+}
+
+/** Lo guardado por versiones anteriores es la escala del documento suelta
+ * (`{pixelsPerUnit, unit}`); se lee como escala de documento. */
+function loadPersistedScales(filePath: string): EscalasGuardadas {
   try {
     const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
-    return map[filePath] || null
+    const entrada = map[filePath]
+    if (!entrada) return { doc: null, pages: {} }
+    if (typeof entrada.pixelsPerUnit === 'number') return { doc: entrada, pages: {} }
+    return { doc: entrada.doc ?? null, pages: entrada.pages || {} }
   } catch {
-    return null
+    return { doc: null, pages: {} }
   }
 }
 
-function persistScale(filePath: string, scale: MeasurementScale | null) {
+function persistScales(filePath: string, doc: MeasurementScale | null, pages: Record<number, MeasurementScale>) {
   try {
     const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
-    if (scale) map[filePath] = scale
+    if (doc || Object.keys(pages).length > 0) map[filePath] = { doc, pages }
     else delete map[filePath]
     localStorage.setItem(SCALES_KEY, JSON.stringify(map))
   } catch {
@@ -466,6 +515,7 @@ function createDocFromInfo(
   zoomMode: DefaultZoomMode = 'fit-page',
 ): PdfDoc {
   const sizes = info.page_sizes || []
+  const escalasGuardadas = loadPersistedScales(info.file_path)
   const first = sizes[0]
   const fitZoom = first
     ? zoomMode === 'actual'
@@ -489,16 +539,65 @@ function createDocFromInfo(
     annotations: [],
     dirty: false,
     outline: [],
-    measurementScale: loadPersistedScale(info.file_path),
+    measurementScale: escalasGuardadas.doc,
+    pageScales: escalasGuardadas.pages,
     docVersion: 0,
     navHistory: [],
     navHistoryIndex: -1,
   }
 }
 
+// Ventana para fusionar ediciones consecutivas en un solo paso de deshacer.
+const COALESCE_MS = 800
+
+const CLAVES_DE_GEOMETRIA = ['x', 'y', 'width', 'height', 'points'] as const
+
+/** Recalcula la medición cuando el cambio toca la geometría de una cota.
+ *
+ * Redimensionar una medición cambia su longitud, pero el rótulo se calculaba solo al
+ * crearla (y al recalibrar): estirabas una cota y seguía mostrando los metros de antes,
+ * que es peor que no mostrar nada. El valor sale de la propia geometría, así que se
+ * recalcula acá, en el único sitio por donde pasan todas las ediciones. */
+function conMedicionRecalculada(
+  ann: Annotation,
+  updates: Partial<Annotation>,
+  doc: { measurementScale?: MeasurementScale | null; pageScales?: Record<number, MeasurementScale> },
+): Annotation {
+  if (!ann.type.startsWith('measure_')) return ann
+  if (!CLAVES_DE_GEOMETRIA.some((k) => k in updates)) return ann
+  const measurement = measurementFor(ann, scaleForPage(doc, ann.page))
+  return measurement ? { ...ann, measurement } : ann
+}
+
+/** Apila un paso fusionando con el anterior si es la misma edición (misma(s) marca(s),
+ * mismas propiedades) dentro de la ventana. Al fusionar se conserva el `before` del
+ * primero: deshacer devuelve al valor que había antes de empezar a ajustar, no al del
+ * penúltimo evento del selector de color. */
+function apilarEdicion(
+  undoStack: UndoCommand[], docId: string, before: Annotation[], after: Annotation[],
+  mergeKey: string, ahora: number,
+): { undoStack: UndoCommand[]; redoStack: UndoCommand[] } {
+  const ultimo = undoStack[undoStack.length - 1]
+  const fusionable = !!ultimo && !isPageCommand(ultimo) && ultimo.docId === docId
+    && ultimo.mergeKey === mergeKey && ahora - (ultimo.at ?? 0) < COALESCE_MS
+  const entrada: AnnCommand = {
+    docId,
+    before: fusionable ? (ultimo as AnnCommand).before : before,
+    after,
+    mergeKey,
+    at: ahora,
+  }
+  const resto = fusionable ? undoStack.slice(0, -1) : undoStack
+  return { undoStack: [...resto, entrada].slice(-100), redoStack: [] }
+}
+
 function getPageCacheKey(page: number): string {
   return `${page}`
 }
+
+// Miniaturas vivas por documento. La ventana visible del panel de páginas es de ~30,
+// así que 80 cubre el ida y vuelta sin dejar crecer el Map con el documento entero.
+const MAX_THUMBS = 80
 
 export const usePdfStore = create<PdfState>((set, get) => ({
   docs: [],
@@ -596,7 +695,9 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     apiFetch(`/pdf/close/${docId}`, { method: 'POST' }).catch(() => {})
     // Los bitmaps de página son blob URLs: si no se revocan, cerrar la pestaña deja
     // en RAM todas las páginas que el usuario llegó a ver.
-    get().docs.find((d) => d.doc_id === docId)?.pageCache.forEach((e) => revokePageUrl(e.image))
+    const cerrado = get().docs.find((d) => d.doc_id === docId)
+    cerrado?.pageCache.forEach((e) => revokePageUrl(e.image))
+    cerrado?.thumbnails.forEach((url) => revokePageUrl(url))
     set((state) => {
       const remaining = state.docs.filter((d) => d.doc_id !== docId)
       const newActiveId =
@@ -639,10 +740,12 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   // se revocan sus blob URLs al hacerlo y docVersion sube para invalidar el
   // documento cacheado en PDF.js.
   remapDocId: (oldId, newId) => {
-    get().docs.find((d) => d.doc_id === oldId)?.pageCache.forEach((e) => revokePageUrl(e.image))
+    const muerto = get().docs.find((d) => d.doc_id === oldId)
+    muerto?.pageCache.forEach((e) => revokePageUrl(e.image))
+    muerto?.thumbnails.forEach((url) => revokePageUrl(url))
     set((state) => ({
       docs: state.docs.map((d) =>
-        d.doc_id === oldId ? { ...d, doc_id: newId, pageCache: new Map(), docVersion: d.docVersion + 1 } : d
+        d.doc_id === oldId ? { ...d, doc_id: newId, pageCache: new Map(), thumbnails: new Map(), docVersion: d.docVersion + 1 } : d
       ),
       activeDocId: state.activeDocId === oldId ? newId : state.activeDocId,
       compareDocId: state.compareDocId === oldId ? newId : state.compareDocId,
@@ -755,9 +858,25 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       docs: state.docs.map((d) => {
         if (d.doc_id !== docId) return d
         const thumbs = new Map(d.thumbnails)
+        thumbs.delete(page)
         thumbs.set(page, dataUrl)
+        // El Map no tenía tope: recorrer el panel de un documento de 300 páginas dejaba
+        // las 300 miniaturas en RAM para siempre. Se desalojan las menos usadas y se
+        // revoca su blob (la ventana visible del panel es de ~30 páginas).
+        while (thumbs.size > MAX_THUMBS) {
+          const oldest = thumbs.keys().next().value as number | undefined
+          if (oldest === undefined) break
+          revokePageUrl(thumbs.get(oldest))
+          thumbs.delete(oldest)
+        }
         return { ...d, thumbnails: thumbs }
       }),
+    }))
+  },
+
+  setDiskState: (docId, estado) => {
+    set((state) => ({
+      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, diskState: estado } : d)),
     }))
   },
 
@@ -915,7 +1034,29 @@ export const usePdfStore = create<PdfState>((set, get) => ({
 
   getAnnotationsForPage: (docId, page) => {
     const doc = get().docs.find((d) => d.doc_id === docId)
-    return doc ? doc.annotations.filter((a) => a.page === page) : []
+    if (!doc) return []
+    // Se filtra acá porque es la fuente del visor, del arrastre y del «seleccionar
+    // todo»: una marca oculta no se dibuja, no se puede agarrar y no entra en la
+    // selección. El guardado usa `doc.annotations`, así que sigue yendo al archivo.
+    return doc.annotations.filter((a) => a.page === page && !esCapaOculta(doc, a))
+  },
+
+  // Ocultar/mostrar una capa. Las capas existían como filtro del panel de revisión,
+  // pero en pantalla se dibujaban todas: en un plano con «Eléctrico» y «Estructura»
+  // encima, lo que uno quiere es apagar una.
+  toggleLayerVisible: (docId, layer) => {
+    set((state) => ({
+      docs: state.docs.map((d) => {
+        if (d.doc_id !== docId) return d
+        const ocultas = d.hiddenLayers || []
+        return {
+          ...d,
+          hiddenLayers: ocultas.includes(layer)
+            ? ocultas.filter((l) => l !== layer)
+            : [...ocultas, layer],
+        }
+      }),
+    }))
   },
 
   setDocDirty: (docId, dirty) => {
@@ -1054,6 +1195,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   invalidateThumbnails: (docId) => {
+    get().docs.find((d) => d.doc_id === docId)?.thumbnails.forEach((url) => revokePageUrl(url))
     set((state) => ({
       docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, thumbnails: new Map() } : d)),
     }))
@@ -1114,9 +1256,68 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       const annIndex = doc.annotations.findIndex((a) => a.id === annId)
       if (annIndex === -1) return state
       const newAnns = [...doc.annotations]
-      newAnns[annIndex] = { ...newAnns[annIndex], ...updates, modifiedAt: Date.now() }
+      newAnns[annIndex] = conMedicionRecalculada(
+        { ...newAnns[annIndex], ...updates, modifiedAt: Date.now() }, updates, doc,
+      )
       return {
         docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: newAnns, dirty: true } : d)),
+      }
+    })
+  },
+
+  // Arrastrar, redimensionar y girar una marca NO apilaban nada: Ctrl+Z después de
+  // mover una cota sin querer deshacía la acción anterior (borrar una marca en otra
+  // parte, por ejemplo) y la cota se quedaba movida. Un gesto = un paso: quien lo
+  // inicia guarda el `before` y al soltar el ratón se apila.
+  commitAnnotationGesture: (docId, before) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      // Misma referencia = el gesto no cambió nada (un clic sin arrastre).
+      if (!doc || doc.annotations === before) return state
+      return {
+        undoStack: [...state.undoStack, { docId, before, after: doc.annotations }].slice(-100),
+        redoStack: [],
+      }
+    })
+  },
+
+  // Cambios discretos de propiedades (color, grosor, estilo, fuente, texto de una
+  // nota…): el estado se actualiza Y se apila el paso, fusionando los consecutivos
+  // sobre la misma propiedad de la misma marca. Sin esto, ninguna edición desde el
+  // panel flotante se podía deshacer.
+  updateAnnotationUndoable: (docId, annId, updates) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (!doc) return state
+      const before = doc.annotations
+      const idx = before.findIndex((a) => a.id === annId)
+      if (idx === -1) return state
+      const ahora = Date.now()
+      const after = [...before]
+      after[idx] = conMedicionRecalculada({ ...after[idx], ...updates, modifiedAt: ahora }, updates, doc)
+      return {
+        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: after, dirty: true } : d)),
+        ...apilarEdicion(state.undoStack, docId, before, after,
+                         `${annId}:${Object.keys(updates).sort().join(',')}`, ahora),
+      }
+    })
+  },
+
+  // Igual para la selección múltiple: la barra de varias marcas cambia color y estado
+  // de todas a la vez y tampoco apilaba nada (y su selector de color también es un
+  // control continuo).
+  updateAnnotationsUndoable: (docId, ids, updates) => {
+    set((state) => {
+      const doc = state.docs.find((d) => d.doc_id === docId)
+      if (!doc || ids.length === 0) return state
+      const before = doc.annotations
+      const idSet = new Set(ids)
+      const ahora = Date.now()
+      const after = before.map((a) => (idSet.has(a.id) ? { ...a, ...updates, modifiedAt: ahora } : a))
+      const mergeKey = `${[...ids].sort().join('+')}:${Object.keys(updates).sort().join(',')}`
+      return {
+        docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: after, dirty: true } : d)),
+        ...apilarEdicion(state.undoStack, docId, before, after, mergeKey, ahora),
       }
     })
   },
@@ -1127,7 +1328,9 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   },
 
   setAnnotationStatus: (docId, annId, status) => {
-    get().updateAnnotation(docId, annId, { status })
+    // Marcar como resuelta cambia lo que se exporta en el resumen de revisión: un clic
+    // por error tiene que poder deshacerse.
+    get().updateAnnotationUndoable(docId, annId, { status })
   },
 
   addReply: (docId, annId, text) => {
@@ -1152,10 +1355,20 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     get().updateAnnotation(docId, annId, { replies: ann.replies.filter((r) => r.id !== replyId) })
   },
 
-  setMeasurementScale: (docId, scale) => {
+  // `page` calibra SOLO esa lámina; sin `page`, el documento entero. Un juego de planos
+  // mezcla escalas, y antes calibrar en la lámina de detalles reescribía con esa escala
+  // las cotas ya tomadas en las plantas — sin avisar.
+  setMeasurementScale: (docId, scale, page) => {
     set((state) => {
       const doc = state.docs.find((d) => d.doc_id === docId)
-      if (doc) persistScale(doc.file_path, scale)
+      if (!doc) return state
+      const pageScales = { ...(doc.pageScales || {}) }
+      if (page != null) {
+        if (scale) pageScales[page] = scale
+        else delete pageScales[page]
+      }
+      const docScale = page == null ? scale : doc.measurementScale ?? null
+      persistScales(doc.file_path, docScale, pageScales)
       return {
         docs: state.docs.map((d) => {
           if (d.doc_id !== docId) return d
@@ -1167,10 +1380,14 @@ export const usePdfStore = create<PdfState>((set, get) => ({
           // No apila undo a propósito: es dato derivado de la calibración, no una
           // edición que el usuario haya hecho a las marcas.
           const annotations = d.annotations.map((a) => {
-            const measurement = measurementFor(a, scale)
+            // Calibrar una lámina no toca las cotas de las demás; calibrar el documento
+            // no toca las de las láminas que tienen escala propia.
+            const afectada = page != null ? a.page === page : pageScales[a.page] === undefined
+            if (!afectada) return a
+            const measurement = measurementFor(a, scaleForPage({ measurementScale: docScale, pageScales }, a.page))
             return measurement ? { ...a, measurement } : a
           })
-          return { ...d, measurementScale: scale, annotations }
+          return { ...d, measurementScale: docScale, pageScales, annotations }
         }),
       }
     })
@@ -1203,17 +1420,6 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     set({ selectedAnnotationIds: next, selectedAnnotationId: next.length ? next[next.length - 1] : null })
   },
 
-  updateAnnotations: (docId, ids, updates) => {
-    set((state) => {
-      const doc = state.docs.find((d) => d.doc_id === docId)
-      if (!doc || ids.length === 0) return state
-      const idSet = new Set(ids)
-      const now = Date.now()
-      const newAnns = doc.annotations.map((a) => (idSet.has(a.id) ? { ...a, ...updates, modifiedAt: now } : a))
-      return { docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, annotations: newAnns, dirty: true } : d)) }
-    })
-  },
-
   // Desplaza también `points` (dibujos, polígonos, mediciones de área): mover solo
   // x/y dejaba esas marcas clavadas en su sitio.
   moveAnnotations: (docId, ids, dx, dy) => {
@@ -1222,6 +1428,8 @@ export const usePdfStore = create<PdfState>((set, get) => ({
       if (!doc || ids.length === 0 || (dx === 0 && dy === 0)) return state
       const idSet = new Set(ids)
       const now = Date.now()
+      // Desplazar no cambia la longitud ni el área, así que no hace falta recalcular
+      // la medición: la geometría se mueve entera.
       const newAnns = doc.annotations.map((a) => (idSet.has(a.id)
         ? {
             ...a,

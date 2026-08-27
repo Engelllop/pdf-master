@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useAnnotationDraw } from './useAnnotationDraw'
 import { usePdfStore } from '../store/usePdfStore'
@@ -251,5 +251,37 @@ describe('sin herramienta activa', () => {
     act(() => { handled = result.current.handleMouseDown({ x: 10, y: 10 }) })
     expect(handled).toBe(false)
     expect(result.current.drawing).toBe(false)
+  })
+})
+
+// Los puntos de snap son los vértices del dibujo de la página. Rotarla, recortarla,
+// editar un texto o mover una imagen los cambia — el motor invalida su cache — pero el
+// cliente solo los volvía a pedir al cambiar de documento o de página: se seguía
+// enganchando a los vértices de antes de la edición.
+describe('puntos de snap tras editar la página', () => {
+  function conFetch() {
+    const llamadas: string[] = []
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      llamadas.push(String(url))
+      return Promise.resolve({ ok: true, json: async () => ({ points: [{ x: 1, y: 1 }] }) } as unknown as Response)
+    }))
+    Object.assign(window, { api: { ...window.api, getApiToken: async () => '' } })
+    return llamadas
+  }
+
+  it('se vuelven a pedir cuando sube docVersion', async () => {
+    const llamadas = conFetch()
+    const doc = openDoc()
+    const { rerender } = renderHook(({ d }) => useAnnotationDraw(d, pageData), { initialProps: { d: doc } })
+    await act(async () => { usePdfStore.getState().setActiveTool('measure_distance') })
+    const antes = llamadas.filter((u) => u.includes('/pdf/snap-points/')).length
+    expect(antes).toBeGreaterThan(0)
+
+    await act(async () => {
+      rerender({ d: { ...doc, docVersion: doc.docVersion + 1 } })
+    })
+    const despues = llamadas.filter((u) => u.includes('/pdf/snap-points/')).length
+    expect(despues).toBe(antes + 1)
+    vi.unstubAllGlobals()
   })
 })

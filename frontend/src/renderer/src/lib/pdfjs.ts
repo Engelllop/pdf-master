@@ -8,44 +8,78 @@ import { apiFetch } from './api'
 // Caché de documentos PDF.js por `${docId}:${version}`. Una versión nueva (rotar,
 // borrar página, etc.) invalida la anterior y se destruye para liberar memoria.
 const MAX_DOCS = 3
+
+interface DocEntry {
+  task: pdfjsLib.PDFDocumentLoadingTask | null
+  promise: Promise<pdfjsLib.PDFDocumentProxy>
+  destroyed: boolean
+}
+
 // pdfjs 5+ quitó PDFDocumentProxy.destroy(): se destruye el loading task.
-const docCache = new Map<string, { task: pdfjsLib.PDFDocumentLoadingTask; promise: Promise<pdfjsLib.PDFDocumentProxy> }>()
+const docCache = new Map<string, DocEntry>()
 
 function destroyEntry(key: string): void {
   const entry = docCache.get(key)
-  if (entry) {
-    entry.promise.then(() => entry.task.destroy()).catch(() => {})
-    docCache.delete(key)
-  }
+  if (!entry) return
+  docCache.delete(key)
+  entry.destroyed = true
+  // Si el task ya existe se destruye aquí. Si el `/pdf/raw` sigue en vuelo no hay nada
+  // que destruir todavía: la bandera hace que el propio cargador lo destruya en cuanto
+  // lo cree (antes se colgaba un `.then` del promise, que nunca corría si el parseo
+  // fallaba — el task quedaba vivo con su worker para siempre).
+  if (entry.task) entry.task.destroy().catch(() => {})
 }
 
 export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib.PDFDocumentProxy> {
   const key = `${docId}:${version}`
   const existing = docCache.get(key)
-  if (existing) return existing.promise
+  if (existing) {
+    // Reinserta para que el Map quede en orden de USO, no de inserción: con MAX_DOCS 3
+    // y 4+ pestañas, volver a una vieja evictaba justo la que se acababa de pedir y
+    // había que redescargar y reparsear su ArrayBuffer entero.
+    docCache.delete(key)
+    docCache.set(key, existing)
+    return existing.promise
+  }
 
   // Invalida versiones anteriores del mismo doc
   for (const k of [...docCache.keys()]) {
     if (k.startsWith(`${docId}:`)) destroyEntry(k)
   }
 
-  const entry = { task: null as unknown as pdfjsLib.PDFDocumentLoadingTask, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy> }
+  const entry: DocEntry = { task: null, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy>, destroyed: false }
   entry.promise = (async () => {
     const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
     if (!res.ok) throw new Error(`HTTP ${res.status} en /pdf/raw`)
     const data = await res.arrayBuffer()
-    entry.task = pdfjsLib.getDocument({ data })
-    return entry.task.promise
+    const task = pdfjsLib.getDocument({ data })
+    if (entry.destroyed) {
+      task.destroy().catch(() => {})
+      throw new DOMException('documento descartado', 'AbortError')
+    }
+    entry.task = task
+    return task.promise
   })()
   const promise = entry.promise
   docCache.set(key, entry)
-  // Evicta el documento más antiguo si excede el tope
+  // Evicta el documento menos usado si excede el tope
   if (docCache.size > MAX_DOCS) {
     const oldest = docCache.keys().next().value as string | undefined
     if (oldest) destroyEntry(oldest)
   }
-  promise.catch(() => docCache.delete(key))
+  // Identidad: si el promise falla DESPUÉS de que esta clave se reemplazara por una
+  // entrada nueva, borrarla por clave tiraba la entrada fresca y sana.
+  promise.catch(() => {
+    if (docCache.get(key) === entry) docCache.delete(key)
+  })
   return promise
+}
+
+async function canvasToBlobUrl(canvas: HTMLCanvasElement): Promise<string> {
+  const blob: Blob = await new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/png'),
+  )
+  return URL.createObjectURL(blob)
 }
 
 export interface RenderedPage {
@@ -83,11 +117,38 @@ export async function renderPdfPage(
   // 0 = AnnotationMode.DISABLE: las marcas nativas las pinta el overlay editable.
   await page.render({ canvas, viewport, annotationMode: 0 }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
-  const blob: Blob = await new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/png'),
-  )
   return {
-    url: URL.createObjectURL(blob),
+    url: await canvasToBlobUrl(canvas),
+    width: canvas.width,
+    height: canvas.height,
+    originalWidth: base.width,
+    originalHeight: base.height,
+  }
+}
+
+// Miniatura del panel de páginas. Antes venía del motor (`/pdf/thumbnail`, PNG en
+// base64): un round-trip por página que además tomaba el único lock de MuPDF, así que
+// hojear el panel de un plano de 300 páginas bloqueaba guardar, medir o buscar.
+// Aquí se rasteriza con el documento PDF.js que el visor ya tiene parseado.
+const THUMB_LONG_SIDE_PX = 300
+
+export async function renderPdfThumbnail(
+  docId: string, version: number, pageIndex: number, signal?: AbortSignal,
+): Promise<RenderedPage> {
+  const pdf = await getPdfDocument(docId, version)
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+  const page = await pdf.getPage(pageIndex + 1)
+  const base = page.getViewport({ scale: 1 })
+  const longest = Math.max(base.width, base.height)
+  const viewport = page.getViewport({ scale: THUMB_LONG_SIDE_PX / longest })
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.ceil(viewport.width))
+  canvas.height = Math.max(1, Math.ceil(viewport.height))
+  // annotationMode 0 igual que el motor, que pintaba con annots=False.
+  await page.render({ canvas, viewport, annotationMode: 0 }).promise
+  if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+  return {
+    url: await canvasToBlobUrl(canvas),
     width: canvas.width,
     height: canvas.height,
     originalWidth: base.width,
@@ -114,10 +175,7 @@ export async function renderPdfTile(
     annotationMode: 0,
   }).promise
   if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
-  const blob: Blob = await new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob null'))), 'image/png'),
-  )
-  return { url: URL.createObjectURL(blob) }
+  return { url: await canvasToBlobUrl(canvas) }
 }
 
 export { revokePageUrl } from './blobUrl'

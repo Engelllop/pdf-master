@@ -2,6 +2,7 @@ import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical,
 import { useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { toolLabel } from '../lib/tools'
+import { scaleForPage } from '../store/usePdfStore'
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
@@ -10,15 +11,25 @@ export default function StatusBar() {
     docs, activeDocId, saveStatus, activeTool, stickyTools,
     setZoom, setPage, setFitMode, computeFitZoom, viewerWidth, viewerHeight,
     continuousMode, toggleContinuousMode, compareMode,
+    setMeasurementScale, showToast,
   } = useStoreSlice(
     'docs', 'activeDocId', 'saveStatus', 'activeTool', 'stickyTools',
     'setZoom', 'setPage', 'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
     'continuousMode', 'toggleContinuousMode', 'compareMode',
+    'setMeasurementScale', 'showToast',
   )
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false)
 
-  const scale = activeDoc?.measurementScale
+  // La escala se muestra por página: en un juego con láminas a distinta escala, la
+  // del documento no es la que se está usando para medir acá.
+  const pagina = activeDoc?.currentPage ?? 0
+  const scale = scaleForPage(activeDoc, pagina)
+  // Escala propia de ESTA lámina (un juego mezcla escalas). Se distingue de la heredada
+  // del documento porque son cosas distintas al recalibrar: recalibrar el documento no
+  // toca las láminas con escala propia, así que el usuario tiene que ver cuál está
+  // usando — y poder devolver la lámina a la del documento si la calibró por error.
+  const escalaPropia = activeDoc?.pageScales?.[pagina]
   const measuring = !!activeTool && activeTool.startsWith('measure')
   const zoomPercent = activeDoc ? Math.round(activeDoc.zoom * 100) : 100
   const dims = activeDoc
@@ -50,8 +61,25 @@ export default function StatusBar() {
       {dims && <span className="text-muted">{dims}</span>}
 
       {activeDoc && scale && (
-        <span className="flex items-center gap-1 text-success" title="Escala de medición calibrada">
+        <span className="flex items-center gap-1 text-success"
+          title={escalaPropia
+            ? `Escala propia de la página ${pagina + 1} (el documento usa otra)`
+            : 'Escala de medición del documento'}>
           <Ruler size={12} /> 1 {scale.unit} = {scale.pixelsPerUnit.toFixed(2)} pt
+          {escalaPropia && (
+            <>
+              <span className="text-micro text-muted">· pág. {pagina + 1}</span>
+              <button
+                onClick={() => {
+                  setMeasurementScale(activeDoc.doc_id, null, pagina)
+                  showToast(`La página ${pagina + 1} vuelve a la escala del documento`, 'info')
+                }}
+                className="text-micro text-muted hover:text-fg underline decoration-dotted"
+                title="Quitar la escala propia de esta página y usar la del documento">
+                usar la del documento
+              </button>
+            </>
+          )}
         </span>
       )}
       {activeDoc && !scale && measuring && (

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { type Annotation, type PdfState } from '../store/usePdfStore'
+import { scaleForPage, type Annotation, type PdfState } from '../store/usePdfStore'
 import { useStoreSlice } from './useStoreSlice'
 import { askForm } from '../lib/uiPrompt'
 
@@ -84,7 +84,11 @@ export function useAnnotationDraw(
       })
       .catch(() => {})
     return () => ctrl.abort()
-  }, [isMeasureTool, activeDoc?.doc_id, activeDoc?.currentPage])
+    // `docVersion` también: los puntos de snap son los vértices del dibujo, así que
+    // rotar la página, recortarla, editar un texto o mover una imagen los cambia. Sin
+    // esta dep se seguía enganchando a los vértices de ANTES de la edición (el motor ya
+    // recalcula: su cache de snap se invalida con el de render).
+  }, [isMeasureTool, activeDoc?.doc_id, activeDoc?.currentPage, activeDoc?.docVersion])
 
   const toPdfCoords = useCallback((screenX: number, screenY: number) => {
     if (!pageData) return { x: 0, y: 0 }
@@ -317,6 +321,9 @@ export function useAnnotationDraw(
       const v = await askForm(`Calibrar escala — ${pixelDist.toFixed(1)} px medidos`, [
         { name: 'real', label: 'Distancia real conocida', type: 'number', defaultValue: '', placeholder: 'Ej. 100' },
         { name: 'unit', label: 'Unidad', type: 'select', options: ['mm', 'cm', 'm', 'ft', 'in'], defaultValue: store.defaultUnit },
+        // Un juego de planos mezcla escalas (sitio 1:500, plantas 1:100, detalles 1:20):
+        // calibrar en una lámina no puede reescribir las cotas de las demás.
+        { name: 'alcance', label: 'Aplicar a', type: 'select', options: ['Todo el documento', 'Solo esta página'], defaultValue: 'Todo el documento' },
       ], 'Calibrar')
       if (!v) {
         showToast('Calibración cancelada', 'info')
@@ -336,11 +343,17 @@ export function useAnnotationDraw(
         return
       }
       const unit = String(v.unit) as 'm' | 'cm' | 'mm' | 'ft' | 'in'
-      setMeasurementScale(activeDoc.doc_id, {
-        pixelsPerUnit: pixelDist / realValue,
-        unit,
-      })
-      showToast(`Calibración: ${pixelDist.toFixed(1)} px = ${realValue} ${unit}`, 'success')
+      const soloEstaPagina = String(v.alcance ?? '').includes('esta página')
+      setMeasurementScale(
+        activeDoc.doc_id,
+        { pixelsPerUnit: pixelDist / realValue, unit },
+        soloEstaPagina ? activeDoc.currentPage : undefined,
+      )
+      showToast(
+        `Calibración: ${pixelDist.toFixed(1)} px = ${realValue} ${unit}`
+        + (soloEstaPagina ? ` (solo página ${activeDoc.currentPage + 1})` : ''),
+        'success',
+      )
       addAnnotation(activeDoc.doc_id, {
         ...drawPreview as Annotation,
         type: 'measure_distance',
@@ -361,7 +374,7 @@ export function useAnnotationDraw(
         { x: drawPreview.x || 0, y: drawPreview.y || 0 },
         { x: (drawPreview.x || 0) + (drawPreview.width || 0), y: (drawPreview.y || 0) + (drawPreview.height || 0) }
       )
-      const scale = activeDoc.measurementScale
+      const scale = scaleForPage(activeDoc, activeDoc.currentPage)
       let value = 0
       let label = `${pixelDist.toFixed(1)} px`
       let unit = 'px'
@@ -496,7 +509,7 @@ export function useAnnotationDraw(
     if (activeTool === 'measure_perimeter') {
       // Longitud acumulada de la polilínea (no se cierra: para el contorno cerrado
       // están el polígono y la medición de área).
-      const scale = activeDoc.measurementScale
+      const scale = scaleForPage(activeDoc, activeDoc.currentPage)
       let pixels = 0
       for (let i = 1; i < areaPoints.length; i++) pixels += computeDistance(areaPoints[i - 1], areaPoints[i])
       let value = 0
@@ -550,7 +563,7 @@ export function useAnnotationDraw(
       setDrawPreview(null)
       return
     }
-    const scale = activeDoc.measurementScale
+    const scale = scaleForPage(activeDoc, activeDoc.currentPage)
     let value = 0
     let label = 'Área no calibrada'
     let unit = 'px²'

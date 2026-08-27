@@ -12,7 +12,15 @@ interface PrintDialogProps {
 }
 
 export default function PrintDialog({ docId, pageCount, currentPage, onClose }: PrintDialogProps) {
-  const { showToast } = useStoreSlice('showToast')
+  const { showToast, docs } = useStoreSlice('showToast', 'docs')
+  const doc = docs.find((d) => d.doc_id === docId)
+  // Marcas que están en una capa apagada: se ven en el archivo pero no en pantalla, así
+  // que imprimirlas sin avisar sorprende. Por omisión se imprime lo que se ve.
+  const ocultas = (doc?.hiddenLayers || [])
+  const marcasOcultas = ocultas.length
+    ? doc!.annotations.filter((a) => ocultas.includes(a.layer || 'Marcas')).length
+    : 0
+  const [omitirOcultas, setOmitirOcultas] = useState(true)
   const [mode, setMode] = useState<'all' | 'current' | 'range'>('all')
   const [range, setRange] = useState('')
   const [copies, setCopies] = useState(1)
@@ -34,7 +42,7 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
     try {
       // Las marcas viven en el store hasta que se guarda; sin subirlas al motor la
       // impresión salía sin ellas (y sin avisar).
-      await pushAnnotations(docId)
+      await pushAnnotations(docId, { excluirCapasOcultas: marcasOcultas > 0 && omitirOcultas })
       const res = await window.api.printPdf(docId, { pageRanges, copies })
       if (res?.success) { showToast('Enviado a la impresora', 'success'); onClose() }
       else if (res?.reason === 'cancelled') onClose()
@@ -83,6 +91,18 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
                 className="flex-1 border border-border rounded px-2 py-1 text-base bg-panel text-fg focus:outline-none focus:border-accent" />
             </div>
           </div>
+
+          {marcasOcultas > 0 && (
+            <label className="flex items-start gap-2 text-mini cursor-pointer text-fg">
+              <input type="checkbox" checked={omitirOcultas}
+                onChange={(e) => setOmitirOcultas(e.target.checked)}
+                className="mt-0.5 w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+              <span>
+                No imprimir las capas apagadas
+                <span className="text-muted"> ({marcasOcultas} marca(s) oculta(s) en pantalla)</span>
+              </span>
+            </label>
+          )}
 
           <div className="flex items-center gap-2 text-base">
             <span className="text-muted">Copias</span>

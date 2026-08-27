@@ -7,6 +7,8 @@ import ReviewPanel from './ReviewPanel'
 import CountPanel from './CountPanel'
 
 import { apiFetch } from '../lib/api'
+import { pushAnnotations } from '../lib/saveDocument'
+import { renderPdfThumbnail } from '../lib/pdfjs'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
@@ -101,13 +103,11 @@ export default function ThumbnailPanel() {
         await Promise.all(
           batch.map(async (pageNum) => {
             try {
-              const res = await apiFetch(`/pdf/thumbnail/${activeDoc.doc_id}/${pageNum}`)
-              if (res.ok) {
-                const data = await res.json()
-                addThumbnail(activeDoc.doc_id, pageNum, data.image_base64)
-              }
+              const { url } = await renderPdfThumbnail(activeDoc.doc_id, activeDoc.docVersion, pageNum)
+              addThumbnail(activeDoc.doc_id, pageNum, url)
             } catch (e) {
-              console.error('Error loading thumbnail', e)
+              // AbortError = el documento se descartó (versión nueva): no es un fallo.
+              if ((e as { name?: string })?.name !== 'AbortError') console.error('Error loading thumbnail', e)
             }
           })
         )
@@ -185,6 +185,9 @@ export default function ThumbnailPanel() {
     const outputPath = await window.api.saveFile({ defaultPath: activeDoc.file_name.replace('.pdf', '_extracto.pdf') })
     if (!outputPath) return
     try {
+      // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
+      // salía con las páginas limpias, sin las marcas que se acaban de poner.
+      await pushAnnotations(activeDoc.doc_id)
       const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

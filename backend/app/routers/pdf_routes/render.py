@@ -1,7 +1,7 @@
 """Render de páginas: imágenes, tiles, miniaturas y bytes crudos del PDF."""
 from fastapi import APIRouter, HTTPException, Query, Response
 
-from app.models.pdf import PageRender, SaveResult, ThumbnailRender
+from app.models.pdf import PageRender, SaveResult
 from app.routers.pdf_routes._shared import _validate_output_path
 from app.services.pdf_service import pdf_service
 
@@ -62,10 +62,3 @@ def get_tile(doc_id: str, page_num: int,
     if not img_bytes:
         raise HTTPException(status_code=404, detail="Tile not found")
     return Response(content=img_bytes, media_type="image/png")
-
-@router.get("/thumbnail/{doc_id}/{page_num}", response_model=ThumbnailRender)
-def get_thumbnail(doc_id: str, page_num: int):
-    thumb = pdf_service.render_thumbnail(doc_id, page_num)
-    if not thumb:
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return thumb

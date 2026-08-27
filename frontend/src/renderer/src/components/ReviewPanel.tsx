@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import {
-  Check, ChevronDown, ChevronRight, MessageSquare, Search, Trash2, X, FileDown, Send,
+  Check, ChevronDown, ChevronRight, Eye, EyeOff, Layers, MessageSquare, Search, Trash2, X, FileDown, Send,
 } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { type Annotation, type PdfDoc } from '../store/usePdfStore'
 import { annotationLabel } from '../lib/tools'
+import { askForm } from '../lib/uiPrompt'
 import { formatWhen, formatDateTime } from '../lib/format'
 
 type StatusFilter = 'all' | 'open' | 'resolved'
@@ -15,11 +16,17 @@ type StatusFilter = 'all' | 'open' | 'resolved'
 export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
   const {
     setPage, selectAnnotation, deleteAnnotation, setAnnotationStatus, addReply, deleteReply,
-    selectedAnnotationId, annotationAuthor,
+    selectedAnnotationId, annotationAuthor, updateAnnotationsUndoable, showToast,
+    toggleLayerVisible, docs,
   } = useStoreSlice(
     'setPage', 'selectAnnotation', 'deleteAnnotation', 'setAnnotationStatus', 'addReply', 'deleteReply',
-    'selectedAnnotationId', 'annotationAuthor',
+    'selectedAnnotationId', 'annotationAuthor', 'updateAnnotationsUndoable', 'showToast',
+    'toggleLayerVisible', 'docs',
   )
+  // Las capas apagadas se leen del store, no de la prop `activeDoc`: el estado de vista
+  // cambia con el propio panel y depender de que el padre reenvíe un doc fresco dejaba
+  // los botones desfasados un render.
+  const capasOcultas = docs.find((d) => d.doc_id === activeDoc.doc_id)?.hiddenLayers || []
 
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
@@ -94,6 +101,28 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
     return <p className="text-mini text-center mt-4 text-muted">Sin anotaciones</p>
   }
 
+  // Las capas eran solo un filtro: nada en la app ponía una marca en otra capa (todo se
+  // creaba en «Marcas»), así que el selector solo servía para lo que llegaba importado.
+  // Acá se aprovecha el filtro: lo que estés viendo es lo que se mueve, en un paso.
+  const moverACapa = async () => {
+    const marcas = byPage.flatMap(([, list]) => list)
+    if (marcas.length === 0) return
+    const sugerida = layerFilter !== 'all' ? layerFilter : (layers[0] || 'Marcas')
+    const v = await askForm(
+      `Mover ${marcas.length} marca(s) a una capa`,
+      [{
+        name: 'capa', label: 'Capa', type: 'text', defaultValue: sugerida,
+        placeholder: layers.length ? `Existentes: ${layers.join(', ')}` : 'Ej. Eléctrico',
+      }],
+      'Mover',
+    )
+    if (!v) return
+    const capa = String(v.capa ?? '').trim()
+    if (!capa) return
+    updateAnnotationsUndoable(activeDoc.doc_id, marcas.map((a) => a.id), { layer: capa })
+    showToast(`${marcas.length} marca(s) movidas a «${capa}». Ctrl+Z deshace.`, 'success')
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       <div className="p-2 space-y-1.5 border-b border-border shrink-0">
@@ -136,6 +165,30 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
             Esta pág.
           </label>
         </div>
+        {layers.length > 1 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-micro text-muted">Ver:</span>
+            {layers.map((l) => {
+              const oculta = capasOcultas.includes(l)
+              return (
+                <button key={l} onClick={() => toggleLayerVisible(activeDoc.doc_id, l)}
+                  title={oculta ? `Mostrar la capa ${l}` : `Ocultar la capa ${l}`}
+                  aria-pressed={!oculta}
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-micro border transition-colors ${
+                    oculta ? 'border-border text-muted line-through' : 'border-accent text-fg'
+                  }`}>
+                  {oculta ? <EyeOff size={10} /> : <Eye size={10} />} {l}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        <button onClick={() => { void moverACapa() }}
+          disabled={byPage.length === 0}
+          title="Mover a una capa las marcas que muestra el filtro"
+          className="w-full flex items-center justify-center gap-1 px-2 py-1 rounded text-micro border border-border text-muted hover:bg-hover hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent">
+          <Layers size={11} /> Mover a capa…
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-1.5 space-y-2">

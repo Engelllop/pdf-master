@@ -1,6 +1,7 @@
 import { Fragment, memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { type PageDims } from './annotationRender'
 import { getSpans, type SpanItem } from '../../lib/spans'
+import { ajustarEscalaHorizontal } from '../../lib/textLayerFit'
 
 // Invisible, selectable text layer overlaid on the page bitmap (PDF.js-style).
 // The container is pointer-events:none so empty areas fall through to the annotation
@@ -22,22 +23,15 @@ function TextLayer({ docId, page, version = 0, pageData, active }: {
   const sx = pageData.width / pageData.originalWidth
   const sy = pageData.height / pageData.originalHeight
 
-  // La fuente del PDF no es la del navegador, así que el ancho natural del texto
-  // nunca coincide con el del span original: sin corregirlo el texto se desborda y
-  // la selección tapa lo que no es (el usuario veía "REVISAR" gigante y traslapado).
-  // Igual que PDF.js: se mide el ancho real y se ajusta con scaleX.
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el) return
+    // Solo los spans: `el.children` traía también los <br> que separan renglones, y
+    // cada uno se llevaba una escritura de estilo para nada.
+    const hijos = el.querySelectorAll<HTMLElement>('span[data-w]')
     // Compensa cualquier transform de un ancestro para medir en px de layout
     const hostScale = el.offsetWidth > 0 ? el.getBoundingClientRect().width / el.offsetWidth : 1
-    for (const child of Array.from(el.children) as HTMLElement[]) {
-      const target = Number(child.dataset.w)
-      child.style.transform = ''
-      if (!target) continue
-      const natural = child.getBoundingClientRect().width / (hostScale || 1)
-      if (natural > 0.5) child.style.transform = `scaleX(${target / natural})`
-    }
+    ajustarEscalaHorizontal(hijos, hostScale)
   }, [spans, sx, sy])
 
   return (

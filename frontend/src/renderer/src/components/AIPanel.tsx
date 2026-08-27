@@ -63,8 +63,21 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         return next
       })
     })
-    const offDone = window.api.onAiDone(({ requestId }) => {
-      if (requestId === reqRef.current) { setStreaming(false); reqRef.current = null }
+    const offDone = window.api.onAiDone(({ requestId, truncated }) => {
+      if (requestId !== reqRef.current) return
+      // Al llegar al tope de longitud la API corta la respuesta a media frase. Sin
+      // decirlo, la frase cortada se lee como un fallo de la app.
+      if (truncated) {
+        setMsgsFor(reqKeyRef.current, (m) => {
+          const next = [...m]
+          const ultimo = next[next.length - 1]
+          next[next.length - 1] = { role: 'assistant', text: `${ultimo.text}
+
+⚠️ Respuesta cortada por longitud. Pedile que siga o acotá la pregunta.` }
+          return next
+        })
+      }
+      setStreaming(false); reqRef.current = null
     })
     const offErr = window.api.onAiError(({ requestId, error }) => {
       if (requestId !== reqRef.current) return

@@ -19,6 +19,11 @@ class PdfInfo(BaseModel):
     subject: Optional[str] = None
     current_page: int = 0
     page_sizes: List[PageSize] = []
+    # Anotaciones VISIBLES que la app no gestiona (hoy: los sellos ajenos). Siguen en el
+    # archivo y no se tocan, pero el visor no las dibuja —el bitmap se rasteriza sin
+    # anotaciones y la capa de marcas solo pinta las de la lista—, así que hay que
+    # avisar en vez de dejar que el usuario trabaje sin verlas.
+    unmanaged_annots: int = 0
 
 class PageRender(BaseModel):
     page_num: int
@@ -27,12 +32,6 @@ class PageRender(BaseModel):
     height: int
     original_width: float
     original_height: float
-
-class ThumbnailRender(BaseModel):
-    page_num: int
-    image_base64: str
-    width: int
-    height: int
 
 class PdfOutlineItem(BaseModel):
     title: str
@@ -132,6 +131,7 @@ class WatermarkRequest(BaseModel):
     opacity: float = 0.3
     tiled: bool = True
     stash: bool = True
+    pages: Optional[List[int]] = None  # índices base 0; None = todo el documento
 
 class CreateBlankRequest(BaseModel):
     output_path: str
@@ -169,6 +169,7 @@ class HeaderFooterRequest(BaseModel):
     fontsize: float = 10.0
     color: str = "#000000"
     stash: bool = True
+    pages: Optional[List[int]] = None  # índices base 0; None = todo el documento
 
 class OcrResult(BaseModel):
     text: str
@@ -205,6 +206,9 @@ class SaveResult(BaseModel):
     success: bool
     path: Optional[str] = None
     stash_id: Optional[str] = None
+    # El usuario pidió copia .bak y no se pudo crear (carpeta de solo lectura, sin
+    # espacio…). Se guardó igual, pero sin la red que creía tener: hay que decirlo.
+    backup_failed: bool = False
     # Solo los rellena comprimir: sin decir cuánto se ahorró, el usuario no sabe si
     # valió la pena (con un PDF ya optimizado, el resultado puede ser MAYOR).
     size_before: Optional[int] = None
@@ -244,6 +248,13 @@ class FormFieldResult(BaseModel):
     previous: str = ""
     stash_id: Optional[str] = None
     field_name: Optional[str] = None
+    # Página a restaurar al deshacer (informativo) y alcance explícito del stash.
+    # El alcance se manda como bandera propia a propósito: si el cliente dedujera
+    # «documento» de la AUSENCIA de página, un motor viejo (que solo stashea páginas y
+    # no manda estos campos) haría que se restaurara un stash de una sola página encima
+    # del documento entero.
+    stash_page: Optional[int] = None
+    stash_scope: Optional[str] = None  # 'page' | 'document'
 
 class FormFieldTransform(BaseModel):
     xref: int
@@ -258,3 +269,4 @@ class SavePasswordRequest(BaseModel):
     output_path: Optional[str] = None
     user_password: Optional[str] = None
     owner_password: Optional[str] = None
+    backup: bool = False

@@ -9,35 +9,72 @@ import re
 from datetime import datetime
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation, Reply
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation, Reply
 from app.core.config import settings
-from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
+from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError, texto_estampable
 
 logger = logging.getLogger("pdfmaster")
+
+def _fecha_xfdf(valor: Optional[str]) -> Optional[float]:
+    """`D:YYYYMMDDHHMMSS` (con o sin desplazamiento de zona, como lo escribe Bluebeam)
+    → milisegundos. None si no se puede leer: una fecha rara no puede tirar la marca."""
+    if not valor:
+        return None
+    texto = valor.strip()
+    if texto.startswith("D:"):
+        texto = texto[2:]
+    digits = ""
+    for c in texto:
+        if not c.isdigit():
+            break
+        digits += c
+    if len(digits) < 8:
+        return None
+    try:
+        base = datetime.strptime(digits[:14].ljust(14, "0"), "%Y%m%d%H%M%S")
+        return base.timestamp() * 1000
+    except Exception:
+        return None
+
 
 class AnnotationsMixin:
     def _get_annotations_path(self, file_path: str) -> str:
         return file_path + ".pdfmaster.json"
 
+    def _leer_sidecar(self, file_path: str) -> List[Annotation]:
+        path = self._get_annotations_path(file_path)
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return [Annotation(**ann) for ann in data.get('annotations', [])]
+        except Exception:
+            logger.exception("Sidecar de anotaciones corrupto: %s", path)
+            return []
+
     def load_annotations(self, doc_id: str) -> List[Annotation]:
         """El PDF manda: las marcas viajan incrustadas en él. El sidecar solo se lee
         como respaldo de archivos guardados por versiones viejas que no incrustaban
-        todo — leerlo primero duplicaba las marcas que sí están en el PDF."""
+        todo — leerlo siempre duplicaba las marcas que sí están en el PDF.
+
+        Pero "el PDF trae anotaciones" no es lo mismo que "el PDF trae las marcas de la
+        app": si el plano tiene un comentario de Acrobat del arquitecto y las marcas del
+        usuario están solo en un sidecar viejo, cortar acá las hacía **desaparecer** al
+        abrir. Se distingue por origen: si entre las incrustadas hay alguna de PDF
+        Master, manda el PDF; si son todas ajenas, el sidecar es la única copia de las
+        del usuario y se añade (por id, para no duplicar en ningún caso)."""
         info = self._infos.get(doc_id)
         if not info:
             return []
-        native = self.import_native_annotations(doc_id)
-        if native:
+        native, hay_propias = self._import_native(doc_id)
+        if native and hay_propias:
             return native
-        path = self._get_annotations_path(info.file_path)
-        if os.path.exists(path):
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                return [Annotation(**ann) for ann in data.get('annotations', [])]
-            except Exception:
-                logger.exception("Sidecar de anotaciones corrupto: %s", path)
-        return []
+        sidecar = self._leer_sidecar(info.file_path)
+        if not native:
+            return sidecar
+        vistos = {a.id for a in native}
+        return native + [a for a in sidecar if a.id not in vistos]
 
     @staticmethod
     def _read_pm(doc, annot) -> dict:
@@ -101,15 +138,21 @@ class AnnotationsMixin:
         return points
 
     def import_native_annotations(self, doc_id: str) -> List[Annotation]:
-        """Lee anotaciones ya embebidas (Bluebeam/Acrobat) al abrir un PDF sin sidecar."""
+        """Lee anotaciones ya embebidas (Bluebeam/Acrobat) al abrir un PDF."""
+        return self._import_native(doc_id)[0]
+
+    def _import_native(self, doc_id: str) -> tuple:
+        """Como `import_native_annotations`, pero además dice si alguna de las marcas
+        venía de PDF Master (trae su payload o el nombre `pdfmaster:<id>`). Lo necesita
+        `load_annotations` para decidir si el sidecar viejo aporta algo o duplica."""
         doc = self._acquire(doc_id)
         if not doc:
-            return []
+            return [], False
+        hay_propias = False
         type_map = {
             'Highlight': 'highlight', 'Underline': 'underline', 'StrikeOut': 'strikethrough',
             'Text': 'note', 'FreeText': 'text', 'Square': 'rect', 'Circle': 'circle',
             'Line': 'line', 'Ink': 'draw', 'PolyLine': 'draw', 'Polygon': 'polygon',
-            'Stamp': 'stamp',
         }
         by_xref: Dict[int, Annotation] = {}
         replies: List[tuple] = []
@@ -134,6 +177,16 @@ class AnnotationsMixin:
                     mapped = pm.get('type') or type_map.get(raw)
                     if not mapped:
                         continue
+                    # Una `Line` ajena con punta de flecha es una flecha, no una línea.
+                    flecha = self._flecha_de(a) if (raw == 'Line' and not pm.get('type')) else None
+                    if flecha:
+                        mapped = 'arrow'
+                    # La tinta AJENA de varios trazos se dejaría plana al importarla
+                    # (ver `_es_tinta_multitrazo`): se deja como está en el PDF. La
+                    # propia sí, porque su payload trae el tipo y la geometría reales.
+                    propia = bool(pm.get('id')) or (info.get('name') or '').startswith('pdfmaster:')
+                    if self._es_tinta_multitrazo(a) and not propia:
+                        continue
                     r = a.rect
                     color = None
                     try:
@@ -142,6 +195,38 @@ class AnnotationsMixin:
                             color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
                     except Exception:
                         pass
+                    # Las marcas AJENAS no traen payload, así que estas propiedades hay
+                    # que leerlas del propio PDF. Desde que el guardado borra la original
+                    # y redibuja desde la lista de la app (ver `_quitar_marcas_gestionadas`),
+                    # lo que no se importe aquí se PIERDE: un recuadro azul semitransparente
+                    # de Bluebeam volvía sin relleno, opaco, con el borde por defecto y
+                    # sólido aunque fuera de trazos.
+                    relleno = None
+                    try:
+                        fc = (a.colors or {}).get('fill')
+                        if fc and len(fc) >= 3:
+                            relleno = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in fc[:3])
+                    except Exception:
+                        pass
+                    opacidad = None
+                    try:
+                        if a.opacity is not None and 0 <= a.opacity < 1:
+                            opacidad = float(a.opacity)
+                    except Exception:
+                        pass
+                    grosor = None
+                    estilo = None
+                    try:
+                        borde = a.border or {}
+                        if borde.get('width') is not None and float(borde['width']) > 0:
+                            grosor = float(borde['width'])
+                        rayas = borde.get('dashes') or ()
+                        if len(rayas) > 0:
+                            # Un punto es una raya muy corta; el resto, trazos.
+                            estilo = 'dotted' if float(rayas[0]) <= 1.5 else 'dashed'
+                    except Exception:
+                        pass
+
                     da = self._read_da(doc, a.xref) if raw == 'FreeText' else {}
                     if da.get('color') and not pm.get('color'):
                         color = da['color']
@@ -151,7 +236,10 @@ class AnnotationsMixin:
                                                  'measure_perimeter', 'measure_area', 'arrow') and getattr(a, 'vertices', None):
                         points = self._vertices_to_points(a.vertices) or None
                     name = info.get('name') or ''
-                    ann_id = pm.get('id') or (name.split(':', 1)[1] if name.startswith('pdfmaster:') else str(uuid.uuid4()))
+                    propia = bool(pm.get('id')) or name.startswith('pdfmaster:')
+                    if propia:
+                        hay_propias = True
+                    ann_id = pm.get('id') or (name.split(':', 1)[1] if propia else str(uuid.uuid4()))
                     color = pm.get('color') or color
                     if mapped == 'count':
                         cx = float(pm['x']) if 'x' in pm else float(r.x0 + r.width / 2)
@@ -166,8 +254,9 @@ class AnnotationsMixin:
                         )
                         continue
                     if mapped in ('line', 'arrow', 'measure_distance') and 'x' not in pm and points and len(points) >= 2:
-                        x0, y0 = points[0]['x'], points[0]['y']
-                        x1, y1 = points[-1]['x'], points[-1]['y']
+                        extremos = list(reversed(points)) if flecha == 'inicio' else points
+                        x0, y0 = extremos[0]['x'], extremos[0]['y']
+                        x1, y1 = extremos[-1]['x'], extremos[-1]['y']
                         by_xref[a.xref] = Annotation(
                             id=ann_id, type=mapped, page=i, x=x0, y=y0,
                             width=x1 - x0, height=y1 - y0, color=color, text=text,
@@ -195,10 +284,10 @@ class AnnotationsMixin:
                         align=pm.get('align'),
                         lineHeight=pm.get('lineHeight'),
                         listStyle=pm.get('listStyle'),
-                        lineWidth=pm.get('lineWidth'),
-                        lineStyle=pm.get('lineStyle'),
-                        opacity=pm.get('opacity'),
-                        fillColor=pm.get('fillColor'),
+                        lineWidth=pm.get('lineWidth') or grosor,
+                        lineStyle=pm.get('lineStyle') or estilo,
+                        opacity=pm.get('opacity') if pm.get('opacity') is not None else opacidad,
+                        fillColor=pm.get('fillColor') or relleno,
                         fillOpacity=pm.get('fillOpacity'),
                         measurement=pm.get('measurement'),
                         createdAt=pm.get('createdAt'),
@@ -211,7 +300,7 @@ class AnnotationsMixin:
             if parent is None:
                 continue
             parent.replies = (parent.replies or []) + [reply]
-        return list(by_xref.values())
+        return list(by_xref.values()), hay_propias
 
     def save_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
         info = self._infos.get(doc_id)
@@ -261,7 +350,12 @@ class AnnotationsMixin:
         if ann.type == 'count':
             subject = f"Count: {ann.text or 'General'}"
         try:
-            annot.set_info(content=content, title=ann.author or "", subject=subject)
+            # El `content` va transliterado porque PyMuPDF REGENERA la apariencia a partir
+            # de él: dejarlo en crudo hacía que el «≥» o la raya salieran como un hueco
+            # en cualquier otro visor y en el papel. El texto exacto viaja en el payload
+            # (`text`), que es lo que la app lee al reabrir, así que no se pierde nada de
+            # este lado; lo que cambia es lo que ven los demás.
+            annot.set_info(content=texto_estampable(content), title=ann.author or "", subject=subject)
         except Exception:
             pass
         try:
@@ -348,12 +442,125 @@ class AnnotationsMixin:
         with self._lock:
             self._pending_annotations[doc_id] = list(annotations or [])
             self._dirty[doc_id] = True
+        # Sin invalidar el cache de render a propósito: las marcas quedan PENDIENTES,
+        # no se aplican al documento vivo, así que el bitmap de la página no cambia.
         return True
+
+    # Tipos de anotación que el importador lee (ver `_import_native`): si están en el
+    # PDF, están también en la lista de la app, así que al guardar hay que quitarlas
+    # antes de volver a dibujarlas. Lo que no está acá (formularios, enlaces, popups,
+    # adjuntos) no lo gestiona la app y no se toca.
+    TIPOS_GESTIONADOS = frozenset({
+        'Highlight', 'Underline', 'StrikeOut', 'Text', 'FreeText', 'Square', 'Circle',
+        'Line', 'Ink', 'PolyLine', 'Polygon',
+    })
+    # `Stamp` NO está en la lista, a propósito. El aspecto de un sello vive en su
+    # appearance stream (puede ser una imagen, un logo, un cuño con fecha), y
+    # `_embed_into` no sabe reproducirlo: si lo gestionáramos, el guardado lo borraría y
+    # dibujaría en su lugar una caja con texto — degradando un documento entregado. Se
+    # queda tal cual está en el PDF y la app no lo toca. Los sellos que pone PDF Master
+    # son anotaciones de texto, no `Stamp`, así que los suyos sí los gestiona.
+
+    # Tipos visibles que la app no gestiona: están en el PDF, se ven en cualquier otro
+    # visor, pero acá no se dibujan.
+    TIPOS_NO_GESTIONADOS_VISIBLES = frozenset({'Stamp', 'Caret', 'FileAttachment', 'Sound', 'Movie'})
+
+    # Puntas de flecha del estándar (LE): abierta, cerrada y sus variantes «R».
+    PUNTAS_DE_FLECHA = frozenset({4, 5, 7, 8})
+
+    @classmethod
+    def _flecha_de(cls, annot) -> Optional[str]:
+        """'fin' / 'inicio' / None según dónde tenga punta de flecha una Line ajena.
+
+        Un `Line` con punta se importaba como línea pelada: las flechas de referencia y
+        las cotas con punta de un plano ajeno perdían la punta al guardar (el guardado
+        redibuja desde la lista de la app). El modelo tiene la punta al final, así que si
+        la flecha ajena apunta al principio se invierten los extremos."""
+        try:
+            inicio, fin = annot.line_ends or (0, 0)
+        except Exception:
+            return None
+        if fin in cls.PUNTAS_DE_FLECHA:
+            return 'fin'
+        if inicio in cls.PUNTAS_DE_FLECHA:
+            return 'inicio'
+        return None
+
+    def _es_propia(self, doc, annot) -> bool:
+        """Marca puesta por PDF Master: trae su payload `PM` o el nombre `pdfmaster:<id>`.
+        Las propias se pueden reconstruir sin pérdida desde la lista de la app (el payload
+        lleva el tipo y la geometría reales), así que sí se gestionan aunque su forma
+        nativa sea tinta de varios trazos — una cruz, por ejemplo, son dos trazos."""
+        try:
+            if self._read_pm(doc, annot).get('id'):
+                return True
+            nombre = (annot.info or {}).get('name') or ''
+            return nombre.startswith('pdfmaster:')
+        except Exception:
+            return False
+
+    @staticmethod
+    def _es_tinta_multitrazo(annot) -> bool:
+        """Tinta ajena con varios trazos separados (una X, una firma de dos pasadas).
+
+        El modelo de la app tiene UNA lista de puntos por marca, así que al importarla se
+        concatenan los trazos: `[[A,B],[C,D]]` se vuelve `[[A,B,C,D]]` y aparece una línea
+        espuria uniendo el final de un trazo con el principio del siguiente. Mientras el
+        modelo no soporte varios trazos, estas marcas no se gestionan: ni se importan ni
+        se borran al guardar. La tinta que dibuja PDF Master es de un trazo por marca, así
+        que la propia no se ve afectada."""
+        try:
+            if (annot.type[1] if annot.type else '') != 'Ink':
+                return False
+            v = annot.vertices
+            if not v or not isinstance(v[0], (list, tuple)):
+                return False
+            # Lista de trazos: cada elemento es a su vez una lista de pares.
+            return isinstance(v[0][0], (list, tuple)) and len(v) > 1
+        except Exception:
+            return False
+
+    def contar_no_gestionadas(self, doc) -> int:
+        total = 0
+        for i in range(len(doc)):
+            for a in (doc.load_page(i).annots() or []):
+                try:
+                    if (a.type[1] if a.type else '') in self.TIPOS_NO_GESTIONADOS_VISIBLES:
+                        total += 1
+                    elif self._es_tinta_multitrazo(a) and not self._es_propia(doc, a):
+                        total += 1
+                except Exception:
+                    continue
+        return total
+
+    def _quitar_marcas_gestionadas(self, doc) -> None:
+        """Borra de la copia las anotaciones que la lista de la app va a redibujar.
+
+        Sin esto, una marca ajena (un resaltado de Acrobat, un sello de Bluebeam) se
+        DUPLICABA en cada guardado: al abrir se importa a la lista de la app, y el
+        guardado dibujaba la lista encima de una copia que aún tenía la original. Un
+        resaltado pasaba a dos, y al siguiente guardado a tres. Y borrar una marca
+        importada no la sacaba del archivo, porque la original seguía ahí."""
+        for i in range(len(doc)):
+            page = doc.load_page(i)
+            for a in list(page.annots() or []):
+                try:
+                    raw = a.type[1] if a.type else ''
+                    if raw not in self.TIPOS_GESTIONADOS:
+                        continue
+                    # La tinta ajena de varios trazos no se gestiona: borrarla sin poder
+                    # redibujarla igual sería corromper la marca.
+                    if self._es_tinta_multitrazo(a) and not self._es_propia(doc, a):
+                        continue
+                    page.delete_annot(a)
+                except Exception:
+                    logger.exception("No se pudo quitar una anotación gestionada (pág %s)", i)
 
     def _embed_into(self, doc, annotations: List[Annotation]) -> bool:
         """Dibuja las marcas sobre el documento que se le pase (una copia, al guardar)."""
         if doc is None:
             return False
+        self._quitar_marcas_gestionadas(doc)
 
         def hex_to_rgb(color: Optional[str]):
             if not color or not color.startswith('#'):
@@ -430,8 +637,13 @@ class AnnotationsMixin:
                 # ("cannot set border_color if rich_text is False") y la excepción
                 # tumbaba el guardado ENTERO — un solo globo dejaba el documento sin
                 # guardar. El trazo del globo lo pinta igual el color del texto.
+                # El texto VISIBLE va transliterado (la apariencia la dibuja PyMuPDF con
+                # una fuente base, que solo cubre latin-1 y descarta el resto en
+                # silencio). El original se conserva: `_stamp_markup` lo vuelve a poner
+                # en `content` y en el payload, así que al reabrir la app lo restaura
+                # exacto — lo que cambia es lo que ven otros visores y el papel.
                 annot = page.add_freetext_annot(
-                    box, ann.text or '', fontsize=ann.fontSize or 12,
+                    box, texto_estampable(ann.text or ''), fontsize=ann.fontSize or 12,
                     text_color=color, fill_color=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
                     border_width=ann.lineWidth or 1,
                     callout=callout, opacity=stroke_op(ann),
@@ -534,12 +746,12 @@ class AnnotationsMixin:
                 box = fitz.Rect(ann.x, ann.y, ann.x + w, ann.y + h)
                 align = {'center': 1, 'right': 2}.get(ann.align or '', 0)
                 annot = page.add_freetext_annot(
-                    box, body, fontsize=fs, text_color=color,
+                    box, texto_estampable(body), fontsize=fs, text_color=color,
                     fill_color=None, border_width=0, opacity=stroke_op(ann), align=align,
                 )
                 self._stamp_markup(annot, ann)
             elif ann.type == 'note':
-                annot = page.add_text_annot(fitz.Point(ann.x, ann.y), ann.text or 'Nota')
+                annot = page.add_text_annot(fitz.Point(ann.x, ann.y), texto_estampable(ann.text or 'Nota'))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'image':
@@ -607,10 +819,10 @@ class AnnotationsMixin:
         out = fitz.open()
         page = out.new_page()
         y = 60
-        page.insert_text((50, y), f"Resumen de marcas — {source_name}", fontsize=15, color=(0, 0, 0))
+        page.insert_text((50, y), texto_estampable(f"Resumen de marcas — {source_name}"), fontsize=15, color=(0, 0, 0))
         y += 28
         resolved = sum(1 for a in annotations if a.status == "resolved")
-        page.insert_text((50, y), f"Total: {len(annotations)} anotaciones  ·  {resolved} resuelta(s)",
+        page.insert_text((50, y), texto_estampable(f"Total: {len(annotations)} anotaciones  ·  {resolved} resuelta(s)"),
                          fontsize=10, color=(0.3, 0.3, 0.3))
         y += 22
         for idx, ann in enumerate(sorted(annotations, key=lambda a: (a.page, a.y or 0)), 1):
@@ -624,7 +836,7 @@ class AnnotationsMixin:
                 text = f"{ann.measurement.label}" + (f"  ·  {text}" if text else "")
             tipo = self.TIPO_ES.get(ann.type, ann.type)
             line = f"{idx}.  Pág {ann.page + 1}  ·  {tipo}" + (f"  ·  {text[:90]}" if text else "")
-            page.insert_text((50, y), line, fontsize=9, color=(0.1, 0.1, 0.1))
+            page.insert_text((50, y), texto_estampable(line), fontsize=9, color=(0.1, 0.1, 0.1))
             y += 15
             # Segunda línea con los metadatos de revisión, solo si los hay.
             meta = []
@@ -638,29 +850,32 @@ class AnnotationsMixin:
             if replies:
                 meta.append(f"{len(replies)} respuesta(s)")
             if meta:
-                page.insert_text((66, y), "  ·  ".join(meta), fontsize=8, color=(0.45, 0.45, 0.45))
+                page.insert_text((66, y), texto_estampable("  ·  ".join(meta)), fontsize=8, color=(0.45, 0.45, 0.45))
                 y += 13
             for r in replies:
                 if y > 780:
                     page = out.new_page()
                     y = 60
                 reply_text = (r.text or "").replace("\n", " ").strip()
-                page.insert_text((80, y), f"↳ {r.author or 'Sin autor'}: {reply_text[:80]}",
+                page.insert_text((80, y), texto_estampable(f"↳ {r.author or 'Sin autor'}: {reply_text[:80]}"),
                                  fontsize=8, color=(0.45, 0.45, 0.45))
                 y += 13
         filename = source_name.replace('.pdf', '') + "_marcas.pdf"
         # Con output_path se escribe donde el usuario eligió, igual que el resto de las
         # exportaciones. Sin él se devuelve en base64, como antes.
-        if output_path:
-            out.save(output_path)
+        # El close va en finally: si el guardado falla, el fitz.Document del resumen
+        # se quedaba abierto (y el 500 salía igual).
+        try:
+            if output_path:
+                self._guardar_atomico(output_path, False, lambda temp: out.save(temp))
+                return {"filename": filename, "output_path": output_path}
+            data = out.tobytes()
+            return {
+                "filename": filename,
+                "data_base64": base64.b64encode(data).decode('utf-8'),
+            }
+        finally:
             out.close()
-            return {"filename": filename, "output_path": output_path}
-        data = out.tobytes()
-        out.close()
-        return {
-            "filename": filename,
-            "data_base64": base64.b64encode(data).decode('utf-8'),
-        }
 
     # --- XFDF (interoperabilidad con Acrobat/Bluebeam) ---
     # XFDF usa coordenadas PDF con origen abajo-izquierda; las anotaciones de la app
@@ -690,7 +905,10 @@ class AnnotationsMixin:
             return h - y
 
         def base_attrs(ann: Annotation) -> dict:
-            attrs = {"page": str(ann.page), "color": ann.color or "#FF0000"}
+            # `name` es el identificador único de la anotación en XFDF (el /NM del PDF).
+            # Sin él, reimportar el mismo XFDF creaba marcas nuevas cada vez en vez de
+            # volver a caer sobre las mismas.
+            attrs = {"page": str(ann.page), "color": ann.color or "#FF0000", "name": ann.id}
             if ann.opacity is not None:
                 attrs["opacity"] = f"{ann.opacity:.2f}"
             if ann.lineWidth:
@@ -700,6 +918,11 @@ class AnnotationsMixin:
                 attrs["title"] = ann.author
             if ann.createdAt:
                 attrs["date"] = datetime.fromtimestamp(ann.createdAt / 1000).strftime("D:%Y%m%d%H%M%S")
+            # `subject` es el asunto/categoría de la marca: acá viaja la capa, igual que
+            # en el incrustado nativo. Sin esto las capas se perdían al pasar por XFDF
+            # (los conteos lo sobrescriben más abajo con `Count: <categoría>`).
+            if ann.layer:
+                attrs["subject"] = ann.layer
             return attrs
 
         def rect_attr(ann: Annotation) -> str:
@@ -811,6 +1034,40 @@ class AnnotationsMixin:
                 a["subject"] = f"Count: {ann.text or 'General'}"
                 a["interior-color"] = ann.color or "#FF0000"
                 el = ET.SubElement(annots, f"{{{NS}}}circle", a)
+            # Un hilo de revisión, en XFDF, son anotaciones aparte que apuntan al padre
+            # con `inreplyto` (su `name`). Sin esto las respuestas no salían del
+            # programa: se exportaba la marca y el hilo se quedaba adentro.
+            if el is not None and ann.replies:
+                for r in ann.replies:
+                    ra = {"page": str(ann.page), "inreplyto": ann.id, "name": r.id,
+                          "rect": a.get("rect") or "0,0,0,0"}
+                    if r.author:
+                        ra["title"] = r.author
+                    if r.at:
+                        ra["date"] = datetime.fromtimestamp(r.at / 1000).strftime("D:%Y%m%d%H%M%S")
+                    rel = ET.SubElement(annots, f"{{{NS}}}text", ra)
+                    rc = ET.SubElement(rel, f"{{{NS}}}contents")
+                    rc.text = r.text or ""
+
+            # El estado de revisión, en XFDF, es una entrada `inreplyto` con
+            # `statemodel="Review"` (así lo escriben Acrobat y Bluebeam). Era lo último
+            # que no cruzaba: mandabas la revisión y del otro lado todo aparecía como
+            # pendiente, incluso lo que ya habías resuelto.
+            if el is not None and ann.status == "resolved":
+                sa = {"page": str(ann.page), "inreplyto": ann.id, "name": f"{ann.id}-estado",
+                      "rect": a.get("rect") or "0,0,0,0",
+                      "state": "Completed", "statemodel": "Review"}
+                if ann.author:
+                    sa["title"] = ann.author
+                ET.SubElement(annots, f"{{{NS}}}text", sa)
+
+            # `contents` es el comentario de la marca para CUALQUIER tipo (así lo
+            # muestran Acrobat y Bluebeam). Solo se escribía en las que llevan texto
+            # propio, así que el comentario de un resaltado o de un rectángulo —el
+            # contenido real de la revisión— no salía del programa.
+            if el is not None and ann.text and ann.type != "count" and el.find(f"{{{NS}}}contents") is None:
+                c = ET.SubElement(el, f"{{{NS}}}contents")
+                c.text = ann.text
             # 'image' no viaja en XFDF (el estándar no embebe bitmaps de forma portable)
             # `title` es el autor: solo se pone el genérico si la marca no lo trae.
             if el is not None and info and not ann.author:
@@ -853,9 +1110,33 @@ class AnnotationsMixin:
             return []
 
         out: List[Annotation] = []
+        # Las respuestas pueden venir antes que su marca: se juntan y se enganchan al
+        # final. Antes cada una entraba como una nota suelta, huérfana de su marca —
+        # importar una revisión de Bluebeam con hilos llenaba el plano de notas.
+        respuestas: List[tuple] = []
+        estados: List[tuple] = []
         for el in annots_el:
             tag = local(el.tag)
             try:
+                padre = el.get("inreplyto")
+                if padre:
+                    # Una entrada de estado NO es un comentario: Acrobat las escribe con
+                    # `contents` vacío, así que tratarlas como respuesta metía una
+                    # respuesta en blanco por cada marca que alguien había resuelto.
+                    if el.get("state") or (el.get("statemodel") or "").lower() == "review":
+                        estados.append((padre, el.get("state") or ""))
+                        continue
+                    contenido = ""
+                    for c in el:
+                        if local(c.tag) == "contents" and c.text:
+                            contenido = c.text
+                    respuestas.append((padre, Reply(
+                        id=el.get("name") or str(uuid.uuid4()),
+                        author=el.get("title") or None,
+                        text=contenido,
+                        at=_fecha_xfdf(el.get("date") or el.get("creationdate")) or 0,
+                    )))
+                    continue
                 page = int(el.get("page", "0"))
                 color = el.get("color") or "#ff0000"
                 opacity = float(el.get("opacity")) if el.get("opacity") else None
@@ -869,16 +1150,29 @@ class AnnotationsMixin:
                 x, w = min(x0, x1), abs(x1 - x0)
                 y = flip(page, max(y0f, y1f))
                 h = abs(y1f - y0f)
-                common = dict(id=str(uuid.uuid4()), page=page, color=color, opacity=opacity, lineWidth=width)
+                # El importador tiraba `title` y `date` aunque el exportador SÍ los
+                # escribe: una revisión que volvía de Bluebeam (o de nuestro propio
+                # XFDF) llegaba anónima y sin fecha, y el panel de revisión filtra y
+                # ordena justo por eso.
+                subject = el.get("subject") or ""
+                common = dict(
+                    id=el.get("name") or str(uuid.uuid4()),
+                    page=page, color=color, opacity=opacity, lineWidth=width,
+                    author=el.get("title") or None,
+                    createdAt=_fecha_xfdf(el.get("date") or el.get("creationdate")),
+                    layer=None if subject.startswith("Count:") else (subject or None),
+                )
 
                 if tag in ("highlight", "underline", "strikeout"):
                     t = {"highlight": "highlight", "underline": "underline", "strikeout": "strikethrough"}[tag]
-                    out.append(Annotation(type=t, x=x, y=y, width=w, height=h, **common))
+                    # `contents` se parseaba y solo se usaba en note/freetext: el
+                    # comentario de un resaltado de Bluebeam se perdía.
+                    out.append(Annotation(type=t, x=x, y=y, width=w, height=h,
+                                          text=contents or None, **common))
                 elif tag == "square":
                     out.append(Annotation(type="rect", x=x, y=y, width=w, height=h,
                                           fillColor=el.get("interior-color"), **common))
                 elif tag == "circle":
-                    subject = el.get("subject") or ""
                     if subject.startswith("Count:"):
                         out.append(Annotation(type="count", x=x + w / 2, y=y + h / 2,
                                               text=subject.split(":", 1)[1].strip(), **common))
@@ -921,4 +1215,17 @@ class AnnotationsMixin:
                     out.append(Annotation(type="text", x=x, y=y, width=w, height=h, text=contents, **common))
             except Exception:
                 logger.exception("import_xfdf: anotación <%s> ignorada", tag)
+        por_id = {a.id: a for a in out}
+        for padre, reply in respuestas:
+            marca = por_id.get(padre)
+            if marca is None:
+                continue
+            marca.replies = (marca.replies or []) + [reply]
+        # Si hay varias entradas de estado para la misma marca (Acrobat escribe una por
+        # cambio), manda la última.
+        for padre, estado in estados:
+            marca = por_id.get(padre)
+            if marca is None:
+                continue
+            marca.status = "resolved" if estado.lower() in ("completed", "accepted") else "open"
         return out

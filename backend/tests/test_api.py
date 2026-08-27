@@ -51,16 +51,37 @@ class TestOpenAndRender:
         data = resp.json()
         assert max(data["width"], data["height"]) <= 3000
 
-    def test_thumbnail_capped(self, client, open_doc):
-        info = open_doc(pages=1, width=3024, height=2160)
-        resp = client.get(f"/pdf/thumbnail/{info['doc_id']}/0")
-        data = resp.json()
-        assert max(data["width"], data["height"]) <= 300
+
+class TestOcrPendiente:
+    """Cuántas páginas necesitan OCR: la app lo pregunta antes de arrancar un OCR de
+    documento completo, que son minutos con el motor tomado y sin cancelación."""
+
+    def test_cuenta_solo_las_paginas_sin_texto(self, client, open_doc, pdf_factory):
+        import fitz
+        path = pdf_factory(pages=3)
+        # Deja la página 2 en blanco (sin capa de texto).
+        doc = fitz.open(path)
+        doc.delete_page(1)
+        doc.insert_page(1, width=595, height=842)
+        doc.saveIncr() if doc.can_save_incrementally() else doc.save(path, incremental=False)
+        doc.close()
+
+        resp = client.post("/pdf/open", json={"file_path": path})
+        doc_id = resp.json()["doc_id"]
+        try:
+            data = client.get(f"/pdf/ocr-pending/{doc_id}").json()
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+        assert data["count"] == 1
+        assert data["pages"] == [1]
+
+    def test_documento_desconocido_es_404(self, client):
+        assert client.get("/pdf/ocr-pending/no-such-doc").status_code == 404
 
 
 class TestConcurrency:
     """v1.2.7: accesos concurrentes a fitz causaban segfault del proceso.
-    Reproduce la carga real: renders + widgets + text + thumbnails a la vez."""
+    Reproduce la carga real: renders + widgets + text + PDF crudo a la vez."""
 
     def test_concurrent_mixed_requests_do_not_crash(self, client, open_doc):
         infos = [open_doc(pages=4) for _ in range(3)]
@@ -73,7 +94,7 @@ class TestConcurrency:
                 f"/pdf/page-image/{doc_id}/{page}?zoom=1.5",
                 f"/pdf/widgets/{doc_id}/{page}",
                 f"/pdf/text/{doc_id}/{page}",
-                f"/pdf/thumbnail/{doc_id}/{page}",
+                f"/pdf/raw/{doc_id}",
             ]
             return client.get(paths[i % 4]).status_code
 
@@ -406,6 +427,125 @@ class TestAnnotations:
         n = next(a for a in imported if a["type"] == "note")
         assert n["text"] == "revisar esto"
 
+    def test_xfdf_roundtrip_conserva_autor_fecha_id_y_comentario(self, client, open_doc, tmp_path):
+        """El importador tiraba `title` y `date` aunque el exportador los escribe: una
+        revisión que volvía de Bluebeam llegaba anónima, sin fecha y con ids nuevos
+        (reimportar el mismo archivo duplicaba todo). El panel de revisión filtra y
+        ordena por autor y fecha."""
+        info = open_doc()
+        out = str(tmp_path / "revision.xfdf")
+        anns = {"annotations": [{
+            "id": "h1", "type": "highlight", "page": 0, "x": 10, "y": 20,
+            "width": 100, "height": 14, "color": "#fbbf24",
+            "author": "Ing. Ramírez", "createdAt": 1785000000000,
+            "text": "no coincide con la cota", "layer": "Revisión",
+        }]}
+        assert client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns).status_code == 200
+
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": out}).json()["annotations"]
+        assert len(imported) == 1
+        a = imported[0]
+        assert a["author"] == "Ing. Ramírez"
+        assert a["id"] == "h1", "el id viaja en el atributo name: reimportar no debe duplicar"
+        assert a["text"] == "no coincide con la cota"
+        assert a["layer"] == "Revisión"
+        # La fecha va a segundos en XFDF: se compara con esa tolerancia.
+        assert abs(a["createdAt"] - 1785000000000) < 1000
+
+    def test_xfdf_de_otro_programa_sin_fecha_no_revienta(self, client, open_doc, tmp_path):
+        """Bluebeam escribe la fecha con zona (`D:...-06'00'`) y hay archivos sin ella."""
+        info = open_doc()
+        ruta = tmp_path / "ajeno.xfdf"
+        ruta.write_text(
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<xfdf xmlns="http://ns.adobe.com/xfdf/"><annots>
+<square page="0" rect="10,700,110,740" color="#FF0000" title="Otro" date="D:20260825120000-06'00'"/>
+<square page="0" rect="10,600,110,640" color="#FF0000"/>
+</annots></xfdf>''', encoding="utf-8")
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": str(ruta)}).json()["annotations"]
+        assert len(imported) == 2
+        con_fecha = [a for a in imported if a["createdAt"]]
+        assert len(con_fecha) == 1 and con_fecha[0]["author"] == "Otro"
+        sin_fecha = [a for a in imported if not a["createdAt"]]
+        assert sin_fecha[0]["author"] is None
+
+    def test_xfdf_lleva_y_trae_el_hilo_de_respuestas(self, client, open_doc, tmp_path):
+        """El hilo de revisión se quedaba adentro del programa al exportar. Y al
+        importar, cada respuesta ajena entraba como una NOTA SUELTA: una revisión de
+        Bluebeam con hilos llenaba el plano de notas huérfanas."""
+        info = open_doc()
+        out = str(tmp_path / "hilo.xfdf")
+        anns = {"annotations": [{
+            "id": "h1", "type": "highlight", "page": 0, "x": 10, "y": 20,
+            "width": 100, "height": 14, "color": "#fbbf24",
+            "author": "Ing. Ramírez", "text": "revisar cota",
+            "replies": [
+                {"id": "r1", "author": "Engell", "text": "corregido en la rev C", "at": 1785000500000},
+                {"id": "r2", "author": "Ing. Ramírez", "text": "ok", "at": 1785000900000},
+            ],
+        }]}
+        assert client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns).status_code == 200
+
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": out}).json()["annotations"]
+        # Una sola marca: las respuestas NO son anotaciones sueltas.
+        assert len(imported) == 1
+        a = imported[0]
+        assert [r["text"] for r in a["replies"]] == ["corregido en la rev C", "ok"]
+        assert [r["author"] for r in a["replies"]] == ["Engell", "Ing. Ramírez"]
+        assert abs(a["replies"][0]["at"] - 1785000500000) < 1000
+
+    def test_xfdf_respuesta_antes_de_su_marca_igual_se_engancha(self, client, open_doc, tmp_path):
+        """El orden de los elementos en el archivo no está garantizado."""
+        info = open_doc()
+        ruta = tmp_path / "desordenado.xfdf"
+        ruta.write_text(
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<xfdf xmlns="http://ns.adobe.com/xfdf/"><annots>
+<text page="0" inreplyto="sq1" name="rp1" title="Otro" rect="0,0,0,0"><contents>llega antes</contents></text>
+<square page="0" name="sq1" rect="10,700,110,740" color="#FF0000" title="Autor"/>
+</annots></xfdf>''', encoding="utf-8")
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": str(ruta)}).json()["annotations"]
+        assert len(imported) == 1
+        assert imported[0]["replies"][0]["text"] == "llega antes"
+
+    def test_xfdf_lleva_y_trae_el_estado_de_revision(self, client, open_doc, tmp_path):
+        """Lo resuelto llegaba al otro lado como pendiente. En XFDF el estado es una
+        entrada `inreplyto` con `statemodel="Review"`."""
+        info = open_doc()
+        out = str(tmp_path / "estados.xfdf")
+        base = {"type": "highlight", "page": 0, "x": 10, "y": 20, "width": 80, "height": 14,
+                "color": "#fbbf24", "author": "Engell"}
+        anns = {"annotations": [
+            {**base, "id": "ok1", "status": "resolved"},
+            {**base, "id": "pd1", "y": 60, "status": "open"},
+        ]}
+        assert client.post(f"/pdf/export-xfdf/{info['doc_id']}?output_path={out}", json=anns).status_code == 200
+
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": out}).json()["annotations"]
+        por_id = {a["id"]: a for a in imported}
+        # Las entradas de estado no son marcas nuevas.
+        assert set(por_id) == {"ok1", "pd1"}
+        assert por_id["ok1"]["status"] == "resolved"
+        assert por_id["pd1"]["status"] != "resolved"
+        # Y tampoco son respuestas en blanco.
+        assert not (por_id["ok1"]["replies"] or [])
+
+    def test_xfdf_estado_de_acrobat_no_entra_como_respuesta_vacia(self, client, open_doc, tmp_path):
+        info = open_doc()
+        ruta = tmp_path / "acrobat.xfdf"
+        ruta.write_text(
+            '''<?xml version="1.0" encoding="UTF-8"?>
+<xfdf xmlns="http://ns.adobe.com/xfdf/"><annots>
+<square page="0" name="sq1" rect="10,700,110,740" color="#FF0000" title="Arq"/>
+<text page="0" inreplyto="sq1" name="st1" rect="0,0,0,0" state="Completed" statemodel="Review" title="Arq"><contents></contents></text>
+<text page="0" inreplyto="sq1" name="rp1" rect="0,0,0,0" title="Engell"><contents>ya quedó</contents></text>
+</annots></xfdf>''', encoding="utf-8")
+        imported = client.post(f"/pdf/import-xfdf/{info['doc_id']}", json={"file_path": str(ruta)}).json()["annotations"]
+        assert len(imported) == 1
+        a = imported[0]
+        assert a["status"] == "resolved"
+        assert [r["text"] for r in (a["replies"] or [])] == ["ya quedó"]
+
     def test_sidecar_preserves_stroke_and_rotation(self, client, open_doc):
         info = open_doc()
         anns = {"annotations": [{
@@ -499,3 +639,47 @@ class TestDocumentOps:
         os.remove(path)  # en Windows fallaba con PermissionError antes del fix
         assert not os.path.exists(path)
         client.post(f"/pdf/close/{info['doc_id']}")
+
+
+class TestEstadoEnDisco:
+    """La app guarda la fecha y el tamaño al abrir, y los compara antes de sobrescribir:
+    un cliente de sincronización u otro programa pueden haber tocado el archivo."""
+
+    def test_devuelve_fecha_y_tamano(self, client, pdf_factory):
+        path = pdf_factory(pages=1)
+        resp = client.post("/pdf/open", json={"file_path": path})
+        doc_id = resp.json()["doc_id"]
+        try:
+            data = client.get(f"/pdf/disk-state/{doc_id}").json()
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+        assert data["missing"] is False
+        assert data["size"] == os.path.getsize(path)
+        assert data["mtime"] > 0
+
+    def test_detecta_que_alguien_lo_toco(self, client, pdf_factory):
+        path = pdf_factory(pages=1)
+        resp = client.post("/pdf/open", json={"file_path": path})
+        doc_id = resp.json()["doc_id"]
+        try:
+            antes = client.get(f"/pdf/disk-state/{doc_id}").json()
+            with open(path, "ab") as f:
+                f.write(b"%% otro programa escribiendo\n")
+            despues = client.get(f"/pdf/disk-state/{doc_id}").json()
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+        assert despues["size"] != antes["size"]
+
+    def test_archivo_movido_o_borrado(self, client, pdf_factory):
+        path = pdf_factory(pages=1)
+        resp = client.post("/pdf/open", json={"file_path": path})
+        doc_id = resp.json()["doc_id"]
+        try:
+            os.remove(path)
+            data = client.get(f"/pdf/disk-state/{doc_id}").json()
+        finally:
+            client.post(f"/pdf/close/{doc_id}")
+        assert data["missing"] is True
+
+    def test_documento_desconocido_es_404(self, client):
+        assert client.get("/pdf/disk-state/no-such-doc").status_code == 404

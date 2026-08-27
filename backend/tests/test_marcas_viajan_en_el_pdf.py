@@ -123,3 +123,42 @@ class TestResumenDeMarcas:
         res = client.post(f"/pdf/markup-summary/{doc_id}", json={"annotations": []})
         assert res.status_code == 200
         assert res.json()["data_base64"]
+
+
+class TestTextoVisibleFueraDeLatin1:
+    """La APARIENCIA de un cuadro de texto la dibuja PyMuPDF con una fuente base, que
+    solo cubre latin-1 y descarta el resto sin avisar: en otro visor (y en el papel) un
+    «≥» o una raya «—» salían como un hueco. El dato exacto no se pierde: viaja en
+    `content` y en el payload, así que la app lo restaura tal cual al reabrir."""
+
+    TEXTO = "≥ 3 m — revisar"
+
+    def _guardar_con_cuadro(self, client, open_doc, tmp_path):
+        info = open_doc(pages=1, text="")
+        doc_id = info["doc_id"]
+        out = str(tmp_path / "cuadro.pdf")
+        anns = {"annotations": [{
+            "id": "t1", "type": "text", "page": 0, "x": 30, "y": 40,
+            "width": 300, "height": 40, "text": self.TEXTO, "fontSize": 12, "color": "#000000",
+        }]}
+        assert client.post(f"/pdf/embed/{doc_id}", json=anns).status_code == 200
+        assert client.post(f"/pdf/save/{doc_id}?output_path={out}").status_code == 200
+        client.post(f"/pdf/close/{doc_id}")
+        return out
+
+    def test_la_apariencia_translitera_en_vez_de_perder(self, client, open_doc, tmp_path):
+        import fitz
+        out = self._guardar_con_cuadro(client, open_doc, tmp_path)
+        with fitz.open(out) as d:
+            visible = "".join(a.get_text() for a in (d[0].annots() or []))
+        assert ">= 3 m - revisar" in visible
+        assert "≥" not in visible
+
+    def test_al_reabrir_la_app_recupera_el_texto_exacto(self, client, open_doc, tmp_path):
+        out = self._guardar_con_cuadro(client, open_doc, tmp_path)
+        nuevo = client.post("/pdf/open", json={"file_path": out}).json()["doc_id"]
+        try:
+            anns = client.get(f"/pdf/annotations/{nuevo}").json()["annotations"]
+        finally:
+            client.post(f"/pdf/close/{nuevo}")
+        assert [a["text"] for a in anns] == [self.TEXTO]

@@ -76,14 +76,23 @@ def compress_pdf(doc_id: str, output_path: str = Query(...)):
         raise HTTPException(status_code=400, detail="Compress failed")
     return SaveResult(success=True, path=output_path, **sizes)
 
+@router.get("/disk-state/{doc_id}")
+def disk_state(doc_id: str):
+    """Fecha y tamaño del archivo en disco, para detectar que alguien más lo tocó
+    mientras estaba abierto."""
+    estado = pdf_service.disk_state(doc_id)
+    if estado is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return estado
+
 @router.post("/save/{doc_id}", response_model=SaveResult)
 def save_pdf(doc_id: str, output_path: Optional[str] = Query(None), backup: bool = Query(False)):
     if output_path:
         _validate_output_path(output_path, {'.pdf'})
-    path = pdf_service.save(doc_id, output_path, backup=backup)
-    if not path:
+    res = pdf_service.save(doc_id, output_path, backup=backup)
+    if not res:
         raise HTTPException(status_code=400, detail="Save failed")
-    return SaveResult(success=True, path=path)
+    return SaveResult(success=True, path=res.path, backup_failed=not res.backup_ok)
 
 @router.post("/create-blank", response_model=PdfInfo)
 def create_blank(req: CreateBlankRequest):
@@ -97,19 +106,20 @@ def create_blank(req: CreateBlankRequest):
 def save_with_password(doc_id: str, req: SavePasswordRequest):
     if req.output_path:
         _validate_output_path(req.output_path, {'.pdf'})
-    path = pdf_service.save_with_password(doc_id, req.output_path, req.user_password, req.owner_password)
-    if not path:
+    res = pdf_service.save_with_password(doc_id, req.output_path, req.user_password,
+                                         req.owner_password, backup=req.backup)
+    if not res:
         raise HTTPException(status_code=400, detail="Save failed")
-    return SaveResult(success=True, path=path)
+    return SaveResult(success=True, path=res.path, backup_failed=not res.backup_ok)
 
 @router.post("/remove-password/{doc_id}", response_model=SaveResult)
-def remove_password(doc_id: str, output_path: Optional[str] = Query(None)):
+def remove_password(doc_id: str, output_path: Optional[str] = Query(None), backup: bool = Query(False)):
     if output_path:
         _validate_output_path(output_path, {'.pdf'})
-    path = pdf_service.remove_password(doc_id, output_path)
-    if not path:
+    res = pdf_service.remove_password(doc_id, output_path, backup=backup)
+    if not res:
         raise HTTPException(status_code=400, detail="Remove failed")
-    return SaveResult(success=True, path=path)
+    return SaveResult(success=True, path=res.path, backup_failed=not res.backup_ok)
 
 @router.post("/images-to-pdf", response_model=SaveResult)
 def images_to_pdf(req: ImagesToPdfRequest):

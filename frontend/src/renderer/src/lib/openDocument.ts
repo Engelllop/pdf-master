@@ -3,6 +3,7 @@ import { askForm } from './uiPrompt'
 import { touchRecent, updateRecentMeta } from './recents'
 
 import { apiFetch, setDeadDocReopener } from './api'
+import { revokePageUrl } from './blobUrl'
 
 export interface OpenDocumentOptions {
   password?: string
@@ -61,18 +62,23 @@ export async function reopenDeadDoc(docId: string): Promise<string | null> {
 // (antes solo se recuperaban el render de página y las imágenes).
 setDeadDocReopener(reopenDeadDoc)
 
-// Miniatura de la 1ª página para el menú de recientes: reusa el thumbnail del
-// backend y lo encoge a JPEG ~5 KB para no agotar la cuota de localStorage.
+// Miniatura de la 1ª página para el menú de recientes: se rasteriza en local con
+// PDF.js y se encoge a JPEG ~5 KB para no agotar la cuota de localStorage (en
+// localStorage tiene que ser data-URL: un blob: no sobrevive al cierre de la app).
 async function captureRecentThumb(filePath: string, docId: string) {
+  let blobUrl: string | null = null
   try {
-    const res = await apiFetch(`/pdf/thumbnail/${docId}/0`)
-    if (!res.ok) return
-    const data = await res.json()
+    // Import diferido a propósito: `lib/pdfjs` arrastra pdfjs-dist (y su worker), y
+    // este módulo lo importa media app. Con el import estático, cualquier test que
+    // tocara openDocument cargaba pdfjs y moría con «DOMMatrix is not defined».
+    const { renderPdfThumbnail } = await import('./pdfjs')
+    const thumb = await renderPdfThumbnail(docId, 0, 0)
+    blobUrl = thumb.url
     const img = new Image()
     await new Promise<void>((resolve, reject) => {
       img.onload = () => resolve()
       img.onerror = () => reject(new Error('thumb load'))
-      img.src = data.image_base64
+      img.src = thumb.url
     })
     const w = 96
     const h = Math.max(1, Math.round((img.height / img.width) * w))
@@ -85,7 +91,9 @@ async function captureRecentThumb(filePath: string, docId: string) {
     ctx.fillRect(0, 0, w, h)
     ctx.drawImage(img, 0, 0, w, h)
     updateRecentMeta(filePath, { thumb: canvas.toDataURL('image/jpeg', 0.72) })
-  } catch {}
+  } catch {} finally {
+    revokePageUrl(blobUrl ?? undefined)
+  }
 }
 
 export function openDocument(filePath: string, opts: OpenDocumentOptions = {}): Promise<string | null> {
@@ -148,6 +156,28 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
         setOutline(docId, outlineData || [])
       }
     } catch {}
+
+    // Estado del archivo en disco al abrirlo: si alguien más lo toca mientras está
+    // abierto, el guardado lo detecta y pregunta antes de sobrescribir.
+    try {
+      const st = await apiFetch(`/pdf/disk-state/${docId}`)
+      if (st.ok) {
+        const estado = await st.json()
+        if (!estado.missing) usePdfStore.getState().setDiskState(docId, { mtime: estado.mtime, size: estado.size })
+      }
+    } catch { /* sin estado: el guardado no podrá comparar y seguirá como antes */ }
+
+    // Sellos (y adjuntos, sonidos…) que están en el PDF y la app no gestiona: no los
+    // dibuja el bitmap —se rasteriza sin anotaciones— ni la capa de marcas, así que sin
+    // avisar el usuario trabajaría sin ver un «APROBADO» o un «NO APTO PARA
+    // CONSTRUCCIÓN» que sí está en el archivo y sí sale impreso.
+    if (!opts.silent && data.unmanaged_annots > 0) {
+      const n = data.unmanaged_annots
+      showToast(
+        `Este PDF trae ${n} sello(s) o adjunto(s) que la app no muestra ni modifica: siguen en el archivo y salen al imprimir.`,
+        'info',
+      )
+    }
 
     if (!opts.silent) {
       touchRecent(filePath)

@@ -17,3 +17,22 @@ export function parsePageRanges(input: string, pageCount: number): PageRange[] |
   }
   return out
 }
+
+/** Aplana los rangos a índices base 0, ordenados y sin repetir. Las operaciones que
+ * sellan páginas (marca de agua, encabezado/pie, numeración) mandan al motor la lista
+ * de índices, no el texto: la sintaxis se valida una sola vez, acá. */
+export function expandPageRanges(ranges: PageRange[]): number[] {
+  const set = new Set<number>()
+  for (const r of ranges) for (let i = r.from; i <= r.to; i++) set.add(i)
+  return [...set].sort((a, b) => a - b)
+}
+
+/** Lee el campo «Páginas» de un diálogo: vacío = todo el documento (`undefined`),
+ * sintaxis inválida o fuera del documento = `null` para que quien llame avise. */
+export function parsePagesField(input: string, pageCount: number): number[] | null | undefined {
+  const texto = input.trim()
+  if (!texto) return undefined
+  const ranges = parsePageRanges(texto, pageCount)
+  if (!ranges) return null
+  return expandPageRanges(ranges)
+}

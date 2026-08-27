@@ -7,7 +7,7 @@ import json
 import os
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
@@ -107,6 +107,19 @@ class PagesMixin:
         self._invalidate_render_cache(doc_id)
         return True
 
+    def stash_document_now(self, doc_id: str) -> Optional[str]:
+        """Guarda una copia del documento vivo y devuelve su id, sin tocar nada.
+
+        La usan las operaciones que el CLIENTE parte en varias llamadas para poder
+        mostrar progreso y cancelar (el OCR de un documento va página por página): el
+        stash se toma una vez al principio y así deshacer sigue siendo un paso, no uno
+        por página."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            return self._stash_document(doc)
+
     def restore_document(self, doc_id: str, stash_id: str) -> bool:
         """Reemplaza el documento vivo por la copia del stash."""
         data = self._page_stash.get(stash_id)
@@ -153,17 +166,36 @@ class PagesMixin:
             return False
 
     def split_pages(self, doc_id: str, pages: List[int], output_path: Optional[str] = None) -> Optional[str]:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return None
-        new_doc = fitz.open()
-        for p in pages:
-            if 0 <= p < len(doc):
-                new_doc.insert_pdf(doc, from_page=p, to_page=p)
-        save_path = output_path or os.path.join(os.path.dirname(self._doc_path(doc_id)), f"split_{uuid.uuid4().hex[:8]}.pdf")
-        new_doc.save(save_path)
-        new_doc.close()
-        return save_path
+        """None = falló (el router lo convierte en 400). No tenía NINGÚN try: un fallo
+        al escribir salía como 500 sin explicación y dejaba el fitz.Document abierto,
+        y con una lista de páginas toda fuera de rango intentaba guardar un PDF de cero
+        páginas —que PyMuPDF rechaza— en vez de decir que no había nada que extraer."""
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            new_doc = fitz.open()
+            # Extraer páginas es el camino de «mandale esta lámina a alguien»: se copiaban
+            # del documento vivo, o sea limpias, y el extracto salía sin las marcas que el
+            # usuario todavía no había guardado — sin avisar.
+            marked = self._copia_con_marcas(doc_id, doc)
+            fuente = doc if marked is None else marked
+            try:
+                for p in pages:
+                    if 0 <= p < len(fuente):
+                        new_doc.insert_pdf(fuente, from_page=p, to_page=p)
+                if len(new_doc) == 0:
+                    return None
+                save_path = output_path or os.path.join(os.path.dirname(self._doc_path(doc_id)), f"split_{uuid.uuid4().hex[:8]}.pdf")
+                self._guardar_atomico(save_path, False, lambda temp: new_doc.save(temp))
+                return save_path
+            except Exception:
+                logger.exception("split_pages falló (doc %s)", doc_id)
+                return None
+            finally:
+                new_doc.close()
+                if marked is not None:
+                    marked.close()
 
     def crop_page(self, doc_id: str, page_num: int, top: float, right: float, bottom: float, left: float, stash: bool = True) -> Optional[str]:
         """None = falló. '' = ok sin stash. uuid = página original para undo."""

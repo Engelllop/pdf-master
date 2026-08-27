@@ -157,6 +157,51 @@ class TestDocumentOps:
         text = client.get(f"/pdf/text/{info['doc_id']}/0").json()["text"]
         assert "DOC-" in text
 
+    # Marca de agua, encabezado/pie y numeración se aplicaban SIEMPRE al documento
+    # entero. En un juego de 60 láminas eso puede ser justo lo que no querés.
+    def test_watermark_solo_en_las_paginas_pedidas(self, client, open_doc):
+        info = open_doc(pages=3, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/watermark/{doc_id}", json={
+            "text": "BORRADOR", "tiled": False, "pages": [1],
+        }).status_code == 200
+        paginas = [client.get(f"/pdf/text/{doc_id}/{p}").json()["text"] for p in range(3)]
+        assert "BORRADOR" not in paginas[0]
+        assert "BORRADOR" in paginas[1]
+        assert "BORRADOR" not in paginas[2]
+
+    def test_header_footer_solo_en_las_paginas_pedidas(self, client, open_doc):
+        info = open_doc(pages=3, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/header-footer/{doc_id}", json={
+            "header": "Encabezado", "pages": [0, 2],
+        }).status_code == 200
+        paginas = [client.get(f"/pdf/text/{doc_id}/{p}").json()["text"] for p in range(3)]
+        assert "Encabezado" in paginas[0]
+        assert "Encabezado" not in paginas[1]
+        assert "Encabezado" in paginas[2]
+
+    def test_page_numbers_solo_en_las_paginas_pedidas(self, client, open_doc):
+        """Y el número es el de la página en el documento, no el de la enésima sellada:
+        numerar solo la 2 y la 3 tiene que dar 2 y 3."""
+        info = open_doc(pages=3, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/page-numbers/{doc_id}?pages=1&pages=2").status_code == 200
+        paginas = [client.get(f"/pdf/text/{doc_id}/{p}").json()["text"] for p in range(3)]
+        assert "/" not in paginas[0]
+        assert "2 / 3" in paginas[1]
+        assert "3 / 3" in paginas[2]
+
+    def test_rango_fuera_del_documento_se_ignora(self, client, open_doc):
+        """El rango lo escribe el usuario a mano: un índice de más no puede reventar."""
+        info = open_doc(pages=2, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/watermark/{doc_id}", json={
+            "text": "BORRADOR", "tiled": False, "pages": [0, 99, -3],
+        }).status_code == 200
+        assert "BORRADOR" in client.get(f"/pdf/text/{doc_id}/0").json()["text"]
+        assert "BORRADOR" not in client.get(f"/pdf/text/{doc_id}/1").json()["text"]
+
     def test_reorder_pages(self, client, open_doc):
         info = open_doc(pages=3)
         resp = client.post(f"/pdf/reorder/{info['doc_id']}", json={"new_order": [2, 0, 1]})
@@ -307,6 +352,121 @@ class TestDocumentOps:
             assert d.needs_pass
 
 
+class TestCopiaDeSeguridad:
+    """La copia .bak es la red del usuario al sobrescribir un archivo entregado.
+    `save_with_password` y `remove_password` ni la miraban —el ajuste estaba activado
+    y no había copia— y si el guardado fallaba dejaban su temporal tirado EN LA
+    CARPETA DEL PLANO, con el documento dentro."""
+
+    def test_guardar_con_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory):
+        info = open_doc()
+        destino = pdf_factory(pages=1)  # ya existe: sobrescribirlo debe dejar .bak
+        resp = client.post(f"/pdf/save-password/{info['doc_id']}", json={
+            "output_path": destino, "user_password": "clave123", "backup": True,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["backup_failed"] is False
+        assert os.path.exists(destino + ".bak")
+
+    def test_quitar_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory):
+        info = open_doc()
+        destino = pdf_factory(pages=1)
+        resp = client.post(f"/pdf/remove-password/{info['doc_id']}?output_path={destino}&backup=true")
+        assert resp.status_code == 200
+        assert os.path.exists(destino + ".bak")
+
+    def test_si_la_copia_falla_lo_dice_en_vez_de_callarse(self, client, open_doc, pdf_factory, monkeypatch):
+        """Se guarda igual (el usuario pidió guardar), pero sabiendo que no hay red."""
+        import shutil as _shutil
+        info = open_doc()
+        destino = pdf_factory(pages=1)
+
+        def copia_imposible(*_a, **_k):
+            raise OSError("disco lleno")
+
+        monkeypatch.setattr(_shutil, "copy2", copia_imposible)
+        resp = client.post(f"/pdf/save/{info['doc_id']}?output_path={destino}&backup=true")
+        assert resp.status_code == 200
+        assert resp.json()["backup_failed"] is True
+        assert not os.path.exists(destino + ".bak")
+
+    def test_un_guardado_fallido_no_deja_temporales_en_la_carpeta(self, client, open_doc, pdf_factory, monkeypatch):
+        info = open_doc()
+        destino = pdf_factory(pages=1)
+        carpeta = os.path.dirname(destino)
+        antes = set(os.listdir(carpeta))
+
+        def guardado_roto(*_a, **_k):
+            raise RuntimeError("fallo al escribir")
+
+        monkeypatch.setattr(fitz.Document, "save", guardado_roto)
+        resp = client.post(f"/pdf/save-password/{info['doc_id']}", json={
+            "output_path": destino, "user_password": "clave123",
+        })
+        assert resp.status_code == 400
+        assert set(os.listdir(carpeta)) == antes
+
+
+class TestEscriturasAtomicas:
+    """`compress`, `split` y `images-to-pdf` escribían directo sobre la ruta elegida:
+    el cuadro de guardar deja elegir un PDF que ya existe (el propio original), y un
+    fallo a mitad de escritura lo dejaba truncado."""
+
+    def test_un_compress_fallido_no_toca_el_archivo_que_ya_estaba(self, client, open_doc, pdf_factory, monkeypatch):
+        info = open_doc()
+        destino = pdf_factory(pages=1)
+        antes = open(destino, 'rb').read()
+        carpeta = os.path.dirname(destino)
+        listado = set(os.listdir(carpeta))
+
+        def guardado_roto(*_a, **_k):
+            raise RuntimeError("fallo al escribir")
+
+        monkeypatch.setattr(fitz.Document, "save", guardado_roto)
+        assert client.post(f"/pdf/compress/{info['doc_id']}?output_path={destino}").status_code == 400
+        assert open(destino, 'rb').read() == antes
+        assert set(os.listdir(carpeta)) == listado
+
+    def test_split_sin_paginas_validas_avisa_en_vez_de_reventar(self, client, open_doc, tmp_path):
+        """Antes intentaba guardar un PDF de cero páginas: PyMuPDF lo rechaza y salía
+        un 500 sin explicación."""
+        info = open_doc(pages=2)
+        out = str(tmp_path / "extraido.pdf")
+        resp = client.post(f"/pdf/split/{info['doc_id']}?output_path={out}", json={"pages": [50, 99]})
+        assert resp.status_code == 400
+        assert not os.path.exists(out)
+
+    def test_exportar_txt_fallido_no_borra_el_archivo_que_ya_estaba(self, client, open_doc, tmp_path, monkeypatch):
+        """`open(output_path, "w")` truncaba el destino ANTES de escribir una letra:
+        si fallaba en la primera página, donde había un documento quedaba un vacío."""
+        info = open_doc(pages=2)
+        destino = tmp_path / "notas.txt"
+        destino.write_text("contenido que ya estaba", encoding="utf-8")
+
+        def texto_roto(*_a, **_k):
+            raise RuntimeError("fallo leyendo la página")
+
+        monkeypatch.setattr(fitz.Page, "get_text", texto_roto)
+        resp = client.post(f"/pdf/export-txt/{info['doc_id']}?output_path={destino}")
+        assert resp.status_code in (400, 500)
+        assert destino.read_text(encoding="utf-8") == "contenido que ya estaba"
+        assert not any(p.suffix == ".txt" and p != destino for p in tmp_path.iterdir())
+
+    def test_exportar_txt_normal_escribe_el_texto(self, client, open_doc, tmp_path):
+        info = open_doc(pages=2)
+        destino = tmp_path / "salida.txt"
+        assert client.post(f"/pdf/export-txt/{info['doc_id']}?output_path={destino}").status_code == 200
+        assert "Hola PDF Master" in destino.read_text(encoding="utf-8")
+
+    def test_split_normal_sigue_funcionando(self, client, open_doc, tmp_path):
+        info = open_doc(pages=3)
+        out = str(tmp_path / "extraido.pdf")
+        resp = client.post(f"/pdf/split/{info['doc_id']}?output_path={out}", json={"pages": [0, 2]})
+        assert resp.status_code == 200
+        with fitz.open(out) as d:
+            assert len(d) == 2
+
+
 class TestInfoEndpoint:
     def test_info_reflects_in_memory_merge(self, client, open_doc, pdf_factory):
         info = open_doc(pages=3)
@@ -426,3 +586,81 @@ class TestComprimir:
         assert cuerpo["size_after"] > 0
         import os
         assert cuerpo["size_after"] == os.path.getsize(out)
+
+
+class TestExportMediciones:
+    """La escala va por fila: un juego de planos mezcla escalas y una sola en el título
+    no dice con cuál se tomó cada cota."""
+
+    def test_csv_incluye_la_columna_de_escala(self, client, tmp_path):
+        out = str(tmp_path / "mediciones.csv")
+        resp = client.post("/pdf/export-measurements", json={
+            "output_path": out,
+            "title": "plano.pdf — varias escalas (ver columna)",
+            "rows": [
+                {"page": "1", "tipo": "Distancia", "etiqueta": "2.50 m", "valor": "2.50",
+                 "unidad": "m", "escala": "1 m = 10.00 pt"},
+                {"page": "3", "tipo": "Distancia", "etiqueta": "0.40 m", "valor": "0.40",
+                 "unidad": "m", "escala": "1 m = 50.00 pt"},
+                {"page": "", "tipo": "Conteo (circle)", "etiqueta": "Luminarias", "valor": "12",
+                 "unidad": "uds", "escala": ""},
+            ],
+        })
+        assert resp.status_code == 200
+        contenido = open(out, encoding="utf-8-sig").read()
+        assert "Escala" in contenido
+        assert "1 m = 10.00 pt" in contenido
+        assert "1 m = 50.00 pt" in contenido
+
+    def test_una_fila_sin_escala_no_revienta(self, client, tmp_path):
+        """Filas de versiones anteriores (o los conteos) no traen el campo."""
+        out = str(tmp_path / "sin-escala.csv")
+        resp = client.post("/pdf/export-measurements", json={
+            "output_path": out, "title": "",
+            "rows": [{"page": "1", "tipo": "Distancia", "etiqueta": "x", "valor": "1", "unidad": "m"}],
+        })
+        assert resp.status_code == 200
+        assert os.path.exists(out)
+
+
+class TestTextoFueraDeLatin1:
+    """Los tipos base de PDF solo cubren latin-1: al estampar, una raya «—», un «→» o un
+    «✔» DESAPARECÍAN sin aviso (el «—» de la cabecera del propio resumen, incluido)."""
+
+    def test_el_resumen_de_marcas_no_pierde_los_caracteres(self, client, open_doc, tmp_path):
+        info = open_doc(pages=1)
+        out = str(tmp_path / "resumen.pdf")
+        anns = {"annotations": [{
+            "id": "n1", "type": "note", "page": 0, "x": 40, "y": 40,
+            "text": "cota — con ✔ y → 12", "author": "Ramírez",
+            "replies": [{"id": "r1", "author": "Engell", "text": "ok → rev C", "at": 1785000000000}],
+        }]}
+        resp = client.post(f"/pdf/markup-summary/{info['doc_id']}?output_path={out}", json=anns)
+        assert resp.status_code == 200
+        with fitz.open(out) as d:
+            t = d[0].get_text()
+        # Transliterados, no desaparecidos.
+        assert "cota - con v y -> 12" in t
+        assert "ok -> rev C" in t
+        # Y los acentos, que sí caben en latin-1, se conservan tal cual.
+        assert "Ramírez" in t
+
+    def test_la_marca_de_agua_tampoco(self, client, open_doc, tmp_path):
+        info = open_doc(pages=1, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/watermark/{doc_id}", json={
+            "text": "BORRADOR — no construir", "tiled": False,
+        }).status_code == 200
+        out = str(tmp_path / "agua.pdf")
+        assert client.post(f"/pdf/save/{doc_id}?output_path={out}").status_code == 200
+        with fitz.open(out) as d:
+            assert "BORRADOR - no construir" in d[0].get_text()
+
+    def test_el_encabezado_tampoco(self, client, open_doc, tmp_path):
+        info = open_doc(pages=1, text="")
+        doc_id = info["doc_id"]
+        assert client.post(f"/pdf/header-footer/{doc_id}", json={"header": "Rev C — 08/27/2026"}).status_code == 200
+        out = str(tmp_path / "encabezado.pdf")
+        assert client.post(f"/pdf/save/{doc_id}?output_path={out}").status_code == 200
+        with fitz.open(out) as d:
+            assert "Rev C - 08/27/2026" in d[0].get_text()

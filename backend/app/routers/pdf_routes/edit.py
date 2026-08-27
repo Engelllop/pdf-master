@@ -39,7 +39,7 @@ class TransformImageRequest(BaseModel):
 
 @router.post("/header-footer/{doc_id}", response_model=SaveResult)
 def add_header_footer(doc_id: str, req: HeaderFooterRequest):
-    stash_id = pdf_service.add_header_footer(doc_id, req.header, req.footer, req.fontsize, req.color, stash=req.stash)
+    stash_id = pdf_service.add_header_footer(doc_id, req.header, req.footer, req.fontsize, req.color, stash=req.stash, pages=req.pages)
     if stash_id is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return SaveResult(success=True, stash_id=stash_id or None)
@@ -54,7 +54,7 @@ def insert_image(doc_id: str, req: InsertImageRequest):
 
 @router.post("/watermark/{doc_id}", response_model=SaveResult)
 def add_watermark(doc_id: str, req: WatermarkRequest):
-    stash_id = pdf_service.add_watermark(doc_id, req.text, req.color, req.fontsize, req.angle, req.opacity, req.tiled, stash=req.stash)
+    stash_id = pdf_service.add_watermark(doc_id, req.text, req.color, req.fontsize, req.angle, req.opacity, req.tiled, stash=req.stash, pages=req.pages)
     if stash_id is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return SaveResult(success=True, stash_id=stash_id or None)
@@ -101,8 +101,11 @@ def transform_image(doc_id: str, req: TransformImageRequest):
     return SaveResult(success=True, stash_id=stash_id or None)
 
 @router.post("/page-numbers/{doc_id}", response_model=SaveResult)
-def add_page_numbers(doc_id: str, prefix: str = Query(""), start: int = Query(1), position: str = Query("bottom"), stash: bool = Query(True)):
-    stash_id = pdf_service.add_page_numbers(doc_id, prefix, start, position, stash=stash)
+def add_page_numbers(doc_id: str, prefix: str = Query(""), start: int = Query(1), position: str = Query("bottom"),
+                     stash: bool = Query(True), pages: Optional[List[int]] = Query(None)):
+    """`pages` repetido (`?pages=0&pages=1`) limita la numeración a esas páginas;
+    omitido, numera el documento entero."""
+    stash_id = pdf_service.add_page_numbers(doc_id, prefix, start, position, stash=stash, pages=pages)
     if stash_id is None:
         raise HTTPException(status_code=404, detail="Document not found")
     return SaveResult(success=True, stash_id=stash_id or None)

@@ -36,7 +36,7 @@ Confirmado por el usuario:
 Hechos actuales del repo (no son principios de producto salvo el guardado):
 
 - Motor local FastAPI + PyMuPDF, un worker (PyMuPDF no es thread-safe).
-- Sidecar `.pdfmaster.json` solo al guardar a mano. Copia `.bak` opt-in (default on).
+- Sidecar `.pdfmaster.json`: solo lectura, como respaldo de archivos de versiones viejas; las marcas viajan dentro del PDF. Copia `.bak` opt-in (default on).
 - Aviso al cerrar pestaña o la app si hay cambios sucios.
 - Marcas, mediciones, conteos, comparación de revisiones, formularios, organización de páginas, export.
 

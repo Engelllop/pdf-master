@@ -17,6 +17,9 @@ class MeasurementRow(BaseModel):
     etiqueta: str = ""
     valor: str = ""
     unidad: str = ""
+    # Con qué escala se tomó esa cota. Va por fila porque un juego de planos mezcla
+    # escalas; los conteos la dejan vacía.
+    escala: str = ""
 
 
 class ExportMeasurementsRequest(BaseModel):

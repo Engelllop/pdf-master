@@ -180,6 +180,40 @@ describe('watermarkUndoable', () => {
     }
     vi.unstubAllGlobals()
   })
+
+  // El rango tiene que viajar en el cuerpo Y quedar en el comando: si no, rehacer
+  // (Ctrl+Y) volvía a sellar el documento entero.
+  it('manda el rango de páginas y lo guarda para rehacer', async () => {
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1',
+      file_path: 'C:/a.pdf',
+      page_count: 10,
+      title: null, author: null, subject: null,
+      page_sizes: Array.from({ length: 10 }, (_, i) => ({ page_num: i, width: 100, height: 100 })),
+    })
+    let body: Record<string, unknown> = {}
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      const path = String(url)
+      if (path.includes('/watermark/')) {
+        body = JSON.parse(String(init?.body))
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, stash_id: 'wm-2' }) })
+      }
+      if (path.includes('/info/')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ page_count: 10, page_sizes: [{ page_num: 0, width: 100, height: 100 }] }),
+        })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    }))
+    await watermarkUndoable('doc-1', 'BORRADOR', [0, 1, 4])
+    expect(body.pages).toEqual([0, 1, 4])
+    const last = usePdfStore.getState().undoStack.at(-1)
+    if (last && last.kind === 'page') {
+      expect(last.forward).toEqual({ type: 'watermark', text: 'BORRADOR', pages: [0, 1, 4] })
+    }
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('mergePdfUndoable', () => {
@@ -333,6 +367,50 @@ describe('formFieldUndoable', () => {
     if (last && last.kind === 'page') {
       expect(last.inverse).toEqual({ type: 'replace', page: 0, stashId: 'ff-1' })
       expect(last.forward).toEqual({ type: 'formField', page: 0, fieldName: 'nombre', value: 'Ana' })
+    }
+    vi.unstubAllGlobals()
+  })
+})
+
+// Un campo con widgets en varias páginas se actualiza en todas, así que el motor
+// stashea el documento entero. El cliente exige la bandera explícita: deducirlo de que
+// falte `stash_page` haría que un motor viejo —que solo stashea páginas— restaurara un
+// stash de UNA hoja encima del documento completo.
+describe('formFieldUndoable con campo en varias páginas', () => {
+  function conRespuesta(extra: Record<string, unknown>) {
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1', file_path: 'C:/f.pdf', page_count: 2,
+      title: null, author: null, subject: null,
+      page_sizes: [{ page_num: 0, width: 100, height: 100 }, { page_num: 1, width: 100, height: 100 }],
+    })
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      const path = String(url)
+      if (path.includes('/widgets/')) {
+        return Promise.resolve({ ok: true, json: async () => ({ success: true, previous: 'viejo', stash_id: 'ff-9', ...extra }) })
+      }
+      if (path.includes('/info/')) {
+        return Promise.resolve({ ok: true, json: async () => ({ page_count: 2, page_sizes: [{ page_num: 0, width: 100, height: 100 }] }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    }))
+  }
+
+  it("con scope 'document' apila restaurar el documento", async () => {
+    conRespuesta({ stash_page: null, stash_scope: 'document' })
+    await formFieldUndoable('doc-1', 0, 'Nombre', 'Engell')
+    const last = usePdfStore.getState().undoStack.at(-1)
+    if (last && last.kind === 'page') {
+      expect(last.inverse).toEqual({ type: 'restoreDoc', stashId: 'ff-9' })
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('sin bandera (motor viejo) apila restaurar la página, no el documento', async () => {
+    conRespuesta({})
+    await formFieldUndoable('doc-1', 0, 'Nombre', 'Engell')
+    const last = usePdfStore.getState().undoStack.at(-1)
+    if (last && last.kind === 'page') {
+      expect(last.inverse.type).toBe('replace')
     }
     vi.unstubAllGlobals()
   })

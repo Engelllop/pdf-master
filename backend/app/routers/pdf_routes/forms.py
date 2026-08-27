@@ -38,5 +38,7 @@ def update_widget(doc_id: str, page_num: int, req: FormFieldUpdate):
     result = pdf_service.set_form_field(doc_id, page_num, req.field_name, req.value, stash=req.stash)
     if result is None:
         raise HTTPException(status_code=404, detail="Field not found")
-    previous, stash_id = result
-    return FormFieldResult(success=True, previous=previous, stash_id=stash_id or None)
+    previous, stash_id, stash_page = result
+    return FormFieldResult(success=True, previous=previous, stash_id=stash_id or None,
+                           stash_page=stash_page,
+                           stash_scope='page' if stash_page is not None else 'document')

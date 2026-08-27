@@ -7,7 +7,7 @@ import json
 import os
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
@@ -147,31 +147,3 @@ class RenderMixin:
                 self._render_cache.popitem(last=False)
             return result
 
-    def render_thumbnail(self, doc_id: str, page_num: int) -> Optional[ThumbnailRender]:
-        with self._lock:
-            doc = self._acquire(doc_id)
-            if not doc or page_num < 0 or page_num >= len(doc):
-                return None
-
-            cache_key = (doc_id, page_num)
-            if cache_key in self._thumb_cache:
-                return self._thumb_cache[cache_key]
-
-            page = doc.load_page(page_num)
-            scale = self._capped_scale(page, settings.THUMBNAIL_DPI / 72, 300)
-            mat = fitz.Matrix(scale, scale)
-            pix = page.get_pixmap(matrix=mat, alpha=False, annots=False)
-
-            img_data = pix.tobytes("png")
-            img_b64 = base64.b64encode(img_data).decode('utf-8')
-
-            result = ThumbnailRender(
-                page_num=page_num,
-                image_base64=f"data:image/png;base64,{img_b64}",
-                width=pix.width,
-                height=pix.height
-            )
-            self._thumb_cache[cache_key] = result
-            if len(self._thumb_cache) > self._thumb_cache_max:
-                self._thumb_cache.popitem(last=False)
-            return result

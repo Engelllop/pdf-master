@@ -11,11 +11,13 @@ export function useRotateAnnotation(
   activeDocId: string | null,
   pageData: { width: number } | null,
 ) {
-  const store = useStoreSlice('docs', 'updateAnnotation')
+  const store = useStoreSlice('docs', 'updateAnnotation', 'commitAnnotationGesture')
   const [rotatingAnn, setRotatingAnn] = useState<RotatingAnn | null>(null)
 
   useEffect(() => {
     if (!rotatingAnn) return
+    // Girar tampoco apilaba nada: un giro accidental no se podía deshacer.
+    const antes = store.docs.find((d) => d.doc_id === activeDocId)?.annotations ?? null
     const handleMove = (e: MouseEvent) => {
       if (!svgRef.current || !pageData) return
       // El centro de giro viene en px del bitmap: sin des-escalar el ratón, el ángulo
@@ -29,7 +31,10 @@ export function useRotateAnnotation(
       if (!doc) return
       store.updateAnnotation(doc.doc_id, rotatingAnn.id, { rotation: newRotation })
     }
-    const handleUp = () => setRotatingAnn(null)
+    const handleUp = () => {
+      if (antes && activeDocId) store.commitAnnotationGesture(activeDocId, antes)
+      setRotatingAnn(null)
+    }
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
     return () => {

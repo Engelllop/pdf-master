@@ -1,22 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { type Annotation } from '../store/usePdfStore'
+import { geometriaRedimensionada, type ResizeCorner } from '../lib/resizeGeometry'
 import { useStoreSlice } from './useStoreSlice'
 import { localPointFromClient } from '../lib/svgPoint'
 
-export type ResizeCorner = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w'
+export type { ResizeCorner } from '../lib/resizeGeometry'
 
 export function useAnnotationDrag(
   svgRef: React.RefObject<SVGSVGElement | null>,
   activeDocId: string | null,
   pageData: { width: number; height: number; originalWidth: number; originalHeight: number } | null,
   toScreenCoords: (pdfX: number, pdfY: number) => { x: number; y: number },
+  /** Se le inyecta `getInteractiveBounds`: los bounds crudos de una cota horizontal
+   * tienen alto 0 y no dejaban dónde pinchar para arrastrarla. */
   getAnnotationBounds: (ann: Annotation, pageData: { width: number; height: number; originalWidth: number; originalHeight: number }, toScreen: (x: number, y: number) => { x: number; y: number }) => { x: number; y: number; w: number; h: number } | null,
 ) {
   const store = useStoreSlice(
     'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotation', 'updateAnnotation',
+    'commitAnnotationGesture',
     'moveAnnotations', 'activeTool', 'docs', 'getAnnotationsForPage',
   )
-  const { selectAnnotation, updateAnnotation, moveAnnotations } = store
+  const { selectAnnotation, updateAnnotation, moveAnnotations, commitAnnotationGesture } = store
 
   const [draggingAnn, setDraggingAnn] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
   // Arrastre en grupo: se aplican deltas incrementales a todas las marcas
@@ -37,6 +41,9 @@ export function useAnnotationDrag(
   // Window-level annotation drag listeners
   useEffect(() => {
     if (!draggingAnn) return
+    // Foto de las marcas al empezar el gesto: las deps del efecto son [draggingAnn],
+    // así que `store.docs` es el del render en que arrancó el arrastre.
+    const antes = store.docs.find((d) => d.doc_id === activeDocId)?.annotations ?? null
     const handleMove = (e: MouseEvent) => {
       if (!svgRef.current || !pageData) return
       const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
@@ -61,6 +68,7 @@ export function useAnnotationDrag(
       moveAnnotations(doc.doc_id, [draggingAnn.id], pdfX - ann.x, pdfY - ann.y)
     }
     const handleUp = () => {
+      if (antes && activeDocId) commitAnnotationGesture(activeDocId, antes)
       setDraggingAnn(null)
       groupDragRef.current = null
     }
@@ -75,6 +83,7 @@ export function useAnnotationDrag(
   // Window-level annotation resize listeners (8-directional)
   useEffect(() => {
     if (!resizingAnn) return
+    const antes = store.docs.find((d) => d.doc_id === activeDocId)?.annotations ?? null
     const handleMove = (e: MouseEvent) => {
       if (!svgRef.current || !pageData) return
       const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
@@ -87,92 +96,23 @@ export function useAnnotationDrag(
       if (!ann) return
       const scaleX = pageData.originalWidth / pageData.width
       const scaleY = pageData.originalHeight / pageData.height
-
-      let newX = ann.x
-      let newY = ann.y
-      let newW = ann.width || 0
-      let newH = ann.height || 0
-
-      const dx = deltaX * scaleX
-      const dy = deltaY * scaleY
       // Los valores de arranque llegan en px del bitmap (los mide SelectionOverlay sobre
       // el SVG) y aquí se escribe en puntos PDF: sumarlos a `dx` sin convertir hacía que
       // la marca saltara al tamaño del bitmap en cuanto el rasterizado no era 1:1 — que
       // es lo normal en pantallas con escalado de Windows.
-      const startW = resizingAnn.startW * scaleX
-      const startH = resizingAnn.startH * scaleY
-      const startBoundsX = resizingAnn.startBoundsX * scaleX
-      const startBoundsY = resizingAnn.startBoundsY * scaleY
-
-      // Un cuadro de texto encogido a 10 pt deja de mostrar nada y parece que
-      // "desaparecio": el minimo depende del cuerpo de la letra.
-      const fs = ann.fontSize || 14
-      const MIN = (ann.type === 'text' || ann.type === 'callout') ? fs * 2.5 : 10
-
-      switch (resizingAnn.corner) {
-        case 'se':
-          newW = Math.max(MIN, startW + dx)
-          newH = Math.max(MIN, startH + dy)
-          break
-        case 'nw':
-          newW = Math.max(MIN, startW - dx)
-          newH = Math.max(MIN, startH - dy)
-          newX = startBoundsX + (startW - newW)
-          newY = startBoundsY + (startH - newH)
-          break
-        case 'ne':
-          newW = Math.max(MIN, startW + dx)
-          newH = Math.max(MIN, startH - dy)
-          newY = startBoundsY + (startH - newH)
-          break
-        case 'sw':
-          newW = Math.max(MIN, startW - dx)
-          newH = Math.max(MIN, startH + dy)
-          newX = startBoundsX + (startW - newW)
-          break
-        case 'n':
-          newH = Math.max(MIN, startH - dy)
-          newY = startBoundsY + (startH - newH)
-          break
-        case 's':
-          newH = Math.max(MIN, startH + dy)
-          break
-        case 'e':
-          newW = Math.max(MIN, startW + dx)
-          break
-        case 'w':
-          newW = Math.max(MIN, startW - dx)
-          newX = startBoundsX + (startW - newW)
-          break
+      const inicio = {
+        x: resizingAnn.startBoundsX * scaleX,
+        y: resizingAnn.startBoundsY * scaleY,
+        w: resizingAnn.startW * scaleX,
+        h: resizingAnn.startH * scaleY,
       }
-
-      const isCorner = resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne' ||
-        resizingAnn.corner === 'sw' || resizingAnn.corner === 'se'
-
-      // For circle, enforce perfect circle
-      if (ann.type === 'circle' && isCorner) {
-        const size = Math.min(newW, newH)
-        newW = size
-        newH = size
-      }
-
-      // Las esquinas de una imagen mantienen su proporción (los lados siguen libres):
-      // arrastrar la esquina la deformaba y no había vuelta atrás.
-      if (ann.type === 'image' && isCorner && startW > 0 && startH > 0) {
-        const ratio = startH / startW
-        if (newW * ratio > newH) newW = newH / ratio
-        else newH = newW * ratio
-        if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'sw') {
-          newX = startBoundsX + (startW - newW)
-        }
-        if (resizingAnn.corner === 'nw' || resizingAnn.corner === 'ne') {
-          newY = startBoundsY + (startH - newH)
-        }
-      }
-
-      updateAnnotation(doc.doc_id, resizingAnn.id, { x: newX, y: newY, width: newW, height: newH })
+      updateAnnotation(
+        doc.doc_id, resizingAnn.id,
+        geometriaRedimensionada(ann, resizingAnn.corner, deltaX * scaleX, deltaY * scaleY, inicio),
+      )
     }
     const handleUp = () => {
+      if (antes && activeDocId) commitAnnotationGesture(activeDocId, antes)
       setResizingAnn(null)
     }
     window.addEventListener('mousemove', handleMove)

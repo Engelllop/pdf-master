@@ -16,7 +16,8 @@ import SettingsModal from './components/SettingsModal'
 import AIPanel from './components/AIPanel'
 import { useFormModal } from './components/FormModal'
 import { registerPromptHandler } from './lib/uiPrompt'
-import { openDocument } from './lib/openDocument'
+import { reopenDeadDoc } from './lib/openDocument'
+import { restoreLiveSession } from './lib/session'
 import { requestCloseDoc } from './lib/closeDocument'
 import { updateRecentMeta } from './lib/recents'
 import { TOOL_KEYS } from './lib/tools'
@@ -174,20 +175,9 @@ function App() {
     const t = setTimeout(async () => {
       if (!usePdfStore.getState().restoreSession) return
       if (usePdfStore.getState().docs.length > 0) return
-      let session: { activeFile: string | null; docs: { file_path: string; currentPage: number; zoom: number; fitMode: string }[] } | null = null
-      try { session = JSON.parse(localStorage.getItem('pdfmaster_session') || 'null') } catch {}
-      if (!session?.docs?.length) return
-      const { setPage, setZoom, setActiveDoc } = usePdfStore.getState()
-      const idByPath: Record<string, string> = {}
-      for (const d of session.docs) {
-        const id = await openDocument(d.file_path, { silent: true, activate: false })
-        if (id) {
-          idByPath[d.file_path] = id
-          setPage(id, d.currentPage || 0)
-          if (typeof d.zoom === 'number' && d.zoom > 0) setZoom(id, d.zoom)
-        }
-      }
-      if (session.activeFile && idByPath[session.activeFile]) setActiveDoc(idByPath[session.activeFile])
+      // La lógica vive en `lib/session`: acá había una copia con su propia clave, y las
+      // dos se habían quedado sin aplicar el `fitMode` que ambas guardaban.
+      await restoreLiveSession()
     }, 600)
     return () => clearTimeout(t)
   }, [])
@@ -201,21 +191,15 @@ function App() {
     let failCount = 0
     let restarting = false
 
+    // Se reusa `reopenDeadDoc`, que reabre el archivo y REMAPEA el doc_id conservando
+    // todo el estado local. Acá había una versión propia (abrir + copiar página y
+    // marcas + cerrar el viejo) que perdía cosas por el camino: el zoom, el modo de
+    // ajuste, las escalas por página, la pila de deshacer… y sobre todo la marca de
+    // «sin guardar», porque `setAnnotations` no ensucia el documento. Es decir: tras un
+    // reinicio del motor, un plano con marcas sin guardar dejaba de avisar al cerrar.
     const recoverDocuments = async () => {
-      const prev = usePdfStore.getState().docs.map((d) => ({
-        doc_id: d.doc_id,
-        file_path: d.file_path,
-        currentPage: d.currentPage,
-        annotations: d.annotations,
-      }))
-      const { closeDoc, setPage, setAnnotations } = usePdfStore.getState()
-      for (const d of prev) {
-        const newId = await openDocument(d.file_path, { silent: true, activate: false })
-        if (newId) {
-          setPage(newId, d.currentPage)
-          if (d.annotations.length > 0) setAnnotations(newId, d.annotations)
-        }
-        closeDoc(d.doc_id) // drop the now-dead doc_id (backend 404 is ignored)
+      for (const docId of usePdfStore.getState().docs.map((d) => d.doc_id)) {
+        await reopenDeadDoc(docId)
       }
     }
 

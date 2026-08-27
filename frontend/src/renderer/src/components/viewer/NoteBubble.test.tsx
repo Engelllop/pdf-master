@@ -125,3 +125,44 @@ describe('globo de la nota', () => {
     expect(closed).toBe(false)
   })
 })
+
+// El globo se reutiliza cuando la selección salta a otra nota sin cerrarlo (desde el
+// panel de revisión, por ejemplo). `useState(ann.text)` solo corre al montar: la nota
+// nueva aparecía con el texto de la anterior y al guardar se lo escribía encima.
+describe('el globo cambia de nota', () => {
+  it('muestra el texto de la nota nueva, no el de la anterior', () => {
+    const a = noteAnn({ id: 'n1', text: 'cota mal' })
+    const b = noteAnn({ id: 'n2', text: 'falta detalle' })
+    openDocWith(a)
+    const { rerender } = renderBubble(a)
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('cota mal')
+
+    rerender(
+      <NoteBubble ann={b} docId={DOC} pageData={pageData} toScreen={toScreen}
+        scale={1} wrapperWidth={800} wrapperHeight={600} onClose={() => {}} />,
+    )
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).value).toBe('falta detalle')
+  })
+
+  it('al guardar escribe en la nota vigente', () => {
+    const a = noteAnn({ id: 'n1', text: 'primera' })
+    const b = noteAnn({ id: 'n2', text: 'segunda' })
+    usePdfStore.getState().addDoc({
+      doc_id: DOC, file_path: 'C:/a.pdf', page_count: 1,
+      title: null, author: null, subject: null,
+      page_sizes: [{ page_num: 0, width: 800, height: 600 }],
+    })
+    usePdfStore.getState().setAnnotations(DOC, [a, b])
+    const { rerender } = renderBubble(a)
+    rerender(
+      <NoteBubble ann={b} docId={DOC} pageData={pageData} toScreen={toScreen}
+        scale={1} wrapperWidth={800} wrapperHeight={600} onClose={() => {}} />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'corregido' } })
+    // Clic fuera = guardar.
+    fireEvent.mouseDown(document.body)
+    const porId = Object.fromEntries(annotations().map((x) => [x.id, x.text]))
+    expect(porId['n2']).toBe('corregido')
+    expect(porId['n1']).toBe('primera')
+  })
+})

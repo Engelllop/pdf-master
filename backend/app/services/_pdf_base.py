@@ -10,6 +10,41 @@ from app.core.config import settings
 logger = logging.getLogger("pdfmaster")
 
 
+# Los tipos base de PDF (helv y compañía) solo cubren latin-1: al estampar texto con
+# `insert_text`, cualquier carácter de fuera —una raya «—», un «→», un «✔», un «≥»—
+# DESAPARECÍA sin aviso. Pasaba en el resumen de marcas (el «—» de su propia cabecera
+# incluido), en la marca de agua, en el encabezado/pie y en la numeración. Se
+# transliteran los habituales y el resto cae en «?»: perder el carácter exacto es
+# aceptable; perder el dato en silencio, no.
+_TRANSLITERACIONES = {
+    '—': '-', '–': '-', '―': '-',        # rayas
+    '‘': "'", '’': "'", '“': '"', '”': '"',  # comillas tipográficas
+    '…': '...', '•': '-',
+    '→': '->', '←': '<-', '↳': '>',      # flechas
+    '✓': 'v', '✔': 'v', '✗': 'x', '✘': 'x',
+    '≥': '>=', '≤': '<=', '≠': '!=', '±': '+/-',
+    ' ': ' ', ' ': ' ', '​': '',
+}
+
+
+def texto_estampable(texto: Optional[str]) -> str:
+    """Texto que `insert_text` puede escribir con una fuente base sin perder nada."""
+    if not texto:
+        return ''
+    salida = []
+    for ch in texto:
+        reemplazo = _TRANSLITERACIONES.get(ch)
+        if reemplazo is not None:
+            salida.append(reemplazo)
+            continue
+        try:
+            ch.encode('latin-1')
+            salida.append(ch)
+        except UnicodeEncodeError:
+            salida.append('?')
+    return ''.join(salida)
+
+
 class PasswordRequiredError(Exception):
     """fitz no define PasswordError; esta señala al router que devuelva 401."""
 
@@ -29,9 +64,7 @@ class PdfServiceBase:
         self._pending_annotations: Dict[str, list] = {}
         self._passwords: Dict[str, Optional[str]] = {}  # Kept so evicted protected docs can be reopened
         self._render_cache: OrderedDict = OrderedDict()  # (doc_id, page_num, zoom) -> PageRender
-        self._thumb_cache: OrderedDict = OrderedDict()   # (doc_id, page_num) -> ThumbnailRender
         self._render_cache_max = 150
-        self._thumb_cache_max = 300
         self._snap_cache: OrderedDict = OrderedDict()  # (doc_id, page_num) -> List[dict]
         self._snap_cache_max = 60
         # LRU eviction: with 60+ plans open the backend would otherwise keep every
@@ -140,9 +173,6 @@ class PdfServiceBase:
         keys_to_remove = [k for k in self._render_cache.keys() if k[0] == doc_id]
         for k in keys_to_remove:
             del self._render_cache[k]
-        keys_to_remove = [k for k in self._thumb_cache.keys() if k[0] == doc_id]
-        for k in keys_to_remove:
-            del self._thumb_cache[k]
         keys_to_remove = [k for k in self._snap_cache.keys() if k[0] == doc_id]
         for k in keys_to_remove:
             del self._snap_cache[k]

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { apiFetch } from '../lib/api'
+import { renderPdfThumbnail } from '../lib/pdfjs'
+import { revokePageUrl } from '../lib/blobUrl'
 
 /** Vista previa al pasar el ratón por los botones de rotar: se ve hacia dónde va a
  * quedar la página antes de tocarla (sin esto había que rotar varias veces hasta
@@ -20,17 +21,24 @@ export default function RotatePreview({ degrees, all = false, children }: {
 
   // Sin esto, al cambiar de página la vista previa mostraba la miniatura de la
   // anterior hasta que llegaba la nueva.
+  // El blob de la miniatura anterior lo revoca la limpieza del efecto de abajo.
   useEffect(() => { setThumb(null) }, [activeDoc?.doc_id, page, activeDoc?.docVersion])
 
   useEffect(() => {
     if (!hover || !activeDoc || cached) return
     let alive = true
-    apiFetch(`/pdf/thumbnail/${activeDoc.doc_id}/${page}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (alive && d?.image_base64) setThumb(d.image_base64) })
+    renderPdfThumbnail(activeDoc.doc_id, activeDoc.docVersion, page)
+      .then(({ url }) => {
+        if (alive) setThumb(url)
+        else revokePageUrl(url) // llegó tarde: nadie la va a pintar
+      })
       .catch(() => {})
     return () => { alive = false }
-  }, [hover, activeDoc?.doc_id, page, cached])
+  }, [hover, activeDoc?.doc_id, activeDoc?.docVersion, page, cached])
+
+  // La miniatura propia es un blob URL: sin esto, pasar el ratón por rotar en cada
+  // página de un documento largo iba dejando bitmaps en RAM.
+  useEffect(() => () => { revokePageUrl(thumb ?? undefined) }, [thumb])
 
   const src = cached || thumb
 

@@ -5,6 +5,9 @@ import {
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
+import { pushAnnotations } from '../lib/saveDocument'
+import { renderPdfThumbnail } from '../lib/pdfjs'
+import { revokePageUrl } from '../lib/blobUrl'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
@@ -30,6 +33,11 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
   const [dragOver, setDragOver] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const versionRef = useRef(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // Páginas que el usuario llegó a tener cerca del viewport, y las ya pedidas.
+  const [wanted, setWanted] = useState<Set<number>>(new Set())
+  const requestedRef = useRef<Set<number>>(new Set())
+  const thumbsRef = useRef<Map<number, string>>(new Map())
 
   // Esc cierra. Estaba en el onKeyDown del contenedor, que solo dispara si el foco
   // está dentro: al abrirse nadie tenía el foco y no había forma de salir con teclado.
@@ -41,34 +49,75 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
 
   const pageCount = doc?.page_count ?? 0
 
-  // Carga las miniaturas en tandas para no saturar el motor (un solo worker).
+  // Al abrir otro documento (o tras editarlo) las miniaturas vigentes ya no valen.
+  useEffect(() => {
+    versionRef.current++
+    requestedRef.current = new Set()
+    thumbsRef.current.forEach((url) => revokePageUrl(url))
+    thumbsRef.current = new Map()
+    setThumbs(new Map())
+  }, [doc?.doc_id, doc?.docVersion])
+
+  // Solo se rasteriza lo que el usuario tiene (o tuvo) cerca del viewport: abrir el
+  // organizador de un documento de 300 páginas pedía las 300 de golpe.
+  useEffect(() => {
+    const root = scrollRef.current
+    if (!root || pageCount === 0) return
+    const io = new IntersectionObserver((entries) => {
+      const nuevas = entries
+        .filter((e) => e.isIntersecting)
+        .map((e) => Number((e.target as HTMLElement).dataset.page))
+        .filter((i) => !Number.isNaN(i))
+      if (nuevas.length === 0) return
+      setWanted((prev) => {
+        const next = new Set(prev)
+        const antes = next.size
+        for (const i of nuevas) next.add(i)
+        return next.size === antes ? prev : next
+      })
+    }, { root, rootMargin: '600px 0px' })
+    root.querySelectorAll('[data-page]').forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [pageCount, doc?.doc_id])
+
+  // Rasteriza en tandas de 4 con el documento que PDF.js ya tiene parseado: antes era
+  // un round-trip por página a `/pdf/thumbnail`, y cada uno tomaba el único lock de
+  // MuPDF, así que el organizador congelaba guardar, medir o buscar mientras cargaba.
   useEffect(() => {
     if (!doc) return
+    const version = versionRef.current
+    const pendientes = [...wanted].filter((p) => !requestedRef.current.has(p)).sort((a, b) => a - b)
+    if (pendientes.length === 0) return
+    for (const p of pendientes) requestedRef.current.add(p)
     let cancelled = false
-    const version = ++versionRef.current
-    setThumbs(new Map())
     ;(async () => {
-      for (let i = 0; i < pageCount; i += 4) {
+      for (let i = 0; i < pendientes.length; i += 4) {
         if (cancelled || versionRef.current !== version) return
-        const batch = Array.from({ length: Math.min(4, pageCount - i) }, (_, k) => i + k)
+        const batch = pendientes.slice(i, i + 4)
         const results = await Promise.all(batch.map(async (p) => {
           try {
-            const res = await apiFetch(`/pdf/thumbnail/${doc.doc_id}/${p}`)
-            if (!res.ok) return null
-            const data = await res.json()
-            return [p, data.image_base64] as const
+            const { url } = await renderPdfThumbnail(doc.doc_id, doc.docVersion, p)
+            return [p, url] as const
           } catch { return null }
         }))
-        if (cancelled || versionRef.current !== version) return
+        if (cancelled || versionRef.current !== version) {
+          for (const r of results) if (r) revokePageUrl(r[1])
+          return
+        }
         setThumbs((prev) => {
           const next = new Map(prev)
           for (const r of results) if (r) next.set(r[0], r[1])
+          thumbsRef.current = next
           return next
         })
       }
     })()
     return () => { cancelled = true }
-  }, [doc?.doc_id, doc?.docVersion, pageCount])
+  }, [doc?.doc_id, doc?.docVersion, wanted])
+
+  // Los bitmaps son blob URLs: cerrar el organizador sin revocarlos dejaba en RAM
+  // todas las miniaturas que el usuario llegó a ver.
+  useEffect(() => () => { thumbsRef.current.forEach((url) => revokePageUrl(url)) }, [])
 
   if (!doc) return null
 
@@ -159,6 +208,9 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
     if (!out) return
     setBusy(true)
     try {
+      // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
+      // salía con las páginas limpias, sin las marcas que se acaban de poner.
+      await pushAnnotations(doc.doc_id)
       const res = await apiFetch(`/pdf/split/${doc.doc_id}?output_path=${encodeURIComponent(out)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages: [...selected].sort((a, b) => a - b) }),
@@ -204,13 +256,14 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
           className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
         <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
           {Array.from({ length: pageCount }, (_, i) => {
             const isSel = selected.has(i)
             const thumb = thumbs.get(i)
             return (
               <div key={i}
+                data-page={i}
                 draggable
                 onDragStart={() => setDragIndex(i)}
                 onDragOver={(e) => { e.preventDefault(); if (dragIndex !== null && dragIndex !== i) setDragOver(i) }}

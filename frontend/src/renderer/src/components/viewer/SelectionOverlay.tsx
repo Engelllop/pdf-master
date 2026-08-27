@@ -1,6 +1,6 @@
 import { type Annotation } from '../../store/usePdfStore'
 import { type ResizeCorner } from '../../hooks/useAnnotationDrag'
-import { getAnnotationBounds, type PageDims, type ToScreen } from './annotationRender'
+import { getAnnotationBounds, getInteractiveBounds, type PageDims, type ToScreen } from './annotationRender'
 import { SEL, SEL_PAPER } from '../../lib/selectionChrome'
 
 export interface ResizeStart {
@@ -27,6 +27,7 @@ const HANDLE_SIZE = 8
 // sensible es mayor y transparente; el cuadrado solo se dibuja.
 const HANDLE_HIT = 20
 
+
 // Caja de selección + 8 handles de redimensión + handle de rotación (solo imágenes).
 // Vive dentro del <svg> de la página; se usa tanto en la página izquierda como en la
 // derecha de la vista doble (antes eran dos bloques duplicados de ~85 líneas).
@@ -37,8 +38,12 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
   onResizeStart: (s: ResizeStart) => void
   onRotateStart?: (s: RotateStart) => void
 }) {
-  const bounds = getAnnotationBounds(ann, pageData, toScreen)
-  if (!bounds || bounds.w <= 0 || bounds.h <= 0) return null
+  // La caja se dibuja con el grosor mínimo (una cota horizontal tiene alto 0: el guard
+  // de «w<=0 || h<=0» la descartaba y se quedaba sin caja ni tiradores), pero el
+  // redimensionado parte del tamaño REAL para no falsear la geometría.
+  const bounds = getInteractiveBounds(ann, pageData, toScreen)
+  const reales = getAnnotationBounds(ann, pageData, toScreen)
+  if (!bounds || !reales) return null
 
   const hs = HANDLE_SIZE / 2
   const corners = [
@@ -87,10 +92,10 @@ export default function SelectionOverlay({ ann, pageData, toScreen, onResizeStar
                   corner: c.key,
                   startX: e.nativeEvent.offsetX + hitX,
                   startY: e.nativeEvent.offsetY + hitY,
-                  startW: bounds.w,
-                  startH: bounds.h,
-                  startBoundsX: bounds.x,
-                  startBoundsY: bounds.y,
+                  startW: reales.w,
+                  startH: reales.h,
+                  startBoundsX: reales.x,
+                  startBoundsY: reales.y,
                 })
               }}
             />

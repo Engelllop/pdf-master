@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Ruler, X } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { scaleForPage } from '../store/usePdfStore'
 
 /** Aviso accionable al activar una medición sin escala calibrada: antes el usuario
  * medía primero y descubría después (por un toast) que el resultado era en píxeles.
@@ -25,7 +26,7 @@ export default function CalibrationBanner() {
   }
 
   const hint = activeTool ? HINTS[activeTool] : undefined
-  const needsScale = !!activeTool && activeTool.startsWith('measure_') && activeTool !== 'measure_calibrate' && !activeDoc?.measurementScale
+  const needsScale = !!activeTool && activeTool.startsWith('measure_') && activeTool !== 'measure_calibrate' && !scaleForPage(activeDoc, activeDoc?.currentPage ?? 0)
 
   if (!activeDoc || dismissed || (!hint && !needsScale)) return null
 

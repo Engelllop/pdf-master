@@ -24,7 +24,7 @@ import FloatingSelectionBar from './viewer/FloatingSelectionBar'
 import MultiSelectionBar from './viewer/MultiSelectionBar'
 import TextBoxEditor from './viewer/TextBoxEditor'
 import FormFieldsLayer from './viewer/FormFieldsLayer'
-import { renderAnnotation, strokePropsFor, getAnnotationBounds } from './viewer/annotationRender'
+import { renderAnnotation, strokePropsFor, getAnnotationBounds, getInteractiveBounds } from './viewer/annotationRender'
 import ViewerEmptyState from './viewer/ViewerEmptyState'
 import ViewerContextMenu from './viewer/ViewerContextMenu'
 import { recoverImage } from '../lib/recoverImage'
@@ -44,7 +44,7 @@ export default function Viewer() {
     'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
     'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'releaseTool', 'setDocDirty',
     'setSelectedImageData', 'setSelectedImagePath', 'setViewerScroll', 'showToast',
-    'updateAnnotation', 'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
+    'updateAnnotation', 'updateAnnotationUndoable', 'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
     'textStyle', 'setTextStyle',
   )
   const {
@@ -137,7 +137,7 @@ export default function Viewer() {
   // Annotation drag & resize (left page)
   const {
     setResizingAnn, handleMouseDown: handleDragMouseDown,
-  } = useAnnotationDrag(svgRef, activeDocId, pageData, toScreenCoords, getAnnotationBounds)
+  } = useAnnotationDrag(svgRef, activeDocId, pageData, toScreenCoords, getInteractiveBounds)
 
   // Redimensionado de anotaciones en la página derecha (vista doble)
   const { setResizingAnnRight } = useRightPageResize(svgRightRef, activeDocId, pageDataRight)
@@ -518,7 +518,7 @@ export default function Viewer() {
 
   const commitEditText = () => {
     if (!editingTextAnn || !activeDoc) return
-    store.updateAnnotation(activeDoc.doc_id, editingTextAnn, { text: editTextValue })
+    store.updateAnnotationUndoable(activeDoc.doc_id, editingTextAnn, { text: editTextValue })
     setEditingTextAnn(null)
     setEditTextValue('')
   }
@@ -912,10 +912,10 @@ export default function Viewer() {
                     bold: !!ann.bold, italic: !!ann.italic, align: ann.align || 'left',
                     lineHeight: ann.lineHeight || 1.3, listStyle: ann.listStyle || 'none',
                   }}
-                  onFontFamily={(f) => store.updateAnnotation(activeDoc.doc_id, ann.id, { fontFamily: f })}
-                  onFontSize={(v) => store.updateAnnotation(activeDoc.doc_id, ann.id, { fontSize: v })}
-                  onColor={(c) => store.updateAnnotation(activeDoc.doc_id, ann.id, { color: c })}
-                  onStyle={(s) => store.updateAnnotation(activeDoc.doc_id, ann.id, s)} />
+                  onFontFamily={(f) => store.updateAnnotationUndoable(activeDoc.doc_id, ann.id, { fontFamily: f })}
+                  onFontSize={(v) => store.updateAnnotationUndoable(activeDoc.doc_id, ann.id, { fontSize: v })}
+                  onColor={(c) => store.updateAnnotationUndoable(activeDoc.doc_id, ann.id, { color: c })}
+                  onStyle={(s) => store.updateAnnotationUndoable(activeDoc.doc_id, ann.id, s)} />
               )
             })()}
           </div>

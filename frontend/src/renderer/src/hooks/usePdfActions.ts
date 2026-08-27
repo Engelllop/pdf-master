@@ -1,14 +1,17 @@
 import { useStoreSlice } from './useStoreSlice'
-import { usePdfStore, type PdfDoc, type Annotation } from '../store/usePdfStore'
+import { scaleForPage, usePdfStore, type PdfDoc, type Annotation } from '../store/usePdfStore'
 import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
-import { parsePageRanges } from '../lib/pageRange'
+import { parsePageRanges, parsePagesField } from '../lib/pageRange'
+import { correrCola } from '../lib/batchQueue'
+import { avisarSiFallóLaCopia, confirmarEscrituraEn, confirmarSobrescritura, pushAnnotations, refrescarEstadoEnDisco } from '../lib/saveDocument'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
   headerFooterUndoable,
   insertBlankUndoable,
+  makeSearchableAllUndoable,
   makeSearchableUndoable,
   metadataUndoable,
   mergePdfUndoable,
@@ -18,6 +21,13 @@ import {
 } from '../lib/pageUndo'
 
 type ActiveDoc = PdfDoc | undefined
+
+/** El aviso dice sobre cuántas páginas se aplicó: sellar 3 de 60 láminas y leer el
+ * mismo «agregado» que al sellarlas todas no deja ver si el rango se tomó en cuenta. */
+function rangoAplicado(hecho: string, pages?: number[]): string {
+  const donde = pages?.length ? ` en ${pages.length} página(s)` : ''
+  return `${hecho}${donde}. Ctrl+Z deshace.`
+}
 
 type Helpers = {
   askForm: (title: string, fields: Field[], submitLabel?: string) => Promise<FormValues | null>
@@ -36,7 +46,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     setDocDirty, setSaveStatus,
     toggleCompareMode, setCompareDoc, compareMode, compareDocId,
     activeTool, setActiveTool, setSelectedImagePath, setSelectedImageData,
-    setAnnotations,
+    setAnnotations, commitAnnotationGesture,
   } = useStoreSlice(
     'docs', 'addDoc', 'setZoom',
     'setFitMode', 'computeFitZoom', 'viewerWidth', 'viewerHeight',
@@ -44,7 +54,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     'setDocDirty', 'setSaveStatus',
     'toggleCompareMode', 'setCompareDoc', 'compareMode', 'compareDocId',
     'activeTool', 'setActiveTool', 'setSelectedImagePath', 'setSelectedImageData',
-    'setAnnotations',
+    'setAnnotations', 'commitAnnotationGesture',
   )
 
   const handleExportWord = async () => {
@@ -71,13 +81,19 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const v = await askForm('Numerar páginas', [
       { name: 'prefix', label: 'Prefijo (vacío = n / total)', type: 'text', defaultValue: '', placeholder: 'Ej. DOC-' },
       { name: 'position', label: 'Posición', type: 'select', options: ['Abajo', 'Arriba'], defaultValue: 'Abajo' },
+      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
     ])
     if (!v) return
     const prefix = String(v.prefix)
     const position = String(v.position) === 'Arriba' ? 'top' : 'bottom'
+    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
+    if (pages === null) {
+      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
+      return
+    }
     try {
-      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, position)
-      showToast('Numeración aplicada. Ctrl+Z deshace.', 'success')
+      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, position, pages)
+      showToast(rangoAplicado('Numeración aplicada', pages), 'success')
     } catch (err) { toastActionError(err) }
   }
 
@@ -117,11 +133,57 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       ], 'Aplicar')
       if (!v) return
       const all = String(v.scope).includes('documento')
+      if (all) {
+        // Antes esto era UNA petición para todo el documento: minutos con el motor
+        // tomado, sin progreso y sin forma de cortar. El usuario elegía «todo el
+        // documento» en un escaneo de 300 láminas y se quedaba mirando una app
+        // aparentemente colgada.
+        const pend = await apiFetch(`/pdf/ocr-pending/${activeDoc.doc_id}`)
+        const datos = pend.ok ? await pend.json() : null
+        const paginas: number[] = datos?.pages ?? []
+        if (datos && paginas.length === 0) {
+          showToast('Todas las páginas ya tienen texto: no hay nada que OCR', 'info')
+          return
+        }
+        const ok = await askConfirm(
+          'Hacer buscable todo el documento',
+          `Se va a reconocer texto en ${paginas.length} de ${activeDoc.page_count} página(s).`
+          + '\n\nTarda del orden de un segundo o dos por página. Se puede cancelar:'
+          + ' lo ya reconocido se conserva. Ctrl+Z deshace todo el lote.',
+          'Empezar',
+        )
+        if (!ok) return
+        // Página por página para poder mostrar progreso real y cancelar; el paso de
+        // deshacer sigue siendo uno solo (el stash se toma antes de empezar).
+        const { startProgress, updateProgress, endProgress, isCancelRequested } = usePdfStore.getState()
+        startProgress('OCR del documento', paginas.length)
+        let res
+        try {
+          res = await makeSearchableAllUndoable(activeDoc.doc_id, paginas, {
+            avanzar: (n, p) => updateProgress(n, `Página ${p + 1}`),
+            cancelado: isCancelRequested,
+          })
+        } finally {
+          endProgress()
+        }
+        if (res.palabras > 0) {
+          showToast(
+            res.cancelado
+              ? `Cancelado: ${res.palabras} palabra(s) en ${res.hechas} de ${paginas.length} página(s). Ctrl+Z deshace.`
+              : `OCR aplicado: ${res.palabras} palabra(s) en ${res.hechas} página(s). Ctrl+Z deshace.`,
+            res.cancelado ? 'info' : 'success',
+          )
+        } else {
+          showToast(res.cancelado ? 'OCR cancelado' : 'El OCR no encontró texto en esas páginas', 'info')
+        }
+        return
+      }
       const words = await withProgress(
-        all ? 'OCR de todo el documento…' : 'Haciendo la página buscable (OCR)…',
-        () => makeSearchableUndoable(activeDoc.doc_id, all ? undefined : activeDoc.currentPage),
+        'Haciendo la página buscable (OCR)…',
+        () => makeSearchableUndoable(activeDoc.doc_id, activeDoc.currentPage),
       )
       if (words > 0) showToast(`OCR aplicado: ${words} palabra(s). Ctrl+Z deshace.`, 'success')
+      else if (words < 0) showToast('Tesseract OCR no está disponible', 'error')
       else showToast('Nada que OCR: la página ya tiene texto', 'info')
     } catch (err) { toastActionError(err) }
   }
@@ -142,6 +204,9 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       showToast('Escribí al menos la contraseña de usuario para proteger el PDF', 'error')
       return
     }
+    // Escribe ENCIMA del original (y encima cifrado): era la única ruta de guardado sin
+    // el aviso de «el archivo cambió en disco».
+    if (!(await confirmarSobrescritura(activeDoc.doc_id))) return
     setSaveStatus('saving')
     try {
       const embedRes = await apiFetch(`/pdf/embed/${activeDoc.doc_id}`, {
@@ -151,12 +216,22 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       if (!embedRes.ok) throw new Error('Error al embeber anotaciones')
       const res = await apiFetch(`/pdf/save-password/${activeDoc.doc_id}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_password: userPw || undefined, owner_password: ownerPw || undefined }),
+        body: JSON.stringify({
+          user_password: userPw || undefined,
+          owner_password: ownerPw || undefined,
+          // Sobrescribe el archivo original (y encima cifrado): es justo donde la
+          // copia .bak hace falta, y esta ruta ni miraba el ajuste.
+          backup: usePdfStore.getState().backupOnSave,
+        }),
       })
       if (res.ok) {
         setDocDirty(activeDoc.doc_id, false)
         setSaveStatus('saved')
         showToast('PDF protegido con contraseña guardado', 'success')
+        await avisarSiFallóLaCopia(res)
+        // Nuestro propio guardado cambió la fecha: sin refrescar la referencia, el
+        // siguiente Ctrl+S avisaría de un cambio externo que fuimos nosotros.
+        await refrescarEstadoEnDisco(activeDoc.doc_id)
       } else {
         setSaveStatus('idle')
         showToast('Error al guardar con contraseña', 'error')
@@ -169,13 +244,21 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   const handleWatermark = async () => {
     if (!activeDoc) return
-    const v = await askForm('Marca de agua', [{ name: 'text', label: 'Texto', type: 'text', defaultValue: 'CONFIDENCIAL' }])
+    const v = await askForm('Marca de agua', [
+      { name: 'text', label: 'Texto', type: 'text', defaultValue: 'CONFIDENCIAL' },
+      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
+    ])
     if (!v) return
     const text = String(v.text).trim()
     if (!text) return
+    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
+    if (pages === null) {
+      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
+      return
+    }
     try {
-      await watermarkUndoable(activeDoc.doc_id, text)
-      showToast('Marca de agua agregada. Ctrl+Z deshace.', 'success')
+      await watermarkUndoable(activeDoc.doc_id, text, pages)
+      showToast(rangoAplicado('Marca de agua agregada', pages), 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -296,6 +379,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const v = await askForm('Encabezado y pie de página', [
       { name: 'header', label: 'Encabezado (vacío = omitir)', type: 'text', defaultValue: '' },
       { name: 'footer', label: 'Pie de página (vacío = omitir)', type: 'text', defaultValue: '' },
+      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
     ], 'Aplicar')
     if (!v) return
     const header = String(v.header).trim(), footer = String(v.footer).trim()
@@ -305,9 +389,14 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       showToast('Escribí al menos un encabezado o un pie', 'info')
       return
     }
+    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
+    if (pages === null) {
+      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
+      return
+    }
     try {
-      await headerFooterUndoable(activeDoc.doc_id, header || undefined, footer || undefined)
-      showToast('Encabezado/pie agregado. Ctrl+Z deshace.', 'success')
+      await headerFooterUndoable(activeDoc.doc_id, header || undefined, footer || undefined, pages)
+      showToast(rangoAplicado('Encabezado/pie agregado', pages), 'success')
     } catch (err) {
       toastActionError(err)
     }
@@ -334,9 +423,15 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })
     if (!outputPath) return
+    const { seguir, eraElOriginal } = await confirmarEscrituraEn(activeDoc.doc_id, outputPath)
+    if (!seguir) return
     try {
+      // Comprimir escribe un PDF completo: sin subir las marcas del store el archivo
+      // salía sin ellas (y comprimiendo encima del original, se perdían).
+      await pushAnnotations(activeDoc.doc_id)
       const res = await withProgress('Comprimiendo…', () => apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (!res.ok) { showToast('Error al comprimir', 'error'); return }
+      if (eraElOriginal) await refrescarEstadoEnDisco(activeDoc.doc_id)
       const { size_before: antes, size_after: despues } = await res.json()
       // Comprimir un PDF ya optimizado puede dejarlo MÁS grande: decirlo evita que el
       // usuario se quede con la copia peor creyendo que ganó algo.
@@ -364,14 +459,21 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     startProgress(label, docs.length)
     let ok = 0
     let canceled = false
-    for (const [i, d] of docs.entries()) {
-      // Cancelar detiene la cola: lo ya procesado se conserva.
-      if (isCancelRequested()) { canceled = true; break }
-      updateProgress(i, d.file_name)
-      try { await op(d); ok++ } catch (err) { window.api.logError(`[batch] ${String(err)}`).catch(() => {}) }
-      updateProgress(i + 1, d.file_name)
+    try {
+      const r = await correrCola(docs, async (d) => {
+        try { await op(d); return true } catch (err) {
+          window.api.logError(`[batch] ${String(err)}`).catch(() => {})
+          return false
+        }
+      }, {
+        avanzar: (n, d) => updateProgress(n, d.file_name),
+        cancelado: isCancelRequested,
+      })
+      ok = r.ok
+      canceled = r.cancelado
+    } finally {
+      endProgress()
     }
-    endProgress()
     showToast(
       canceled ? `${label}: cancelado tras ${ok} documento(s)` : `${label}: ${ok}/${docs.length} completado(s)`,
       canceled ? 'info' : ok === docs.length ? 'success' : 'error',
@@ -390,11 +492,40 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     }
   }
 
-  const handleBatchCompress = () => runBatch('Comprimir', async (d) => {
-    const out = d.file_path.replace(/\.pdf$/i, '_compressed.pdf')
-    const res = await apiFetch(`/pdf/compress/${d.doc_id}?output_path=${encodeURIComponent(out)}`, { method: 'POST' })
-    if (!res.ok) throw new Error('compress ' + d.file_name)
-  })
+  // Mismo arreglo que en el de un documento (que ya decía «era la última operación que
+  // elegía la ruta ella sola»): escribía `<original>_compressed.pdf` al lado de cada
+  // archivo, sin preguntar y pisando el de la corrida anterior. Y no decía si había
+  // ganancia: comprimir un PDF ya optimizado puede dejarlo MÁS grande.
+  const handleBatchCompress = async () => {
+    if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
+    const carpeta = await window.api.chooseFolder()
+    if (!carpeta) return
+    let antes = 0
+    let despues = 0
+    let peores = 0
+    await runBatch('Comprimir', async (d) => {
+      const salida = `${carpeta}\\${d.file_name.replace(/\.pdf$/i, '')}_comprimido.pdf`
+      await pushAnnotations(d.doc_id)
+      const res = await apiFetch(`/pdf/compress/${d.doc_id}?output_path=${encodeURIComponent(salida)}`, { method: 'POST' })
+      if (!res.ok) throw new Error('compress ' + d.file_name)
+      const { size_before: a, size_after: b } = await res.json()
+      if (a > 0 && b > 0) {
+        antes += a
+        despues += b
+        if (b >= a) peores++
+      }
+    })
+    if (antes > 0 && despues > 0) {
+      const mb = (n: number) => `${(n / 1048576).toFixed(1)} MB`
+      const pct = Math.round((1 - despues / antes) * 100)
+      showToast(
+        `${mb(antes)} → ${mb(despues)} (${pct > 0 ? `−${pct} %` : 'sin ganancia'})`
+        + (peores > 0 ? `. ${peores} quedaron más grandes: ya estaban optimizados.` : '')
+        + ` En ${carpeta}`,
+        pct > 0 ? 'success' : 'info',
+      )
+    }
+  }
 
   const handleBatchWatermark = async () => {
     const v = await askForm('Marca de agua en todos los documentos', [{ name: 'text', label: 'Texto', type: 'text', defaultValue: 'CONFIDENCIAL' }], 'Aplicar a todos')
@@ -406,15 +537,21 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     })
   }
 
-  const handleBatchExportWord = () => runBatch('Exportar a Word', async (d) => {
-    const res = await apiFetch(`/pdf/export-word/${d.doc_id}`)
-    if (!res.ok) throw new Error('word ' + d.file_name)
-    const data = await res.json()
-    const link = document.createElement('a')
-    link.download = data.filename || `${d.file_name.replace(/\.pdf$/i, '')}.docx`
-    link.href = `data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,${data.data_base64}`
-    link.click()
-  })
+  // Era la última exportación que se bajaba por un `data:` URL a la carpeta de
+  // Descargas: 60 planos = 60 cadenas base64 de varios MB en memoria y 60 descargas
+  // silenciosas, sin decir a dónde iban. El resto de exportaciones ya escribía donde
+  // el usuario elige; esta pregunta la carpeta una vez y el motor escribe cada archivo.
+  const handleBatchExportWord = async () => {
+    if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
+    const carpeta = await window.api.chooseFolder()
+    if (!carpeta) return
+    await runBatch('Exportar a Word', async (d) => {
+      const salida = `${carpeta}\\${d.file_name.replace(/\.pdf$/i, '')}.docx`
+      const res = await apiFetch(`/pdf/export-word/${d.doc_id}?output_path=${encodeURIComponent(salida)}`)
+      if (!res.ok) throw new Error('word ' + d.file_name)
+    })
+    showToast(`Documentos exportados a ${carpeta}`, 'info')
+  }
 
   const handleSplit = async (mode: 'even' | 'odd' | 'range' | 'from-current') => {
     if (!activeDoc) return
@@ -456,6 +593,9 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     })
     if (!outputPath) return
     try {
+      // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
+      // salía con las páginas limpias, sin las marcas que se acaban de poner.
+      await pushAnnotations(activeDoc.doc_id)
       const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages }),
@@ -587,9 +727,15 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     })
     if (!outputPath) return
+    // El cuadro de guardar deja elegir el propio archivo del documento: si es el
+    // original, pasa por el aviso de cambio en disco como cualquier sobrescritura.
+    const { seguir, eraElOriginal } = await confirmarEscrituraEn(activeDoc.doc_id, outputPath)
+    if (!seguir) return
     try {
+      await pushAnnotations(activeDoc.doc_id)
       const res = await apiFetch(`/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
       showToast(res.ok ? 'PDF guardado sin contraseña' : 'Error al quitar contraseña', res.ok ? 'success' : 'error')
+      if (res.ok && eraElOriginal) await refrescarEstadoEnDisco(activeDoc.doc_id)
     } catch (err) { toastActionError(err) }
   }
 
@@ -607,6 +753,12 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       filters: [{ name: 'Excel', extensions: ['xlsx'] }, { name: 'CSV', extensions: ['csv'] }],
     })
     if (!outputPath) return
+    // La escala va POR FILA: con láminas a distinta escala, una sola en el título sería
+    // mentira — y quien lee el takeoff no tiene cómo saber con qué se midió cada cota.
+    const textoEscala = (page: number) => {
+      const e = scaleForPage(activeDoc, page)
+      return e ? `1 ${e.unit} = ${e.pixelsPerUnit.toFixed(2)} pt` : 'sin calibrar'
+    }
     const rows = [...measures]
       .sort((a, b) => a.page - b.page)
       .map((a) => ({
@@ -615,6 +767,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         etiqueta: a.measurement?.label || '',
         valor: a.measurement ? a.measurement.value.toFixed(2) : '',
         unidad: a.measurement?.unit || 'px',
+        escala: textoEscala(a.page),
       }))
     // Los conteos se agrupan por categoría + símbolo (dos categorías pueden usar
     // el mismo nombre con símbolos distintos en planos diferentes).
@@ -625,10 +778,14 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       byCategory.set(cat, { n: (cur?.n || 0) + 1, symbol: c.symbol || cur?.symbol || 'circle' })
     }
     for (const [cat, { n, symbol }] of byCategory) {
-      rows.push({ page: '', tipo: `Conteo (${symbol})`, etiqueta: cat, valor: String(n), unidad: 'uds' })
+      rows.push({ page: '', tipo: `Conteo (${symbol})`, etiqueta: cat, valor: String(n), unidad: 'uds', escala: '' })
     }
-    const scale = activeDoc.measurementScale
-    const title = `${activeDoc.file_name} — ${scale ? `escala: 1 ${scale.unit} = ${scale.pixelsPerUnit.toFixed(2)} pt` : 'sin calibrar'}`
+    const escalasUsadas = new Set(measures.map((a) => textoEscala(a.page)))
+    const title = `${activeDoc.file_name} — ${
+      escalasUsadas.size === 1 ? `escala: ${[...escalasUsadas][0]}`
+      : escalasUsadas.size === 0 ? 'sin mediciones'
+      : 'varias escalas (ver columna)'
+    }`
     try {
       const res = await apiFetch('/pdf/export-measurements', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -679,14 +836,28 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         showToast(`Las ${fuera} marcas del archivo son de páginas que este documento no tiene`, 'error')
         return
       }
-      setAnnotations(activeDoc.doc_id, [...activeDoc.annotations, ...dentro])
+      // Fusión por id, no append: el id de cada marca viaja en el `name` del XFDF, así
+      // que reimportar el archivo (rev B y después rev C del mismo plano) actualizaba
+      // lo que ya estaba en vez de apilar una copia encima. Un id repetido además
+      // rompe el estado: las operaciones del store buscan por id y solo encuentran la
+      // primera, así que la marca duplicada no se podía ni editar ni borrar.
+      const porId = new Map(activeDoc.annotations.map((a) => [a.id, a]))
+      let actualizadas = 0
+      for (const a of dentro) {
+        if (porId.has(a.id)) actualizadas++
+        porId.set(a.id, a)
+      }
+      const nuevas = dentro.length - actualizadas
+      const antes = activeDoc.annotations
+      setAnnotations(activeDoc.doc_id, [...porId.values()])
       setDocDirty(activeDoc.doc_id, true)
-      showToast(
-        fuera > 0
-          ? `${dentro.length} marca(s) importadas; ${fuera} de páginas inexistentes se descartaron`
-          : `${dentro.length} anotación(es) importadas`,
-        fuera > 0 ? 'info' : 'success',
-      )
+      // Importar es un cambio masivo del documento: sin esto, importar el archivo
+      // equivocado no se podía deshacer.
+      commitAnnotationGesture(activeDoc.doc_id, antes)
+      const partes = [`${nuevas} marca(s) nuevas`]
+      if (actualizadas > 0) partes.push(`${actualizadas} actualizada(s)`)
+      if (fuera > 0) partes.push(`${fuera} de páginas inexistentes descartada(s)`)
+      showToast(partes.join(', '), fuera > 0 ? 'info' : 'success')
     } catch (err) { toastActionError(err) }
   }
 

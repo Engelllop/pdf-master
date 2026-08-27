@@ -7,7 +7,7 @@ import json
 import os
 from typing import Dict, Optional, List
 from collections import OrderedDict
-from app.models.pdf import PdfInfo, PageRender, ThumbnailRender, PdfOutlineItem, PageSize, Annotation
+from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
@@ -15,6 +15,39 @@ logger = logging.getLogger("pdfmaster")
 
 
 class FormsMixin:
+    @staticmethod
+    def _es_de_texto(field_type) -> bool:
+        """Tipos donde «vacío» significa cadena vacía. En casillas y radio, en cambio,
+        el valor es una opción del grupo ('Off', 'Yes'…) y no hay nada que vaciar."""
+        return field_type in (
+            fitz.PDF_WIDGET_TYPE_TEXT,
+            fitz.PDF_WIDGET_TYPE_COMBOBOX,
+            fitz.PDF_WIDGET_TYPE_LISTBOX,
+        )
+
+    @staticmethod
+    def _vaciar_widget(doc, widget) -> None:
+        """PyMuPDF IGNORA `field_value = ''`: el `update()` no borra nada y el campo se
+        queda con el texto anterior. O sea que borrar el contenido de un campo no lo
+        borraba —ni el valor ni lo que se ve— y al guardar el PDF salía con el dato
+        viejo. Se vacía el /V a mano y se tira la apariencia para que se regenere."""
+        doc.xref_set_key(widget.xref, "V", "()")
+        doc.xref_set_key(widget.xref, "AP", "null")
+        try:
+            # `set_need_appearances` no existe en PyMuPDF 1.28 (el nombre es sin `set_`);
+            # la llamada vieja vivía dentro de un except que se lo tragaba.
+            doc.need_appearances(True)
+        except Exception:
+            logger.exception("No se pudo marcar need_appearances")
+
+    @classmethod
+    def _escribir_widget(cls, doc, widget, value: str) -> None:
+        if value == "" and cls._es_de_texto(widget.field_type):
+            cls._vaciar_widget(doc, widget)
+            return
+        widget.field_value = value
+        widget.update()
+
     def get_form_fields(self, doc_id: str, page_num: int) -> List[dict]:
         doc = self._acquire(doc_id)
         if not doc or page_num < 0 or page_num >= len(doc):
@@ -40,23 +73,65 @@ class FormsMixin:
         return results
 
     def set_form_field(self, doc_id: str, page_num: int, field_name: str, value: str, stash: bool = True):
-        """None = no existe. Si ok, (previous, stash_id). PyMuPDF no limpia un
-        texto ya escrito con ''; el undo restaura la página stasheada."""
+        """None = no existe. Si ok, (previous, stash_id, stash_page). PyMuPDF no limpia
+        un texto ya escrito con ''; el undo restaura lo stasheado.
+
+        `stash_page` es la página a restaurar, o None si se stasheó el documento entero
+        (cuando el campo tiene widgets en varias páginas)."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or page_num < 0 or page_num >= len(doc):
                 return None
             page = doc.load_page(page_num)
+            objetivo = None
             for widget in page.widgets():
-                if widget.field_name != field_name:
-                    continue
-                previous = widget.field_value or ""
-                stash_id = self._stash_pages(doc, [page_num]) if stash else ""
-                widget.field_value = value
-                widget.update()
-                self._dirty[doc_id] = True
-                return previous, stash_id
-            return None
+                if widget.field_name == field_name:
+                    objetivo = widget
+                    break
+            if objetivo is None:
+                return None
+            previous = objetivo.field_value or ""
+
+            # Un mismo campo puede tener widget en varias páginas (un «Nombre» repetido
+            # en el pie de cada hoja): el VALOR del campo es compartido, pero la
+            # apariencia se dibuja por widget. Al actualizar solo el de esta página, las
+            # otras hojas seguían mostrando el valor viejo — y la apariencia es lo que
+            # sale impreso. Los radio y las casillas quedan fuera: ahí cada widget es una
+            # opción distinta del grupo y copiarles el valor los encendería todos.
+            propagar = objetivo.field_type not in (
+                fitz.PDF_WIDGET_TYPE_RADIOBUTTON, fitz.PDF_WIDGET_TYPE_CHECKBOX)
+            otras = []
+            if propagar:
+                for i in range(len(doc)):
+                    if i == page_num:
+                        continue
+                    if any(w.field_name == field_name for w in doc.load_page(i).widgets()):
+                        otras.append(i)
+
+            stash_id = ""
+            stash_page = page_num
+            if stash:
+                if otras:
+                    # Varias páginas afectadas: el undo por página no alcanza.
+                    stash_id = self._stash_document(doc)
+                    stash_page = None
+                else:
+                    stash_id = self._stash_pages(doc, [page_num])
+
+            self._escribir_widget(doc, objetivo, value)
+            for i in otras:
+                for w in doc.load_page(i).widgets():
+                    if w.field_name != field_name:
+                        continue
+                    self._escribir_widget(doc, w, value)
+            self._dirty[doc_id] = True
+            # Sin invalidar el cache de render, aunque `add_form_field` y
+            # `transform_form_field` sí lo hagan: esos mueven o crean el widget (y con él
+            # el contenido de la página), mientras que rellenar un campo solo cambia su
+            # apariencia — y `get_page_image_bytes` renderiza con `annots=False`, así que
+            # la apariencia de un widget no entra en ese bitmap. Vaciar el cache en cada
+            # campo confirmado forzaría re-renderizar todas las páginas para nada.
+            return previous, stash_id, stash_page
 
     @staticmethod
     def _used_field_names(doc) -> set:
@@ -151,9 +226,11 @@ class FormsMixin:
                 logger.exception("add_form_field falló (doc %s, página %s, tipo %s)", doc_id, page_num, kind)
                 return None
             try:
-                doc.set_need_appearances(True)
+                # Sin `set_`: `set_need_appearances` no existe en PyMuPDF 1.28, así que
+                # esta línea nunca hacía nada (el except se lo tragaba).
+                doc.need_appearances(True)
             except Exception:
-                pass
+                logger.exception("No se pudo marcar need_appearances")
             self._dirty[doc_id] = True
             self._invalidate_render_cache(doc_id)
             return name, stash_id

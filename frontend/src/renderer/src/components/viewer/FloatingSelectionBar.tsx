@@ -28,8 +28,8 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
   scale: number
   wrapperWidth: number
 }) {
-  const { updateAnnotation, deleteAnnotation, addAnnotation, selectAnnotation } = useStoreSlice(
-    'updateAnnotation', 'deleteAnnotation', 'addAnnotation', 'selectAnnotation',
+  const { updateAnnotationUndoable, deleteAnnotation, addAnnotation, selectAnnotation } = useStoreSlice(
+    'updateAnnotationUndoable', 'deleteAnnotation', 'addAnnotation', 'selectAnnotation',
   )
   const colorInputRef = useRef<HTMLInputElement>(null)
   const fillInputRef = useRef<HTMLInputElement>(null)
@@ -51,7 +51,10 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
   const left = Math.max(4, Math.min(bx + bw / 2 - barW / 2, wrapperWidth - barW - 4))
   const top = by - BAR_H - 10 > 4 ? by - BAR_H - 10 : by + bh + 10
 
-  const apply = (u: Partial<Annotation>) => updateAnnotation(docId, ann.id, u)
+  // Undoable: cada cambio de propiedad es un paso. Los controles continuos (selector
+  // de color, deslizador de opacidad) disparan un evento por píxel y el store los
+  // fusiona en uno solo.
+  const apply = (u: Partial<Annotation>) => updateAnnotationUndoable(docId, ann.id, u)
 
   const duplicate = () => {
     const OFF = 14
