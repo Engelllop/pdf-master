@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { X, Keyboard } from 'lucide-react'
+import { TOOL_KEYS, TOOL_LABELS } from '../lib/tools'
 
 interface ShortcutsModalProps {
   onClose: () => void
@@ -12,6 +13,7 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
       ['Ctrl+K', 'Paleta de comandos'],
       ['Ctrl+O', 'Abrir PDF'],
       ['Ctrl+S', 'Guardar'],
+      ['Ctrl+P', 'Imprimir'],
       ['Ctrl+W', 'Cerrar pestaña'],
     ],
   },
@@ -59,15 +61,14 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
   },
   {
     title: 'Herramientas',
+    // Generada desde `TOOL_KEYS`, que es lo que el atajo global consulta de verdad.
+    // Escrita a mano se quedó atrás: la tecla P (medir perímetro) existe desde hace
+    // versiones y no estaba en la lista, así que no había forma de descubrirla.
     items: [
-      ['V', 'Seleccionar'],
-      ['H / U / K', 'Resaltar / subrayar / tachar'],
-      ['R / O', 'Rectángulo / círculo'],
-      ['L / A / G', 'Línea / flecha / llamada'],
-      ['T / N / D', 'Cuadro de texto / nota / dibujar'],
-      ['C', 'Conteo'],
-      ['M / Shift+M', 'Medir distancia / área'],
-      ['Shift+C', 'Calibrar escala'],
+      ...Object.entries(TOOL_KEYS).map(([tecla, tool]): [string, string] => [
+        tecla.startsWith('shift+') ? `Shift+${tecla.slice(6).toUpperCase()}` : tecla.toUpperCase(),
+        TOOL_LABELS[tool] || tool,
+      ]),
       ['Shift al dibujar', 'Ángulos de 45° · cuadrados'],
     ],
   },

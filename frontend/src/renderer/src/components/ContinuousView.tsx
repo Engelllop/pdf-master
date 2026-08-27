@@ -8,6 +8,13 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFormFields } from '../hooks/useFormFields'
 import FormFieldsLayer from './viewer/FormFieldsLayer'
 import NoteBubble from './viewer/NoteBubble'
+import SearchHits from './viewer/SearchHits'
+import TextLayer from './viewer/TextLayer'
+import { getSpans, type SpanItem } from '../lib/spans'
+import { computeLineRects } from '../lib/textMarkup'
+import SelectionOverlay, { type ResizeStart } from './viewer/SelectionOverlay'
+import { geometriaRedimensionada } from '../lib/resizeGeometry'
+import { localPointFromClient } from '../lib/svgPoint'
 import FloatingSelectionBar from './viewer/FloatingSelectionBar'
 import MultiSelectionBar from './viewer/MultiSelectionBar'
 import TextBoxEditor from './viewer/TextBoxEditor'
@@ -25,9 +32,13 @@ const KEEP_MARGIN = 5
 
 const CLICK_TOOLS = new Set(['note', 'count', 'stamp', 'text'])
 const DRAG_TOOLS = new Set([
-  'rect', 'highlight', 'circle', 'arrow', 'line', 'check', 'cross', 'star',
-  'cloud', 'draw', 'measure_distance', 'callout',
+  'rect', 'highlight', 'underline', 'strikethrough', 'circle', 'arrow', 'line',
+  'check', 'cross', 'star', 'cloud', 'draw', 'measure_distance', 'callout',
 ])
+// Resaltar/subrayar/tachar se anclan al texto real, no al rect que dibuja la mano.
+// `underline` y `strikethrough` no estaban en ninguna lista: en continuo esas dos
+// herramientas no hacían absolutamente nada.
+const MARKUP_TOOLS = new Set(['highlight', 'underline', 'strikethrough'])
 
 type Preview = Partial<Annotation> & { type?: Annotation['type'] }
 
@@ -61,7 +72,7 @@ function ContinuousPageOverlay({
     'annotationOpacity', 'annotationFillColor', 'annotationFillOpacity',
     'addAnnotation', 'selectAnnotation', 'selectAnnotations', 'selectedAnnotationIds',
     'selectedAnnotationId', 'updateAnnotation', 'updateAnnotationUndoable', 'deleteAnnotation',
-    'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory',
+    'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory', 'moveAnnotations',
     'countSymbol', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
     'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
   )
@@ -75,7 +86,29 @@ function ContinuousPageOverlay({
   const [editValue, setEditValue] = useState('')
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const drawPts = useRef<Array<{ x: number; y: number }>>([])
+  const svgRef = useRef<SVGSVGElement>(null)
+  // En continuo una marca seleccionada solo recibía un contorno punteado: no se podía
+  // mover ni redimensionar, así que lo puesto acá solo se ajustaba cambiando de vista.
+  const [redim, setRedim] = useState<ResizeStart | null>(null)
+  const [moviendo, setMoviendo] = useState<{ ids: string[]; clientX: number; clientY: number } | null>(null)
   const { fields: formFields, updateField: updateFormField, transformField } = useFormFields(doc.doc_id, page)
+
+  // Spans de la página para anclar el marcado, igual que el visor de página. La caché
+  // de `lib/spans` es compartida, así que esto no añade peticiones: la capa de texto ya
+  // los pidió.
+  const spansRef = useRef<SpanItem[]>([])
+  const spansListosRef = useRef(false)
+  const herramientaDeMarcado = !!store.activeTool && MARKUP_TOOLS.has(store.activeTool)
+  useEffect(() => {
+    spansRef.current = []
+    spansListosRef.current = false
+    if (!herramientaDeMarcado) return
+    let vivo = true
+    getSpans(doc.doc_id, page, doc.docVersion).then((spans) => {
+      if (vivo) { spansRef.current = spans; spansListosRef.current = true }
+    })
+    return () => { vivo = false }
+  }, [herramientaDeMarcado, doc.doc_id, page, doc.docVersion])
 
   const pd = { width, height, originalWidth: pw, originalHeight: ph }
   const toScreen = (x: number, y: number) => ({ x: (x / pw) * width, y: (y / ph) * height })
@@ -90,6 +123,78 @@ function ContinuousPageOverlay({
     setNoteOpen(selectedAnn?.type === 'note')
     if (selectedAnn?.type !== 'text' && selectedAnn?.type !== 'callout') setEditingId(null)
   }, [selectedAnn?.id, selectedAnn?.type])
+
+  // Escala local→puntos PDF. Los valores de arranque de `SelectionOverlay` llegan en px
+  // del bitmap y la geometría se escribe en puntos: sin convertir, la marca salta al
+  // tamaño del bitmap en cuanto el rasterizado no es 1:1 (o sea, casi siempre).
+  const aPuntos = { x: pw / width, y: ph / height }
+
+  useEffect(() => {
+    if (!redim) return
+    const antes = usePdfStore.getState().docs.find((d) => d.doc_id === doc.doc_id)?.annotations ?? null
+    const mover = (e: MouseEvent) => {
+      if (!svgRef.current) return
+      const local = localPointFromClient(svgRef.current, e.clientX, e.clientY, width)
+      const vivo = usePdfStore.getState().docs.find((d) => d.doc_id === doc.doc_id)
+      const ann = vivo?.annotations.find((a) => a.id === redim.id)
+      if (!vivo || !ann) return
+      const inicio = {
+        x: redim.startBoundsX * aPuntos.x, y: redim.startBoundsY * aPuntos.y,
+        w: redim.startW * aPuntos.x, h: redim.startH * aPuntos.y,
+      }
+      store.updateAnnotation(vivo.doc_id, redim.id, geometriaRedimensionada(
+        ann, redim.corner,
+        (local.x - redim.startX) * aPuntos.x, (local.y - redim.startY) * aPuntos.y,
+        inicio,
+      ))
+    }
+    const soltar = () => {
+      // Un gesto = UN paso de deshacer, no uno por mousemove.
+      if (antes) usePdfStore.getState().commitAnnotationGesture(doc.doc_id, antes)
+      setRedim(null)
+    }
+    window.addEventListener('mousemove', mover)
+    window.addEventListener('mouseup', soltar)
+    return () => {
+      window.removeEventListener('mousemove', mover)
+      window.removeEventListener('mouseup', soltar)
+    }
+    // Deps: solo el arranque del gesto. Incluir `store`/`width`/`aPuntos` remontaría
+    // los listeners a mitad de arrastre (cada mousemove cambia el store) y cortaría
+    // el gesto; los valores vivos se leen de `getState()` dentro del handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redim])
+
+  useEffect(() => {
+    if (!moviendo) return
+    const antes = usePdfStore.getState().docs.find((d) => d.doc_id === doc.doc_id)?.annotations ?? null
+    let ultimo = { x: moviendo.clientX, y: moviendo.clientY }
+    const mover = (e: MouseEvent) => {
+      // Deltas incrementales: mover solo x/y no serviría para dibujos ni polígonos,
+      // que llevan su geometría en `points`.
+      const escala = svgRef.current
+        ? (svgRef.current.getBoundingClientRect().width || width) / width
+        : 1
+      const dx = ((e.clientX - ultimo.x) / escala) * aPuntos.x
+      const dy = ((e.clientY - ultimo.y) / escala) * aPuntos.y
+      ultimo = { x: e.clientX, y: e.clientY }
+      store.moveAnnotations(doc.doc_id, moviendo.ids, dx, dy)
+    }
+    const soltar = () => {
+      if (antes) usePdfStore.getState().commitAnnotationGesture(doc.doc_id, antes)
+      setMoviendo(null)
+    }
+    window.addEventListener('mousemove', mover)
+    window.addEventListener('mouseup', soltar)
+    return () => {
+      window.removeEventListener('mousemove', mover)
+      window.removeEventListener('mouseup', soltar)
+    }
+    // Deps: solo el arranque del gesto. Incluir `store`/`width`/`aPuntos` remontaría
+    // los listeners a mitad de arrastre (cada mousemove cambia el store) y cortaría
+    // el gesto; los valores vivos se leen de `getState()` dentro del handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [moviendo])
 
   const style = () => ({
     color: store.annotationColor,
@@ -123,8 +228,17 @@ function ContinuousPageOverlay({
       const hit = hitTest(pt.sx, pt.sy)
       if (hit) {
         e.stopPropagation()
-        if (e.shiftKey) store.selectAnnotations(doc.doc_id, [...selected, hit.id])
-        else store.selectAnnotation(doc.doc_id, hit.id)
+        if (e.shiftKey) {
+          store.selectAnnotations(doc.doc_id, [...selected, hit.id])
+        } else {
+          // Arrastra el grupo si se pincha una de las seleccionadas; si no, se
+          // selecciona esta y se arrastra ella.
+          const grupo = selected.has(hit.id) && selected.size > 1
+            ? [...selected]
+            : [hit.id]
+          if (!selected.has(hit.id)) store.selectAnnotation(doc.doc_id, hit.id)
+          setMoviendo({ ids: grupo, clientX: e.clientX, clientY: e.clientY })
+        }
       } else {
         store.selectAnnotation(doc.doc_id, null)
       }
@@ -259,6 +373,34 @@ function ContinuousPageOverlay({
       return
     }
 
+    if (MARKUP_TOOLS.has(tool)) {
+      // Una anotación por línea con el rect REAL de la línea, en un solo paso de
+      // deshacer. Sin esto, resaltar en continuo dejaba una caja a ojo sobre el texto.
+      const lineas = computeLineRects(spansRef.current, { x: origin.x, y: origin.y, width: w, height: h })
+      if (lineas.length === 0) {
+        usePdfStore.getState().showToast(
+          spansListosRef.current
+            ? 'Resaltar, subrayar y tachar se anclan al texto. Para marcar un área usá Rectángulo.'
+            : 'Todavía se está leyendo el texto de la página. Probá de nuevo en un momento.',
+          'info',
+        )
+        return
+      }
+      const ahora = Date.now()
+      const autor = usePdfStore.getState().annotationAuthor || undefined
+      const nuevas = lineas.map((l) => ({
+        id: crypto.randomUUID(), type: tool as Annotation['type'], page,
+        x: l.x0, y: l.y0, width: l.x1 - l.x0, height: l.y1 - l.y0, ...style(),
+        // No pasan por addAnnotation (van en bloque para un solo undo), así que el
+        // sellado de autor/fecha se hace aquí.
+        author: autor, createdAt: ahora,
+      }))
+      usePdfStore.getState().setAnnotations(doc.doc_id, [...doc.annotations, ...nuevas])
+      usePdfStore.getState().setDocDirty(doc.doc_id, true)
+      store.releaseTool()
+      return
+    }
+
     const nx = Math.min(origin.x, origin.x + w)
     const ny = Math.min(origin.y, origin.y + h)
     let nw = Math.abs(w)
@@ -296,7 +438,16 @@ function ContinuousPageOverlay({
         }
       }}
     >
-      <svg className="absolute inset-0 w-full h-full overflow-visible" style={{ pointerEvents: 'none' }}>
+      {/* Capa de texto seleccionable: el scroll continuo no la tenía, así que pasarse a
+          continuo para LEER era perder el poder copiar un párrafo. Se apaga sola
+          cuando hay una herramienta activa (`active`), para no comerse los clics de
+          dibujo, y cada página pide sus spans a la caché compartida de `lib/spans`. */}
+      <TextLayer docId={doc.doc_id} page={page} version={doc.docVersion} pageData={pd}
+        active={!store.activeTool || store.activeTool === 'textselect'} />
+      <svg ref={svgRef} className="absolute inset-0 w-full h-full overflow-visible" style={{ pointerEvents: 'none' }}>
+        {/* Debajo de las marcas, como cualquier resaltado. */}
+        <SearchHits results={doc.searchResults} index={doc.searchIndex} page={page}
+          escalaX={width / pw} escalaY={height / ph} />
         {anns.map((ann) => (
           <g key={ann.id} style={{ pointerEvents: 'auto' }}>
             {renderAnnotation(ann, pd, toScreen, {
@@ -317,6 +468,12 @@ function ContinuousPageOverlay({
             })()}
           </g>
         ))}
+        {/* Tiradores de la seleccionada (una sola: con varias basta el contorno). */}
+        {selectedAnn && store.selectedAnnotationIds.length <= 1 && (
+          <g style={{ pointerEvents: 'auto' }}>
+            <SelectionOverlay ann={selectedAnn} pageData={pd} toScreen={toScreen} onResizeStart={setRedim} />
+          </g>
+        )}
         {preview && renderAnnotation(preview as Annotation, pd, toScreen, { isPreview: true })}
         {formRect && (() => {
           const x0 = Math.min(formRect.x0, formRect.x1)
@@ -412,6 +569,15 @@ export default function ContinuousView() {
   useKeyboardShortcuts(activeDoc, store.selectedAnnotationId, store.deleteAnnotation, () => {})
 
   const zoom = activeDoc?.zoom ?? 1
+  // El zoom VIVO manda la geometría (la página crece con la rueda al instante); el
+  // rasterizado espera a que se quede quieto. Antes cada paso de 0.2 volvía a
+  // rasterizar la ventana completa — y de un plano grande son varios MB por página.
+  const [zoomEstable, setZoomEstable] = useState(zoom)
+  useEffect(() => {
+    if (zoom === zoomEstable) return
+    const t = setTimeout(() => setZoomEstable(zoom), 250)
+    return () => clearTimeout(t)
+  }, [zoom, zoomEstable])
 
   useEffect(() => {
     const el = containerRef.current
@@ -494,10 +660,20 @@ export default function ContinuousView() {
 
   const requestedRef = useRef<Set<number>>(new Set())
 
+  // Otro documento (o el motor se reinició y estos bitmaps son de la sesión muerta):
+  // esos sí no sirven para nada y se liberan.
   useEffect(() => {
     requestedRef.current = new Set()
     setLoaded((prev) => { Object.values(prev).forEach(revokePageUrl); return {} })
-  }, [activeDoc?.doc_id, activeDoc?.docVersion, zoom])
+  }, [activeDoc?.doc_id, activeDoc?.docVersion])
+
+  // Zoom nuevo: se vuelven a pedir, pero NO se vacían. Vaciarlos dejaba toda la
+  // ventana en blanco hasta que volviera a rasterizar; el bitmap viejo se estira
+  // mientras tanto (un momento borroso, no una página en blanco) y cada uno se
+  // reemplaza al llegar.
+  useEffect(() => {
+    requestedRef.current = new Set()
+  }, [zoomEstable])
 
   useEffect(() => {
     if (!activeDoc) return
@@ -512,14 +688,20 @@ export default function ContinuousView() {
     ;(async () => {
       for (const i of toRender) {
         if (cancelled) return
-        const ps = activeDoc.page_sizes[i]
-        const pw = ps?.width || 612
-        const rz = Math.min(3, Math.max(0.5, ((widths[i] || pw) / pw) * d))
+        const rz = Math.min(3, Math.max(0.5, zoomEstable * d))
         try {
           const r = await renderPdfPage(activeDoc.doc_id, activeDoc.docVersion, i, rz)
           if (cancelled) { revokePageUrl(r.url); return }
           pending.delete(i)
-          setLoaded((prev) => prev[i] ? (revokePageUrl(r.url), prev) : { ...prev, [i]: r.url })
+          setLoaded((prev) => {
+            if (prev[i] === r.url) return prev
+            // El bitmap viejo es de otra resolución y deja de mostrarse: revocarlo, que
+            // quitar la referencia no libera los MB del blob. No hay dos peticiones
+            // vivas de la misma página — el `cancelled` del efecto descarta las del
+            // zoom anterior.
+            revokePageUrl(prev[i])
+            return { ...prev, [i]: r.url }
+          })
         } catch (err) {
           pending.delete(i)
           requestedRef.current.delete(i)
@@ -533,7 +715,7 @@ export default function ContinuousView() {
       cancelled = true
       pending.forEach((i) => requestedRef.current.delete(i))
     }
-  }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, zoom])
+  }, [range.start, range.end, activeDoc?.doc_id, activeDoc?.docVersion, zoomEstable])
 
   // Los bitmaps fuera de la ventana visible se liberan: recorrer un documento de 300
   // páginas dejaba las 300 en RAM (cada una un blob de varios MB).

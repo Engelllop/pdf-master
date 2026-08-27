@@ -355,7 +355,10 @@ describe('pageCache', () => {
 })
 
 describe('escala de medición', () => {
-  const guardado = () => JSON.parse(localStorage.getItem('pdfmaster_scales')!)['C:\\planos\\plano-a.pdf']
+  // La clave es la ruta NORMALIZADA (Windows ignora mayúsculas y el sentido de las
+  // barras): guardada tal cual, reabrir el plano desde recientes con otras barras
+  // dejaba las cotas en píxeles. El test lee la única entrada, no una clave literal.
+  const guardado = () => Object.values(JSON.parse(localStorage.getItem('pdfmaster_scales')!))[0]
 
   it('setMeasurementScale persiste por ruta y se borra al pasar null', () => {
     usePdfStore.getState().addDoc(docInfo())

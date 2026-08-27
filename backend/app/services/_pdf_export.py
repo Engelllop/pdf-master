@@ -58,22 +58,38 @@ class ExportMixin:
                 logger.exception("export_excel falló (doc %s)", doc_id)
                 return False
 
+    # El bitmap solo tiene que verse bien EN LA DIAPOSITIVA: a 150 dpi sobre una
+    # diapositiva de 13,3 in el lado largo son unos 2000 px. Sin tope, un plano de
+    # 36×24 in salía a 5400×3600 px —trece veces más píxeles de los que la diapositiva
+    # puede mostrar— y un juego de 60 láminas producía un .pptx de varios GB.
+    MAX_PPTX_PX = 2000
+
     def export_pptx(self, doc_id: str, output_path: str) -> bool:
         doc = self._acquire(doc_id)
         if not doc:
             return False
         try:
             from pptx import Presentation
-            from pptx.util import Inches
             from io import BytesIO
             prs = Presentation()
             blank_layout = prs.slide_layouts[6]
             for i in range(len(doc)):
                 page = doc.load_page(i)
-                pix = page.get_pixmap(dpi=150)
+                escala = self._capped_scale(page, 150 / 72, self.MAX_PPTX_PX)
+                pix = page.get_pixmap(matrix=fitz.Matrix(escala, escala))
                 img_stream = BytesIO(pix.tobytes("png"))
                 slide = prs.slides.add_slide(blank_layout)
-                slide.shapes.add_picture(img_stream, Inches(0), Inches(0), width=prs.slide_width, height=prs.slide_height)
+                # Encajada y centrada, no estirada: forzar el tamaño de la diapositiva
+                # deformaba cada lámina (un plano apaisado dentro de un 4:3 sale
+                # achatado, y con él las cotas y los textos).
+                factor = min(prs.slide_width / pix.width, prs.slide_height / pix.height)
+                ancho = int(pix.width * factor)
+                alto = int(pix.height * factor)
+                slide.shapes.add_picture(
+                    img_stream,
+                    int((prs.slide_width - ancho) / 2), int((prs.slide_height - alto) / 2),
+                    width=ancho, height=alto,
+                )
             self._guardar_atomico(output_path, False, lambda temp: prs.save(temp))
             return True
         except DocumentNotFoundError:

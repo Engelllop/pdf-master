@@ -1,5 +1,6 @@
 import { esCapaOculta, usePdfStore } from '../store/usePdfStore'
 import { apiFetch } from './api'
+import { mismaRuta } from './rutas'
 import { askConfirm } from './uiPrompt'
 
 /** Guarda un documento: incrusta las marcas y escribe el PDF. Lo comparten el menú
@@ -56,13 +57,7 @@ async function elDiscoCambio(docId: string): Promise<'igual' | 'cambio' | 'desco
   }
 }
 
-/** Windows no distingue mayúsculas ni el sentido de las barras: `C:/Planos/A.pdf` y
- * `c:\planos\a.pdf` son el mismo archivo, y comparar las cadenas tal cual decía que no. */
-export function mismaRuta(a: string | undefined, b: string | undefined): boolean {
-  if (!a || !b) return false
-  const norm = (r: string) => r.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase()
-  return norm(a) === norm(b)
-}
+export { mismaRuta }
 
 /**
  * Aviso antes de sobrescribir el archivo original: devuelve false si el usuario cancela.

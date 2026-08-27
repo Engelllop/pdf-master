@@ -109,3 +109,42 @@ describe('el preload no pisa el bitmap que se está mostrando', () => {
     expect(revoke).not.toHaveBeenCalledWith('blob:preload')
   })
 })
+
+// Al cambiar el zoom el efecto de carga no vuelve a correr (sus deps son página, doc y
+// modo): el bitmap se sube de resolución aparte. El panel derecho no lo hacía, así que
+// acercarse a mirar un detalle dejaba la mitad derecha borrosa hasta cambiar de página.
+describe('subir la resolución al acercar', () => {
+  async function conPaginaCargada(modo: 'single' | 'double') {
+    abrir()
+    usePdfStore.getState().setViewMode(modo)
+    renderHook(() => usePageLoader())
+    await waitFor(() => expect(pendientes.some((p) => p.page === 0)).toBe(true))
+    await resolver(0, 'blob:izq')
+    if (modo === 'double') await resolver(1, 'blob:der')
+    renderPdfPage.mockClear()
+  }
+
+  const rendersDe = (page: number) => renderPdfPage.mock.calls.filter((c) => c[2] === page)
+
+  it('el panel derecho también se rasteriza al zoom nuevo', async () => {
+    await conPaginaCargada('double')
+    usePdfStore.getState().setZoom('doc-1', 3)
+    await waitFor(() => expect(rendersDe(1).length).toBeGreaterThan(0), { timeout: 2000 })
+    expect(rendersDe(1)[0][3]).toBeGreaterThan(1)
+  })
+
+  it('el izquierdo sigue subiéndose (no se rompió al extraer el hook)', async () => {
+    await conPaginaCargada('double')
+    usePdfStore.getState().setZoom('doc-1', 3)
+    await waitFor(() => expect(rendersDe(0).length).toBeGreaterThan(0), { timeout: 2000 })
+  })
+
+  // En vista simple no hay panel derecho: subirle la resolución a una página que no se
+  // ve es rasterizar cientos de MB para nada.
+  it('en vista simple no toca la página siguiente', async () => {
+    await conPaginaCargada('single')
+    usePdfStore.getState().setZoom('doc-1', 3)
+    await waitFor(() => expect(rendersDe(0).length).toBeGreaterThan(0), { timeout: 2000 })
+    expect(rendersDe(1)).toHaveLength(0)
+  })
+})

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { X, Printer } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { pushAnnotations } from '../lib/saveDocument'
-import { parsePageRanges } from '../lib/pageRange'
+import { expandPageRanges, parsePageRanges } from '../lib/pageRange'
+import { esApaisado } from '../lib/printOrientation'
 
 interface PrintDialogProps {
   docId: string
@@ -38,12 +39,21 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
         return
       }
     }
+    // Las páginas que van al papel, para decidir la orientación con ELLAS y no con todo
+    // el documento: extraer las dos láminas apaisadas de un informe vertical tiene que
+    // salir apaisado.
+    const paginas = mode === 'all' ? undefined
+      : mode === 'current' ? [currentPage]
+      : expandPageRanges(parsePageRanges(pageRanges || '', pageCount) || [])
     setPrinting(true)
     try {
       // Las marcas viven en el store hasta que se guarda; sin subirlas al motor la
       // impresión salía sin ellas (y sin avisar).
       await pushAnnotations(docId, { excluirCapasOcultas: marcasOcultas > 0 && omitirOcultas })
-      const res = await window.api.printPdf(docId, { pageRanges, copies })
+      const res = await window.api.printPdf(docId, {
+        pageRanges, copies,
+        landscape: esApaisado(doc?.page_sizes || [], paginas),
+      })
       if (res?.success) { showToast('Enviado a la impresora', 'success'); onClose() }
       else if (res?.reason === 'cancelled') onClose()
       else showToast('No se pudo imprimir', 'error')

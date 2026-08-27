@@ -18,6 +18,7 @@ import { useFormFields } from '../hooks/useFormFields'
 import DetailTile from './DetailTile'
 import TextLayer from './viewer/TextLayer'
 import NoteBubble from './viewer/NoteBubble'
+import SearchHits from './viewer/SearchHits'
 import { countNumbers } from '../lib/counts'
 import SelectionOverlay from './viewer/SelectionOverlay'
 import FloatingSelectionBar from './viewer/FloatingSelectionBar'
@@ -708,27 +709,13 @@ export default function Viewer() {
                   </>
                 )}
 
-                {/* Search highlights — all results on current page */}
-                {activeDoc && pageData && activeDoc.searchResults.map((r, idx) => {
-                  if (r.page !== activeDoc.currentPage) return null
-                  const isCurrent = idx === activeDoc.searchIndex
-                  const sx = r.x * (pageData.width / pageData.originalWidth)
-                  const sy = r.y * (pageData.height / pageData.originalHeight)
-                  const sw = r.width * (pageData.width / pageData.originalWidth)
-                  const sh = r.height * (pageData.height / pageData.originalHeight)
-                  return (
-                    <rect key={`search-${idx}`} x={sx} y={sy} width={sw} height={sh}
-                      fill={isCurrent ? '#f97316' : '#fbbf24'}
-                      fillOpacity={isCurrent ? 0.5 : 0.25}
-                      stroke={isCurrent ? '#f97316' : '#fbbf24'}
-                      strokeWidth={isCurrent ? 2 : 1}
-                      rx={2}
-                      pointerEvents="none"
-                    >
-                      {isCurrent && <animate attributeName="fill-opacity" values="0.5;0.8;0.5" dur="1.2s" repeatCount="indefinite" />}
-                    </rect>
-                  )
-                })}
+                {/* Coincidencias de la búsqueda en esta página */}
+                {activeDoc && pageData && (
+                  <SearchHits results={activeDoc.searchResults} index={activeDoc.searchIndex}
+                    page={activeDoc.currentPage}
+                    escalaX={pageData.width / pageData.originalWidth}
+                    escalaY={pageData.height / pageData.originalHeight} />
+                )}
 
                 {/* Selección: handles solo con una marca; con varias, contorno simple */}
                 {store.selectedAnnotationIds.length > 1
@@ -1005,7 +992,7 @@ export default function Viewer() {
           canExportImage={!!pageData}
           onDeleteAnnotation={() => { deleteAnnotation(activeDoc.doc_id, store.selectedAnnotationId!); closeMenu() }}
           onAddBookmark={() => {
-            addBookmark({ id: crypto.randomUUID(), docId: activeDoc.doc_id, page: activeDoc.currentPage, label: `Página ${activeDoc.currentPage + 1}` })
+            addBookmark({ id: crypto.randomUUID(), filePath: activeDoc.file_path, page: activeDoc.currentPage, label: `Página ${activeDoc.currentPage + 1}` })
             store.showToast('Marcador agregado', 'success')
             closeMenu()
           }}

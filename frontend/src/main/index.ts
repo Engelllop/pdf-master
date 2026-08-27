@@ -514,7 +514,7 @@ app.whenReady().then(async () => {
   // Impresión real del PDF: descarga los bytes (refleja cambios sin guardar),
   // los carga en una ventana oculta con el visor PDF de Chromium y lanza el
   // diálogo de impresión nativo sobre ese contenido nítido (no el DOM del visor).
-  ipcMain.handle('pdf:print', async (_event, docId: string, opts?: { pageRanges?: string; copies?: number }) => {
+  ipcMain.handle('pdf:print', async (_event, docId: string, opts?: { pageRanges?: string; copies?: number; landscape?: boolean }) => {
     let tempPath: string | null = null
     let printWin: BrowserWindow | null = null
     try {
@@ -546,6 +546,11 @@ app.whenReady().then(async () => {
           if (ranges.length > 0) printOpts.pageRanges = ranges
         }
         if (opts?.copies && opts.copies > 1) printOpts.copies = opts.copies
+        // Sin esto Chromium imprime en VERTICAL: un juego de láminas apaisadas salía
+        // girado y encogido a una esquina del papel salvo que el usuario se diera cuenta
+        // y lo cambiara en el diálogo. La orientación la decide el renderer, que sabe el
+        // tamaño de las páginas que se van a imprimir.
+        if (opts?.landscape !== undefined) printOpts.landscape = opts.landscape
         win.webContents.print(printOpts, (success, reason) => {
           cleanup()
           resolve({ success, reason })

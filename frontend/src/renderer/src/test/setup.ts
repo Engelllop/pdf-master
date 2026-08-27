@@ -21,6 +21,14 @@ Object.defineProperty(window, 'api', {
 // jsdom no implementa scrollIntoView y varias listas lo usan para seguir la selección.
 if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = vi.fn()
 
+// Tampoco scrollTo: el scroll continuo lo usa para saltar a la página pedida.
+if (!Element.prototype.scrollTo) Element.prototype.scrollTo = vi.fn()
+
+// Ni la Pointer Capture API, que es como el dibujo sigue el puntero fuera de la página.
+if (!Element.prototype.setPointerCapture) Element.prototype.setPointerCapture = vi.fn()
+if (!Element.prototype.releasePointerCapture) Element.prototype.releasePointerCapture = vi.fn()
+if (!Element.prototype.hasPointerCapture) Element.prototype.hasPointerCapture = vi.fn(() => false)
+
 // jsdom no trae ResizeObserver y varios componentes miden su hueco con él.
 if (!globalThis.ResizeObserver) {
   globalThis.ResizeObserver = class {

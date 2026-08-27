@@ -1,6 +1,7 @@
 import { usePdfStore } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
-import { touchRecent, updateRecentMeta } from './recents'
+import { loadRecents, removeRecent, touchRecent, updateRecentMeta } from './recents'
+import { mismaRuta } from './rutas'
 
 import { apiFetch, setDeadDocReopener } from './api'
 import { revokePageUrl } from './blobUrl'
@@ -20,16 +21,61 @@ let openChain: Promise<unknown> = Promise.resolve()
 // Bulk opens (60+ plans) that fail would otherwise spam one error toast per file.
 // Coalesce failures within a short window into a single toast.
 let failCount = 0
+let failMissing = 0
+let failMotivo: string | null = null
 let failTimer: ReturnType<typeof setTimeout> | null = null
-function reportOpenFailure() {
+function reportOpenFailure(motivo?: string, faltaba = false) {
   failCount++
+  if (faltaba) failMissing++
+  // Con un solo fallo se dice el motivo; con muchos, cuántos —y si TODOS fueron
+  // archivos que ya no están, eso es lo útil: se movió la carpeta, no falla la app.
+  if (motivo && !failMotivo) failMotivo = motivo
   if (failTimer) clearTimeout(failTimer)
   failTimer = setTimeout(() => {
     const { showToast } = usePdfStore.getState()
-    showToast(failCount === 1 ? 'No se pudo abrir el PDF' : `No se pudieron abrir ${failCount} PDFs`, 'error')
+    showToast(mensajeDeFallos(failCount, failMissing, failMotivo), 'error')
     failCount = 0
+    failMissing = 0
+    failMotivo = null
     failTimer = null
   }, 600)
+}
+
+/** Aviso para una tanda de aperturas fallidas. Exportado para poder fijar los textos:
+ * un lote de 60 planos no puede sacar 60 avisos, y «No se pudo abrir el PDF» cuando el
+ * archivo simplemente ya no está manda a buscar un problema que no existe. */
+export function mensajeDeFallos(total: number, faltantes: number, motivo: string | null): string {
+  if (total === 1) return motivo || 'No se pudo abrir el PDF'
+  if (faltantes === total) return `No se encontraron ${total} PDFs: ¿movidos o borrados?`
+  if (faltantes > 0) return `No se pudieron abrir ${total} PDFs (${faltantes} ya no están en su carpeta)`
+  return `No se pudieron abrir ${total} PDFs`
+}
+
+/** Motivo de un 4xx del motor, en el idioma del usuario. El motor ya explica por qué
+ * (`detail`) y la app lo tiraba a la basura para decir siempre lo mismo. */
+export function motivoDeApertura(nombre: string, status: number, detalle: string): string {
+  if (status === 422 && /no existe/i.test(detalle)) {
+    return `«${nombre}» ya no está en esa carpeta: ¿la moviste o la borraste?`
+  }
+  if (status === 422 || status === 413) return detalle || `No se pudo abrir «${nombre}»`
+  return `No se pudo abrir «${nombre}»`
+}
+
+async function detalleDeError(res: Response): Promise<string> {
+  try {
+    const cuerpo = await res.json()
+    return typeof cuerpo?.detail === 'string' ? cuerpo.detail : ''
+  } catch {
+    return ''
+  }
+}
+
+/** Un reciente que ya no existe es ruido en la lista y vuelve a fallar cada vez que se
+ * pincha. Las FIJADAS se respetan: el usuario las puso ahí a propósito y puede que el
+ * archivo vuelva (un disco de red, una carpeta sincronizada que aún no bajó). */
+function olvidarRecienteQueYaNoEsta(filePath: string): void {
+  const entrada = loadRecents().find((e) => mismaRuta(e.path, filePath))
+  if (entrada && !entrada.pinned) removeRecent(filePath)
 }
 
 // Reabre un documento cuyo doc_id murió (el motor se reinició pero el health-check
@@ -115,7 +161,12 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
   // tras reinicio del motor) sí se reabre, porque el doc_id viejo está muerto.
   if (!opts.silent) {
     const { docs, setActiveDoc } = usePdfStore.getState()
-    const existing = docs.find((d) => d.file_path === filePath)
+    // Por archivo, no por cadena: la ruta llega con formatos distintos según venga del
+    // cuadro de abrir, de recientes, de arrastrar y soltar o de la sesión guardada, y
+    // comparándolas se abría una SEGUNDA pestaña del mismo PDF — cada una con su lista
+    // de marcas, y guardar desde una descartaba las de la otra (el aviso de «está
+    // abierto en otra pestaña» saltaba por un estado que la propia app había creado).
+    const existing = docs.find((d) => mismaRuta(d.file_path, filePath))
     if (existing) {
       if (opts.activate !== false) setActiveDoc(existing.doc_id)
       touchRecent(filePath)
@@ -136,7 +187,14 @@ async function openDocumentImpl(filePath: string, opts: OpenDocumentOptions): Pr
       showToast('Se requiere contraseña para abrir el PDF', 'error')
       return null
     }
-    if (!res.ok) throw new Error('Error abriendo PDF')
+    if (!res.ok) {
+      const detalle = await detalleDeError(res)
+      const yaNoEsta = res.status === 422 && /no existe/i.test(detalle)
+      if (yaNoEsta) olvidarRecienteQueYaNoEsta(filePath)
+      const nombre = filePath.split(/[\\/]/).pop() || filePath
+      if (!opts.silent) reportOpenFailure(motivoDeApertura(nombre, res.status, detalle), yaNoEsta)
+      return null
+    }
 
     const data = await res.json()
     const docId = addDoc(data, opts.activate !== false)

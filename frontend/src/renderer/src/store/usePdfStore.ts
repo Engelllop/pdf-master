@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { revokePageUrl } from '../lib/blobUrl'
+import { normalizarRuta } from '../lib/rutas'
 import { measurementFor } from '../lib/measure'
 import { apiFetch } from '../lib/api'
 
@@ -118,7 +119,10 @@ export interface OutlineItem {
 
 export interface Bookmark {
   id: string
-  docId: string
+  // Por ARCHIVO, no por `doc_id`: el doc_id lo asigna el motor en cada sesión, así que
+  // un marcador guardado apuntaba a un id que ya no existía — se persistía en
+  // localStorage y no volvía a verse nunca, además de acumularse ahí para siempre.
+  filePath: string
   page: number
   label: string
 }
@@ -482,10 +486,21 @@ interface EscalasGuardadas {
 
 /** Lo guardado por versiones anteriores es la escala del documento suelta
  * (`{pixelsPerUnit, unit}`); se lee como escala de documento. */
+/** Las escalas se guardaban con la ruta TAL CUAL como clave, así que reabrir el mismo
+ * plano con la ruta escrita de otra forma (recientes, sesión guardada, arrastrar y
+ * soltar) dejaba las cotas en píxeles: la calibración seguía en localStorage y nadie la
+ * encontraba. En un takeoff eso no se nota hasta que las cantidades salen mal. */
+function clavesDelArchivo(map: Record<string, unknown>, filePath: string): string[] {
+  const clave = normalizarRuta(filePath)
+  return Object.keys(map).filter((k) => normalizarRuta(k) === clave)
+}
+
 function loadPersistedScales(filePath: string): EscalasGuardadas {
   try {
     const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
-    const entrada = map[filePath]
+    // La normalizada primero; si no está, cualquier clave vieja del mismo archivo.
+    const clave = normalizarRuta(filePath)
+    const entrada = map[clave] ?? map[clavesDelArchivo(map, filePath)[0] ?? '']
     if (!entrada) return { doc: null, pages: {} }
     if (typeof entrada.pixelsPerUnit === 'number') return { doc: entrada, pages: {} }
     return { doc: entrada.doc ?? null, pages: entrada.pages || {} }
@@ -497,8 +512,10 @@ function loadPersistedScales(filePath: string): EscalasGuardadas {
 function persistScales(filePath: string, doc: MeasurementScale | null, pages: Record<number, MeasurementScale>) {
   try {
     const map = JSON.parse(localStorage.getItem(SCALES_KEY) || '{}')
-    if (doc || Object.keys(pages).length > 0) map[filePath] = { doc, pages }
-    else delete map[filePath]
+    // Se limpian las claves viejas del mismo archivo: si no, el mapa acumula una
+    // entrada por cada forma de escribir la ruta y gana la que se lea primero.
+    for (const k of clavesDelArchivo(map, filePath)) delete map[k]
+    if (doc || Object.keys(pages).length > 0) map[normalizarRuta(filePath)] = { doc, pages }
     localStorage.setItem(SCALES_KEY, JSON.stringify(map))
   } catch {
     // localStorage lleno o bloqueado: la escala sigue viva en memoria
@@ -657,7 +674,13 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   textFontSize: 14,
   textStyle: { bold: false, italic: false, align: 'left', lineHeight: 1.3, listStyle: 'none' },
   bookmarks: (() => {
-    try { return JSON.parse(localStorage.getItem('pdfmaster_bookmarks') || '[]') }
+    // Los de versiones viejas iban por `docId` de sesión: ya eran invisibles y no hay
+    // forma de saber a qué archivo apuntaban, así que se descartan al cargar en vez de
+    // quedarse ocupando sitio.
+    try {
+      const guardados = JSON.parse(localStorage.getItem('pdfmaster_bookmarks') || '[]')
+      return Array.isArray(guardados) ? guardados.filter((b: Bookmark) => !!b?.filePath) : []
+    }
     catch { return [] }
   })(),
   loadingDocId: null,

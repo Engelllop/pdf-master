@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2, Tally5 } from 'lucide-react'
+import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2, Tally5, Pencil } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
 import { useFormModal } from './FormModal'
 import ReviewPanel from './ReviewPanel'
@@ -8,6 +8,8 @@ import CountPanel from './CountPanel'
 
 import { apiFetch } from '../lib/api'
 import { pushAnnotations } from '../lib/saveDocument'
+import { borrarEnRuta, cuantasCuelgan, renombrarEnRuta, tituloEnRuta, type RutaIndice } from '../lib/outlineTree'
+import { mismaRuta } from '../lib/rutas'
 import { renderPdfThumbnail } from '../lib/pdfjs'
 import {
   deletePagesUndoable,
@@ -17,24 +19,43 @@ import {
   rotatePagesUndoable,
 } from '../lib/pageUndo'
 
-function OutlineTree({ items, depth = 0, onJump }: { items: OutlineItem[]; depth?: number; onJump: (page: number) => void }) {
+function OutlineTree({ items, depth = 0, ruta = [], onJump, onRenombrar, onBorrar }: {
+  items: OutlineItem[]; depth?: number; ruta?: RutaIndice; onJump: (page: number) => void
+  onRenombrar: (ruta: RutaIndice) => void; onBorrar: (ruta: RutaIndice) => void
+}) {
   return (
     <>
-      {items.map((item, idx) => (
+      {items.map((item, idx) => {
+        const rutaItem = [...ruta, idx]
+        return (
         <div key={idx}>
-          <button
-            onClick={() => onJump(item.page)}
-            className={`w-full text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
-            style={{ paddingLeft: `${8 + depth * 12}px` }}
-            title={item.title}
-          >
-            {item.title}
-          </button>
+          <div className="flex items-center gap-0.5 group">
+            <button
+              onClick={() => onJump(item.page)}
+              className={`flex-1 min-w-0 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
+              style={{ paddingLeft: `${8 + depth * 12}px` }}
+              title={item.title}
+            >
+              {item.title}
+            </button>
+            {/* Solo se podía AÑADIR: una entrada mal puesta (o el índice equivocado de
+                un PDF ajeno) no había forma de quitarla desde la app. */}
+            <button onClick={() => onRenombrar(rutaItem)} aria-label={`Renombrar ${item.title}`}
+              className="p-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-fg hover:bg-hover shrink-0">
+              <Pencil size={12} />
+            </button>
+            <button onClick={() => onBorrar(rutaItem)} aria-label={`Borrar ${item.title}`}
+              className="p-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-danger hover:bg-hover shrink-0">
+              <Trash2 size={12} />
+            </button>
+          </div>
           {item.children && item.children.length > 0 && (
-            <OutlineTree items={item.children} depth={depth + 1} onJump={onJump} />
+            <OutlineTree items={item.children} depth={depth + 1} ruta={rutaItem}
+              onJump={onJump} onRenombrar={onRenombrar} onBorrar={onBorrar} />
           )}
         </div>
-      ))}
+        )
+      })}
     </>
   )
 }
@@ -49,7 +70,7 @@ export default function ThumbnailPanel() {
   )
   const { docs, activeDocId, sidebarOpen, toggleSidebar, setPage, addThumbnail, bookmarks, removeBookmark, showToast, setDocDirty, viewerScroll, goToSearchResult, setActiveDoc, setOutline } = store
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
-  const { askConfirm, formModal } = useFormModal()
+  const { askForm, askConfirm, formModal } = useFormModal()
   const scrollRef = useRef<HTMLDivElement>(null)
   const [tab, setTab] = useState<'pages' | 'outline' | 'bookmarks' | 'annotations' | 'counts' | 'search'>('pages')
 
@@ -178,6 +199,46 @@ export default function ThumbnailPanel() {
       showToast('Error: ' + err.message, 'error')
     }
   }
+
+  // El índice se escribe SIEMPRE completo por el mismo endpoint (`set_toc` reescribe el
+  // TOC entero), así que añadir, renombrar y borrar comparten este único camino.
+  const escribirIndice = async (siguiente: OutlineItem[], aviso: string): Promise<void> => {
+    if (!activeDoc) return
+    const res = await apiFetch(`/pdf/outline/${activeDoc.doc_id}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(siguiente),
+    })
+    if (!res.ok) { showToast('No se pudo escribir el índice', 'error'); return }
+    setOutline(activeDoc.doc_id, siguiente)
+    setDocDirty(activeDoc.doc_id, true)
+    showToast(aviso, 'success')
+  }
+
+  const renombrarIndice = async (ruta: RutaIndice): Promise<void> => {
+    if (!activeDoc) return
+    const actual = tituloEnRuta(activeDoc.outline, ruta)
+    const v = await askForm('Renombrar entrada del índice', [
+      { name: 'title', label: 'Título', type: 'text', defaultValue: actual },
+    ], 'Renombrar')
+    const titulo = String(v?.title ?? '').trim()
+    if (!v || !titulo || titulo === actual) return
+    await escribirIndice(renombrarEnRuta(activeDoc.outline, ruta, titulo), 'Entrada renombrada')
+  }
+
+  const borrarIndice = async (ruta: RutaIndice): Promise<void> => {
+    if (!activeDoc) return
+    const titulo = tituloEnRuta(activeDoc.outline, ruta)
+    // Borrar un capítulo se lleva sus hijas: decir cuántas evita borrar veinte
+    // entradas creyendo que se borra una línea.
+    const cuantas = cuantasCuelgan(activeDoc.outline, ruta)
+    const detalle = cuantas > 1 ? ` y sus ${cuantas - 1} subentrada(s)` : ''
+    if (!(await askConfirm('Borrar del índice', `Se quita «${titulo}»${detalle} del índice del PDF.`, 'Borrar'))) return
+    await escribirIndice(borrarEnRuta(activeDoc.outline, ruta), 'Entrada borrada del índice')
+  }
+
+  // Del archivo abierto, comparando rutas como Windows: el cuadro de abrir puede
+  // devolver `C:\Planos\A.pdf` y la sesión guardada `c:/planos/a.pdf`.
+  const marcadoresDelDoc = bookmarks.filter((b) => mismaRuta(b.filePath, activeDoc?.file_path))
 
   const handleExtractSelected = async () => {
     if (!activeDoc || selectedPages.size === 0) return
@@ -393,25 +454,14 @@ export default function ThumbnailPanel() {
       {tab === 'outline' && (
         <div className="flex-1 overflow-y-auto p-2">
           <button
-            onClick={async () => {
-              const title = `Página ${activeDoc.currentPage + 1}`
-              const next = [...activeDoc.outline, { title, page: activeDoc.currentPage }]
-              const res = await apiFetch(`/pdf/outline/${activeDoc.doc_id}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(next),
-              })
-              if (res.ok) {
-                setOutline(activeDoc.doc_id, next)
-                setDocDirty(activeDoc.doc_id, true)
-                showToast('Entrada añadida al índice del PDF', 'success')
-              } else showToast('No se pudo escribir el índice', 'error')
-            }}
+            onClick={() => escribirIndice([...activeDoc.outline, { title: `Página ${activeDoc.currentPage + 1}`, page: activeDoc.currentPage }], 'Entrada añadida al índice del PDF')}
             className="w-full mb-2 px-2 py-1 rounded text-mini border border-border text-muted hover:text-fg hover:bg-hover"
           >
             Añadir página actual al índice
           </button>
           {activeDoc.outline.length > 0 ? (
-            <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)} />
+            <OutlineTree items={activeDoc.outline} onJump={(page) => setPage(activeDoc.doc_id, page)}
+              onRenombrar={renombrarIndice} onBorrar={borrarIndice} />
           ) : (
             <p className={`text-mini text-center mt-4 text-muted`}>Este PDF no tiene índice</p>
           )}
@@ -419,8 +469,8 @@ export default function ThumbnailPanel() {
       )}
       {tab === 'bookmarks' && (
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
-          {bookmarks.filter((b) => b.docId === activeDoc.doc_id).length > 0 ? (
-            bookmarks.filter((b) => b.docId === activeDoc.doc_id).map((b) => (
+          {marcadoresDelDoc.length > 0 ? (
+            marcadoresDelDoc.map((b) => (
               <div key={b.id} className="flex items-center gap-1 group">
                 <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
                 <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>

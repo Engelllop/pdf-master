@@ -161,8 +161,15 @@ class EditMixin:
                     stash_page = p
                 else:
                     stash_id = self._stash_document(doc)
+            # Con `replace_all=False` se reemplaza UNA ocurrencia, no todas las de la
+            # página: se borraban las tres «REV B» de una lámina y se escribía una sola.
+            objetivos = rects if replace_all else rects[:1]
+            # El estilo se toma ANTES de redactar: `apply_redactions` se lleva el texto
+            # original, así que leído después no hay span que consultar y todo salía en
+            # negro al tamaño estimado por la altura del rect.
+            estilos = [self._style_at(page, r) for r in objetivos]
             # Redact old text
-            for rect in rects:
+            for rect in objetivos:
                 page.add_redact_annot(rect)
             # LINE_ART_NONE: `apply_redactions()` por omisión BORRA el dibujo vectorial
             # que quede contenido en el rect (`REMOVE_IF_COVERED`). Acá el rect es el de
@@ -174,14 +181,15 @@ class EditMixin:
             # un plano ESCANEADO dejaba un rectángulo blanco en el escaneo.
             page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE,
                                   images=fitz.PDF_REDACT_IMAGE_NONE)
-            if rects:
-                size, fontname, rgb = self._style_at(page, rects[0])
-                font = self._base14_font(fontname)
+            # Una inserción por ocurrencia. Antes se insertaba solo en la primera y las
+            # demás quedaban borradas y sin reemplazo — texto que desaparecía del plano,
+            # y encima el aviso contaba todas como reemplazadas.
+            for rect, (size, fontname, rgb, base) in zip(objetivos, estilos):
                 page.insert_text(
-                    rects[0].tl, texto_estampable(replace), fontsize=size, color=rgb,
-                    fontname=font, overlay=True,
+                    (rect.x0, base), texto_estampable(replace), fontsize=size, color=rgb,
+                    fontname=self._base14_font(fontname), overlay=True,
                 )
-                count += len(rects)
+            count += len(objetivos)
             if not replace_all:
                 break
         if count > 0:
@@ -224,10 +232,16 @@ class EditMixin:
 
     @staticmethod
     def _style_at(page, rect):
-        """Fuente/tamaño/color del span que intersecta el rect (para replace)."""
+        """Fuente/tamaño/color y LÍNEA BASE del span que intersecta el rect (para
+        replace). La línea base sale del `origin` del span porque `insert_text` recibe
+        justamente eso: pasándole la esquina superior del rect, el reemplazo salía una
+        línea más arriba que el texto que sustituía — encima de lo que hubiera ahí."""
         size = max(8, min(72, int(rect.height * 0.8)))
         fontname = None
         rgb = (0.0, 0.0, 0.0)
+        # Sin span que consultar, la base se estima: el descendente ronda un 22 % de la
+        # altura de la caja de búsqueda.
+        base = rect.y1 - rect.height * 0.22
         try:
             for block in page.get_text("dict").get("blocks", []):
                 for line in block.get("lines", []):
@@ -240,10 +254,13 @@ class EditMixin:
                         c = span.get("color", 0)
                         if isinstance(c, int):
                             rgb = ((c >> 16) / 255.0, ((c >> 8) & 255) / 255.0, (c & 255) / 255.0)
-                        return size, fontname, rgb
+                        origen = span.get("origin")
+                        if origen:
+                            base = float(origen[1])
+                        return size, fontname, rgb, base
         except Exception:
             pass
-        return size, fontname, rgb
+        return size, fontname, rgb, base
 
     @staticmethod
     def _base14_font(font: Optional[str]) -> str:
@@ -252,7 +269,7 @@ class EditMixin:
         bold = "bold" in f or "black" in f or "semibold" in f
         italic = "italic" in f or "oblique" in f
         if "courier" in f or "mono" in f or "consol" in f:
-            return "cobo" if bold and italic else "cobi" if italic else "cobo" if bold else "cour"
+            return "cobi" if bold and italic else "coit" if italic else "cobo" if bold else "cour"
         if "times" in f or "georgia" in f or "serif" in f or "roman" in f or "garamond" in f:
             return "tibi" if bold and italic else "tiit" if italic else "tibo" if bold else "tiro"
         return "hebi" if bold and italic else "heit" if italic else "hebo" if bold else "helv"

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { reopenDeadDoc } from '../lib/openDocument'
 import { useStoreSlice } from './useStoreSlice'
+import type { PdfDoc } from '../store/usePdfStore'
 import { revokePageUrl } from '../lib/blobUrl'
 import { renderPdfPage, isDeadDocError } from '../lib/pdfjs'
 
@@ -39,6 +40,52 @@ export interface TextBlock {
 
 function isAbort(err: unknown): boolean {
   return !!err && typeof err === 'object' && (err as { name?: string }).name === 'AbortError'
+}
+
+/** Reajusta la resolución del bitmap para que coincida con el zoom actual, en AMBAS
+ * direcciones (al acercar sube; al alejar baja para no encoger un bitmap enorme).
+ *
+ * Se usa para los DOS paneles. Antes solo lo tenía el izquierdo: en vista doble el
+ * efecto de carga no vuelve a correr al cambiar el zoom, así que la lámina de la
+ * derecha se quedaba con el bitmap del zoom anterior — se acercaba a mirar un detalle
+ * y la mitad derecha seguía borrosa hasta cambiar de página. */
+function useZoomUpgrade(
+  doc: PdfDoc | undefined,
+  offset: number,
+  data: PageData | null,
+  setData: (d: PageData) => void,
+  cachePage: (docId: string, page: number, entry: PageData) => void,
+  activo: boolean,
+): void {
+  const ultimo = useRef<{ key: string; rz: number }>({ key: '', rz: 0 })
+  useEffect(() => {
+    if (!activo || !doc || !data) return
+    const docId = doc.doc_id
+    const version = doc.docVersion
+    const page = doc.currentPage + offset
+    if (page >= doc.page_count) return
+    const desired = renderZoomFor(doc.zoom)
+    const current = data.originalWidth > 0 ? data.width / data.originalWidth : 0
+    const key = `${docId}:${page}`
+    if (Math.abs(desired - current) < 0.5) return
+    if (ultimo.current.key === key && Math.abs(ultimo.current.rz - desired) < 0.01) return
+
+    const controller = new AbortController()
+    const t = setTimeout(() => {
+      ultimo.current = { key, rz: desired }
+      renderPdfPage(docId, version, page, desired, controller.signal)
+        .then((r) => {
+          const entry: PageData = {
+            image: r.url, width: r.width, height: r.height,
+            originalWidth: r.originalWidth, originalHeight: r.originalHeight,
+          }
+          cachePage(docId, page, entry)
+          setData(entry)
+        })
+        .catch(() => {})
+    }, 250)
+    return () => { clearTimeout(t); controller.abort() }
+  }, [doc?.zoom, doc?.currentPage, doc?.doc_id, data?.width, activo])
 }
 
 export function usePageLoader() {
@@ -172,36 +219,8 @@ export function usePageLoader() {
     return () => { controller.abort() }
   }, [activeDoc?.doc_id, activeDoc?.currentPage, store.viewMode, activeDoc?.docVersion])
 
-  // Reajusta la resolución del bitmap para que coincida con el zoom actual, en AMBAS
-  // direcciones (al acercar sube; al alejar baja para no encoger un bitmap enorme).
-  const lastUpgradeRef = useRef<{ key: string; rz: number }>({ key: '', rz: 0 })
-  useEffect(() => {
-    if (!activeDoc || !pageData) return
-    const docId = activeDoc.doc_id
-    const version = activeDoc.docVersion
-    const page = activeDoc.currentPage
-    const desired = renderZoomFor(activeDoc.zoom)
-    const current = pageData.originalWidth > 0 ? pageData.width / pageData.originalWidth : 0
-    const key = `${docId}:${page}`
-    if (Math.abs(desired - current) < 0.5) return
-    if (lastUpgradeRef.current.key === key && Math.abs(lastUpgradeRef.current.rz - desired) < 0.01) return
-
-    const controller = new AbortController()
-    const t = setTimeout(() => {
-      lastUpgradeRef.current = { key, rz: desired }
-      renderPdfPage(docId, version, page, desired, controller.signal)
-        .then((r) => {
-          const entry: PageData = {
-            image: r.url, width: r.width, height: r.height,
-            originalWidth: r.originalWidth, originalHeight: r.originalHeight,
-          }
-          cachePage(docId, page, entry)
-          setPageData(entry)
-        })
-        .catch(() => {})
-    }, 250)
-    return () => { clearTimeout(t); controller.abort() }
-  }, [activeDoc?.zoom, activeDoc?.currentPage, activeDoc?.doc_id, pageData?.width])
+  useZoomUpgrade(activeDoc, 0, pageData, setPageData, cachePage, true)
+  useZoomUpgrade(activeDoc, 1, pageDataRight, setPageDataRight, cachePage, store.viewMode === 'double')
 
   // Search highlight
   useEffect(() => {
