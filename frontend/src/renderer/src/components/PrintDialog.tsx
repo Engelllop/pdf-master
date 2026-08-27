@@ -77,15 +77,15 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
   )
 
   return (
-    <div className="overlay-in fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Imprimir" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
-        className="panel-in w-[360px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel border-border text-fg">
+        className="panel-in w-[360px] max-w-[92vw] rounded-token border shadow-token-lg bg-panel border-border text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <Printer size={18} className="text-fg" />
           <h2 className="text-base font-semibold flex-1">Imprimir</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded transition-colors hover:bg-hover text-muted">
+            className="p-1 rounded-token-sm transition-colors hover:bg-hover text-muted">
             <X size={16} />
           </button>
         </div>
@@ -98,7 +98,7 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
               {radio('range', 'Rango:')}
               <input type="text" value={range} placeholder="ej. 1-5, 8"
                 onChange={(e) => { setRange(e.target.value); setMode('range') }}
-                className="flex-1 border border-border rounded px-2 py-1 text-base bg-panel text-fg focus:outline-none focus:border-accent" />
+                className="flex-1 border border-border rounded-token-sm px-2 py-1 text-base bg-panel text-fg focus:outline-none focus:border-accent" />
             </div>
           </div>
 
@@ -118,14 +118,14 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
             <span className="text-muted">Copias</span>
             <input type="number" min={1} max={99} value={copies}
               onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
-              className="w-16 border border-border rounded px-2 py-1 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
+              className="w-16 border border-border rounded-token-sm px-2 py-1 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
           </div>
         </div>
 
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
-          <button onClick={onClose} className="px-3 py-1.5 text-base rounded text-fg hover:bg-hover transition-colors">Cancelar</button>
+          <button onClick={onClose} className="px-3 py-1.5 text-base rounded-token-sm text-fg hover:bg-hover transition-colors">Cancelar</button>
           <button onClick={handlePrint} disabled={printing}
-            className="px-4 py-1.5 text-base rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-1.5">
+            className="px-4 py-1.5 text-base rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5">
             <Printer size={14} /> {printing ? 'Imprimiendo…' : 'Imprimir'}
           </button>
         </div>

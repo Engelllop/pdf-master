@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import TabStrip from './TabStrip'
 import { usePdfStore } from '../store/usePdfStore'
 
@@ -56,5 +56,29 @@ describe('sucio', () => {
     usePdfStore.getState().setDocDirty('doc-1', true)
     render(<TabStrip />)
     expect(screen.getByRole('img', { name: 'Sin guardar' })).toBeTruthy()
+  })
+})
+
+describe('jerarquía de la tira', () => {
+  it('la pestaña activa no se pinta hundida: se marca con el acento', () => {
+    openDoc('doc-1', 'a.pdf')
+    openDoc('doc-2', 'b.pdf')
+    render(<TabStrip />)
+    const activa = screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!
+    // `bg-surface` es la mesa del documento: sobre la barra blanca dejaba la pestaña
+    // activa MÁS oscura que las inactivas, o sea hundida.
+    expect(activa.className).not.toMatch(/bg-surface/)
+    expect(activa.querySelector('.bg-accent')).toBeTruthy()
+  })
+
+  it('en la lista de pestañas, el activo no se marca con el color del hover', () => {
+    openDoc('doc-1', 'a.pdf')
+    openDoc('doc-2', 'b.pdf')
+    render(<TabStrip />)
+    fireEvent.click(screen.getByLabelText('Lista de pestañas'))
+    // La pestaña y su fila del menú comparten `title` (la ruta): interesa la fila.
+    const activa = screen.getAllByRole('button').find((b) => b.title.endsWith('a.pdf'))!
+    // Con `bg-hover` había dos filas idénticas en cuanto el ratón tocaba otra.
+    expect(activa.className).not.toMatch(/(^|\s)bg-hover/)
   })
 })

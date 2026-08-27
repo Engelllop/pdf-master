@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2, Tally5, Pencil } from 'lucide-react'
+import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, RotateCw, RotateCcw, Scissors, X, Search, Copy, FilePlus2, Tally5, Pencil, Check } from 'lucide-react'
 import type { OutlineItem } from '../store/usePdfStore'
 import { useFormModal } from './FormModal'
 import ReviewPanel from './ReviewPanel'
@@ -32,7 +32,7 @@ function OutlineTree({ items, depth = 0, ruta = [], onJump, onRenombrar, onBorra
           <div className="flex items-center gap-0.5 group">
             <button
               onClick={() => onJump(item.page)}
-              className={`flex-1 min-w-0 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
+              className={`flex-1 min-w-0 text-left text-mini rounded-token-sm px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}
               style={{ paddingLeft: `${8 + depth * 12}px` }}
               title={item.title}
             >
@@ -41,11 +41,11 @@ function OutlineTree({ items, depth = 0, ruta = [], onJump, onRenombrar, onBorra
             {/* Solo se podía AÑADIR: una entrada mal puesta (o el índice equivocado de
                 un PDF ajeno) no había forma de quitarla desde la app. */}
             <button onClick={() => onRenombrar(rutaItem)} aria-label={`Renombrar ${item.title}`}
-              className="p-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-fg hover:bg-hover shrink-0">
+              className="p-1 rounded-token-sm opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-fg hover:bg-hover shrink-0">
               <Pencil size={12} />
             </button>
             <button onClick={() => onBorrar(rutaItem)} aria-label={`Borrar ${item.title}`}
-              className="p-1 rounded opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-danger hover:bg-hover shrink-0">
+              className="p-1 rounded-token-sm opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-danger hover:bg-hover shrink-0">
               <Trash2 size={12} />
             </button>
           </div>
@@ -304,7 +304,7 @@ export default function ThumbnailPanel() {
     if (!sidebarOpen) toggleSidebar()
   }
   const railEl = (
-    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 bg-panel border-border`}>
+    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 bg-panel border-border-strong`}>
       {railItems.map(({ id, icon: Icon, title }) => {
         const on = sidebarOpen && tab === id
         return (
@@ -313,11 +313,11 @@ export default function ThumbnailPanel() {
               ? `${title}, ${activeDoc.searchResults.length} resultados`
               : title}
             aria-pressed={on}
-            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-toolbar" />}
+            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-on-accent" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
-              <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${on ? 'bg-toolbar' : 'bg-accent'}`} aria-hidden />
+              <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${on ? 'bg-on-accent' : 'bg-accent'}`} aria-hidden />
             )}
           </button>
         )
@@ -330,10 +330,10 @@ export default function ThumbnailPanel() {
       <div className="flex shrink-0">
         {railEl}
         {sidebarOpen && (
-          <div className={`w-56 border-r flex flex-col bg-panel border-border`}>
+          <div className={`w-56 border-r flex flex-col bg-panel border-border-strong`}>
             <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
-              <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
-              <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
+              <span className={`text-micro font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+              <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded-token-sm transition-colors hover:bg-hover text-muted`}>
                 <PanelLeftClose size={14} />
               </button>
             </div>
@@ -352,10 +352,10 @@ export default function ThumbnailPanel() {
       {formModal}
       {sidebarOpen && (
       // El panel de revisión necesita más ancho que las miniaturas (filtros + hilos).
-      <div className={`${tab === 'annotations' || tab === 'counts' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border`}>
+      <div className={`${tab === 'annotations' || tab === 'counts' ? 'w-80' : 'w-56'} border-r flex flex-col bg-panel border-border-strong`}>
       <div className={`flex items-center justify-between px-3 py-2 border-b border-border`}>
-        <span className={`text-mini font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
-        <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded transition-colors hover:bg-hover text-muted`}>
+        <span className={`text-micro font-semibold uppercase tracking-wider text-muted`}>{sectionTitle[tab]}</span>
+        <button onClick={toggleSidebar} aria-label="Ocultar panel" className={`p-1 rounded-token-sm transition-colors hover:bg-hover text-muted`}>
           <PanelLeftClose size={14} />
         </button>
       </div>
@@ -371,7 +371,7 @@ export default function ThumbnailPanel() {
               // árbol de accesibilidad para que la opción cuelgue del listbox.
               <div key={i} role="presentation">
                 {dragOverIndex === i && dragIndex !== i && (
-                  <div className="h-0.5 bg-accent rounded mb-1" />
+                  <div className="h-0.5 bg-accent rounded-token-sm mb-1" />
                 )}
                 <div
                   data-page={i}
@@ -398,21 +398,23 @@ export default function ThumbnailPanel() {
                   }}
                   onDragEnd={() => { setDragIndex(null); setDragOverIndex(null) }}
                   onClick={(e) => handleThumbClick(i, e)}
-                  className={`w-full rounded border transition-colors cursor-pointer relative ${
-                    activeDoc.currentPage === i
-                      ? isSelected ? 'border-accent bg-accent/10' : 'border-accent bg-black/5 dark:bg-white/10'
-                      : isSelected ? 'border-accent bg-accent/10' : 'border-border hover:border-muted bg-surface/50'
-                  } ${dragIndex === i ? 'opacity-50' : ''}`}
+                  className={`w-full cursor-pointer group ${dragIndex === i ? 'opacity-50' : ''}`}
                 >
+                  {/* La miniatura es una hoja de papel con su sombra, igual que la
+                      pagina grande: el anillo de seleccion va FUERA del papel, asi el
+                      recuadro no se come el filo del plano. */}
+                  <div className={`relative rounded-token-sm overflow-hidden bg-white transition-shadow duration-fast ease-token ${
+                    activeDoc.currentPage === i || isSelected
+                      ? 'shadow-token-sm ring-2 ring-accent'
+                      : 'shadow-token-sm ring-1 ring-border group-hover:ring-muted'
+                  }`}>
                   {isVisible && activeDoc.thumbnails.has(i) ? (
-                    <img src={activeDoc.thumbnails.get(i)} alt="" className="w-full h-auto rounded pointer-events-none" />
+                    <img src={activeDoc.thumbnails.get(i)} alt="" className="w-full h-auto block pointer-events-none" />
                   ) : (
-                    <div className="skeleton w-full aspect-[3/4] flex items-center justify-center rounded">
-                      <span className={`text-mini text-muted`}>{i + 1}</span>
-                    </div>
+                    <div className="skeleton w-full aspect-[3/4]" />
                   )}
                   {activeDoc.currentPage === i && viewerScroll.scrollWidth > 0 && (
-                    <div className="absolute inset-0 pointer-events-none overflow-hidden rounded">
+                    <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-token-sm">
                       <div className="absolute border-2 border-accent bg-accent/20" style={{
                         left: `${Math.max(0, Math.min(100, (viewerScroll.left / viewerScroll.scrollWidth) * 100))}%`,
                         top: `${Math.max(0, Math.min(100, (viewerScroll.top / viewerScroll.scrollHeight) * 100))}%`,
@@ -422,30 +424,44 @@ export default function ThumbnailPanel() {
                     </div>
                   )}
                   {isSelected && (
-                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent flex items-center justify-center">
-                      <svg className="w-3 h-3 text-toolbar" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      </svg>
+                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent text-on-accent flex items-center justify-center shadow-token-sm">
+                      <Check size={12} strokeWidth={3} />
                     </div>
                   )}
-                  <div className={`text-center text-micro py-1 text-muted`}>{i + 1}</div>
+                  </div>
+                  {/* Fuera del papel: es el rotulo de la hoja, no parte de ella. */}
+                  <div className={`text-center text-micro pt-1 tabular ${
+                    activeDoc.currentPage === i ? 'text-fg font-medium' : 'text-muted'
+                  }`}>{i + 1}</div>
                 </div>
               </div>
             )
           })}
           {selectedPages.size > 0 && (
-            <div className={`sticky bottom-2 z-10 mx-1 rounded-xl border shadow-xl bg-panel/95 border-border`}>
+            <div className={`sticky bottom-2 z-raised mx-1 rounded-token-lg border shadow-token-lg bg-panel/95 backdrop-blur-[2px] border-border`}>
               <div className={`flex items-center justify-between px-2.5 pt-2 pb-1.5 border-b border-border`}>
                 <span className={`text-micro font-medium text-muted`}>{selectedPages.size} seleccionada(s)</span>
-                <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded transition-colors text-muted hover:text-fg hover:bg-hover`}><X size={15} /></button>
+                <button onClick={() => setSelectedPages(new Set())} title="Limpiar selección (Esc)" aria-label="Limpiar selección" className={`p-1 rounded-token-sm transition-colors text-muted hover:text-fg hover:bg-hover`}><X size={16} /></button>
               </div>
-              <div className="flex flex-wrap gap-1.5 justify-center p-2.5">
-                <button onClick={() => handleRotateSelected(90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° derecha" aria-label="Rotar 90° derecha"><RotateCw size={15} /></button>
-                <button onClick={() => handleRotateSelected(-90)} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Rotar 90° izquierda" aria-label="Rotar 90° izquierda"><RotateCcw size={15} /></button>
-                <button onClick={handleDuplicate} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Duplicar página" aria-label="Duplicar página"><Copy size={15} /></button>
-                <button onClick={handleInsertBlank} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity" title="Insertar página en blanco después" aria-label="Insertar página en blanco después"><FilePlus2 size={15} /></button>
-                <button onClick={handleExtractSelected} className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-colors" title="Extraer a nuevo PDF" aria-label="Extraer a nuevo PDF"><Scissors size={15} /></button>
-                <button onClick={handleDeleteSelected} className="p-2 rounded-lg bg-danger hover:bg-danger text-white transition-colors" title="Eliminar página(s)" aria-label="Eliminar página(s)"><Trash2 size={15} /></button>
+              {/* Seis rellenos negros seguidos no dicen cual es el peligroso. Las
+                  acciones normales van neutras y solo eliminar se tine. */}
+              <div className="flex flex-wrap gap-1 justify-center p-2">
+                {([
+                  [RotateCw, 'Rotar 90° derecha', () => handleRotateSelected(90)],
+                  [RotateCcw, 'Rotar 90° izquierda', () => handleRotateSelected(-90)],
+                  [Copy, 'Duplicar página', handleDuplicate],
+                  [FilePlus2, 'Insertar página en blanco después', handleInsertBlank],
+                  [Scissors, 'Extraer a nuevo PDF', handleExtractSelected],
+                ] as Array<[typeof RotateCw, string, () => void]>).map(([Icon, titulo, accion]) => (
+                  <button key={titulo} onClick={accion} title={titulo} aria-label={titulo}
+                    className="p-2 rounded-token text-fg hover:bg-hover active:bg-active transition-colors duration-fast ease-token">
+                    <Icon size={16} />
+                  </button>
+                ))}
+                <button onClick={handleDeleteSelected} title="Eliminar página(s)" aria-label="Eliminar página(s)"
+                  className="p-2 rounded-token text-danger hover:bg-danger/10 transition-colors duration-fast ease-token">
+                  <Trash2 size={16} />
+                </button>
               </div>
             </div>
           )}
@@ -455,7 +471,7 @@ export default function ThumbnailPanel() {
         <div className="flex-1 overflow-y-auto p-2">
           <button
             onClick={() => escribirIndice([...activeDoc.outline, { title: `Página ${activeDoc.currentPage + 1}`, page: activeDoc.currentPage }], 'Entrada añadida al índice del PDF')}
-            className="w-full mb-2 px-2 py-1 rounded text-mini border border-border text-muted hover:text-fg hover:bg-hover"
+            className="w-full mb-2 px-2 py-1 rounded-token-sm text-mini border border-border text-muted hover:text-fg hover:bg-hover"
           >
             Añadir página actual al índice
           </button>
@@ -472,8 +488,8 @@ export default function ThumbnailPanel() {
           {marcadoresDelDoc.length > 0 ? (
             marcadoresDelDoc.map((b) => (
               <div key={b.id} className="flex items-center gap-1 group">
-                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-mini rounded px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
-                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
+                <button onClick={() => setPage(activeDoc.doc_id, b.page)} className={`flex-1 text-left text-mini rounded-token-sm px-2 py-1 transition-colors truncate text-muted hover:text-fg hover:bg-hover`}>{b.label}</button>
+                <button onClick={() => removeBookmark(b.id)} className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-1 rounded-token-sm hover:bg-danger/10 text-danger transition-opacity" aria-label="Eliminar marcador"><Trash2 size={12} /></button>
               </div>
             ))
           ) : (
@@ -492,7 +508,7 @@ export default function ThumbnailPanel() {
                 <button
                   key={i}
                   onClick={() => goToSearchResult(activeDoc.doc_id, i)}
-                  className={`w-full text-left text-mini rounded px-2 py-1.5 transition-colors ${
+                  className={`w-full text-left text-mini rounded-token-sm px-2 py-1.5 transition-colors ${
                     i === activeDoc.searchIndex
                       ? 'bg-black/5 dark:bg-white/10 border border-accent'
                       : 'hover:bg-hover border border-transparent'
@@ -519,7 +535,7 @@ export default function ThumbnailPanel() {
                 </div>
                 {others.map((d) => (
                   <button key={d.doc_id} onClick={() => { setActiveDoc(d.doc_id); goToSearchResult(d.doc_id, 0) }}
-                    className={`w-full text-left text-mini rounded px-2 py-1.5 transition-colors hover:bg-hover`}
+                    className={`w-full text-left text-mini rounded-token-sm px-2 py-1.5 transition-colors hover:bg-hover`}
                     title={d.file_path}>
                     <span className={`block truncate font-medium text-fg`}>{d.file_name}</span>
                     <span className={`block text-micro text-muted`}>{d.searchResults.length} resultado(s)</span>

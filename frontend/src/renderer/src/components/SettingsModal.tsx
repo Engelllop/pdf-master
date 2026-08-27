@@ -29,16 +29,25 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     </div>
   )
 
+  /** Los ajustes se leen por bloques: qué firmo y cómo marco · cómo se ve · qué
+   * pasa con mis archivos. Nueve filas seguidas no eran una lista, eran un muro. */
+  const Seccion = ({ titulo, children }: { titulo: string; children: React.ReactNode }) => (
+    <section className="px-4 py-1">
+      <h3 className="text-micro font-semibold uppercase tracking-wider text-muted pt-3 pb-1">{titulo}</h3>
+      <div className="divide-y divide-border">{children}</div>
+    </section>
+  )
+
   const Segmented = <T extends string>({ value, options, onChange }: {
     value: T
     options: Array<[T, string]>
     onChange: (v: T) => void
   }) => (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5 rounded-token border border-border bg-surface p-0.5">
       {options.map(([id, label]) => (
         <button key={id} onClick={() => onChange(id)}
-          className={`px-2.5 py-1 rounded text-micro border transition-colors ${
-            value === id ? 'border-accent bg-accent text-toolbar' : 'border-border text-muted hover:bg-hover'
+          className={`px-2.5 h-7 rounded-token-sm text-micro transition-colors duration-fast ease-token ${
+            value === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
           }`}>
           {label}
         </button>
@@ -47,22 +56,23 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   )
 
   return (
-    <div className="overlay-in fixed inset-0 z-[92] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Ajustes" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-        className="panel-in w-[460px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
+        className="panel-in w-[500px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-token-lg border border-border shadow-token-lg bg-panel text-fg">
+        <div className="sticky top-0 z-raised flex items-center gap-2 px-4 py-3 border-b border-border bg-panel">
           <Settings size={16} className="text-muted" />
           <h2 className="text-base font-semibold flex-1">Ajustes</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
         </div>
 
-        <div className="px-4 py-2 divide-y divide-border">
+        <div className="pb-2">
+          <Seccion titulo="Marcado">
           <Row label="Tu nombre" hint="Firma las marcas que crees; se usa para filtrar por autor y en las respuestas.">
             <input value={annotationAuthor} onChange={(e) => setAnnotationAuthor(e.target.value)}
               placeholder="Sin autor" autoFocus
-              className="w-40 border border-border rounded px-2 py-1 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+              className="w-44 border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
           </Row>
 
           <Row label="Herramienta fija" hint="La herramienta se queda activa tras cada marca; Esc la suelta.">
@@ -71,6 +81,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onChange={(v) => setStickyTools(v === 'on')} />
           </Row>
 
+          <Row label="Unidad de medida por defecto" hint="Se propone al calibrar la escala de un plano.">
+            <select value={defaultUnit} onChange={(e) => setDefaultUnit(e.target.value as typeof defaultUnit)}
+              className="border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
+              {(['mm', 'cm', 'm', 'ft', 'in'] as const).map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </Row>
+          </Seccion>
+
+          <Seccion titulo="Vista">
           <Row label="Rueda del ratón" hint="Al llegar al final de la página: seguir desplazando o saltar a la siguiente.">
             <Segmented<WheelMode> value={wheelMode}
               options={[['page', 'Cambia de página'], ['scroll', 'Solo desplaza']]}
@@ -86,8 +105,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <Row label="Tamaño de la interfaz" hint="Escala menús, paneles y textos de la app (no el PDF en sí).">
             <div className="flex items-center gap-2">
               <input type="range" min={75} max={150} step={5} value={Math.round(uiScale * 100)}
-                onChange={(e) => setUiScale(parseInt(e.target.value) / 100)} className="w-28" />
-              <span className="text-micro text-muted w-9 tabular-nums">{Math.round(uiScale * 100)}%</span>
+                onChange={(e) => setUiScale(parseInt(e.target.value) / 100)} className="w-28 accent-accent" />
+              <span className="text-micro text-muted w-9 tabular">{Math.round(uiScale * 100)}%</span>
             </div>
           </Row>
 
@@ -97,13 +116,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onChange={setDefaultZoomMode} />
           </Row>
 
-          <Row label="Unidad de medida por defecto" hint="Se propone al calibrar la escala de un plano.">
-            <select value={defaultUnit} onChange={(e) => setDefaultUnit(e.target.value as typeof defaultUnit)}
-              className="border border-border rounded px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
-              {(['mm', 'cm', 'm', 'ft', 'in'] as const).map((u) => <option key={u} value={u}>{u}</option>)}
-            </select>
-          </Row>
+          </Seccion>
 
+          <Seccion titulo="Archivos">
           <Row label="Reabrir los documentos al iniciar" hint="Restaura las pestañas de la última sesión.">
             <Segmented<'on' | 'off'> value={restoreSession ? 'on' : 'off'}
               options={[['on', 'Sí'], ['off', 'No']]}
@@ -116,6 +131,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               options={[['off', 'No'], ['on', 'Sí']]}
               onChange={(v) => setBackupOnSave(v === 'on')} />
           </Row>
+          </Seccion>
         </div>
 
         <div className="px-4 py-2.5 border-t border-border text-micro text-muted">

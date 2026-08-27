@@ -95,7 +95,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
   const tint = ann.color || '#fbbf24'
 
   return (
-    <div ref={ref} className="absolute z-40" style={{ left, top, width: W }}>
+    <div ref={ref} className="absolute z-sticky" style={{ left, top, width: W }}>
       {/* Cola del globo hacia el icono */}
       <div className="absolute" style={{
         left: tailLeft,
@@ -108,11 +108,11 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
           : { borderTop: `${TAIL}px solid ${tint}` }),
         filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.15))',
       } as React.CSSProperties} />
-      <div className="rounded-xl shadow-xl overflow-hidden bg-panel border"
+      <div className="rounded-token-lg shadow-token-lg overflow-hidden bg-panel border"
         style={{ borderColor: tint }}>
         <div className="px-3 pt-1.5 pb-0.5 text-micro font-medium tracking-wide uppercase text-muted flex justify-between">
           <span className="truncate">{ann.author || 'Nota'}</span>
-          {ann.createdAt && <span className="shrink-0 ml-2 tabular-nums">{new Date(ann.createdAt).toLocaleDateString()}</span>}
+          {ann.createdAt && <span className="shrink-0 ml-2 tabular">{new Date(ann.createdAt).toLocaleDateString()}</span>}
         </div>
         <textarea autoFocus
           value={text}

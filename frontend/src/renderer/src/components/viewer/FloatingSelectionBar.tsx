@@ -69,13 +69,13 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
     selectAnnotation(docId, copy.id)
   }
 
-  const btn = 'p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors'
-  const onBtn = (active: boolean) => `p-1.5 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
+  const btn = 'p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors'
+  const onBtn = (active: boolean) => `p-1.5 rounded-token-sm transition-colors ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
   const styleVal: LineStyle = ann.lineStyle || 'solid'
   const opacityPct = Math.round((ann.opacity ?? (ann.type === 'highlight' ? 0.5 : 1)) * 100)
 
   return (
-    <div className="absolute z-40 flex items-center gap-0.5 px-1.5 rounded-lg border border-border bg-panel shadow-xl select-none"
+    <div className="absolute z-sticky flex items-center gap-0.5 px-1.5 rounded-token border border-border bg-panel shadow-token-lg select-none"
       style={{ left, top, height: BAR_H, maxWidth: wrapperWidth - 8 }}
       onMouseDown={(e) => e.stopPropagation()}>
       {hasColor && (
@@ -93,10 +93,10 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       {isStroke && (
         <>
           <button title="Línea más fina" aria-label="Línea más fina" className={btn}
-            onClick={() => apply({ lineWidth: Math.max(0.5, (ann.lineWidth ?? 2) - 0.5) })}><Minus size={13} /></button>
-          <span className="text-micro text-fg w-6 text-center tabular-nums">{ann.lineWidth ?? 2}</span>
+            onClick={() => apply({ lineWidth: Math.max(0.5, (ann.lineWidth ?? 2) - 0.5) })}><Minus size={14} /></button>
+          <span className="text-micro text-fg w-6 text-center tabular">{ann.lineWidth ?? 2}</span>
           <button title="Línea más gruesa" aria-label="Línea más gruesa" className={btn}
-            onClick={() => apply({ lineWidth: Math.min(20, (ann.lineWidth ?? 2) + 0.5) })}><Plus size={13} /></button>
+            onClick={() => apply({ lineWidth: Math.min(20, (ann.lineWidth ?? 2) + 0.5) })}><Plus size={14} /></button>
           {LINE_STYLES.map((ls) => (
             <button key={ls.id} title={`Línea ${ls.label}`} aria-label={`Línea ${ls.label}`}
               className={onBtn(styleVal === ls.id)}
@@ -107,12 +107,12 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
           <input type="range" min={10} max={100} step={5} value={opacityPct}
             onChange={(e) => apply({ opacity: parseInt(e.target.value) / 100 })}
             className="w-14" title="Opacidad" aria-label="Opacidad" />
-          <span className="text-micro text-muted w-7 tabular-nums">{opacityPct}%</span>
+          <span className="text-micro text-muted w-7 tabular">{opacityPct}%</span>
           {canFill && (
             <>
               <button title={ann.fillColor ? 'Color de relleno' : 'Rellenar'} aria-label={ann.fillColor ? 'Color de relleno' : 'Rellenar'}
                 onClick={() => ann.fillColor ? fillInputRef.current?.click() : apply({ fillColor: ann.color || '#fbbf24', fillOpacity: ann.fillOpacity ?? 0.3 })}
-                className="relative w-6 h-6 rounded border border-border shrink-0 flex items-center justify-center"
+                className="relative w-6 h-6 rounded-token-sm border border-border shrink-0 flex items-center justify-center"
                 style={{ backgroundColor: ann.fillColor || 'transparent' }}>
                 {!ann.fillColor && <Droplet size={12} className="text-muted" />}
                 <input ref={fillInputRef} type="color" value={ann.fillColor || '#fbbf24'}
@@ -131,25 +131,25 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       {isText && (
         <>
           <select value={ann.fontFamily || 'Arial'} onChange={(e) => apply({ fontFamily: e.target.value })}
-            className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-28">
+            className="border border-border rounded-token-sm px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-28">
             {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
           </select>
           <button title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
             onClick={() => apply({ fontSize: Math.max(4, (ann.fontSize || 14) - 2) })}>A</button>
-          <span className="text-micro text-fg w-6 text-center tabular-nums">{ann.fontSize || 14}</span>
+          <span className="text-micro text-fg w-6 text-center tabular">{ann.fontSize || 14}</span>
           <button title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
             onClick={() => apply({ fontSize: Math.min(72, (ann.fontSize || 14) + 2) })}>A</button>
           <button title="Negrita" aria-label="Negrita" className={onBtn(!!ann.bold)}
-            onClick={() => apply({ bold: !ann.bold })}><Bold size={13} /></button>
+            onClick={() => apply({ bold: !ann.bold })}><Bold size={14} /></button>
           <button title="Cursiva" aria-label="Cursiva" className={onBtn(!!ann.italic)}
-            onClick={() => apply({ italic: !ann.italic })}><Italic size={13} /></button>
+            onClick={() => apply({ italic: !ann.italic })}><Italic size={14} /></button>
           {(['left', 'center', 'right'] as const).map((a) => {
             const Icon = a === 'left' ? AlignLeft : a === 'center' ? AlignCenter : AlignRight
             const alignLabel = a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'
             return (
               <button key={a} title={`Alinear a la ${alignLabel}`} aria-label={`Alinear a la ${alignLabel}`}
                 className={onBtn((ann.align || 'left') === a)}
-                onClick={() => apply({ align: a })}><Icon size={13} /></button>
+                onClick={() => apply({ align: a })}><Icon size={14} /></button>
             )
           })}
           <div className="w-px h-4 mx-1 bg-border" />
@@ -158,8 +158,8 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       {canRotate && (
         <>
           <button title="Rotar 90°" aria-label="Rotar 90°" className={btn}
-            onClick={() => apply({ rotation: ((ann.rotation || 0) + 90) % 360 })}><RotateCw size={13} /></button>
-          <span className="text-micro text-muted w-8 tabular-nums">{ann.rotation || 0}°</span>
+            onClick={() => apply({ rotation: ((ann.rotation || 0) + 90) % 360 })}><RotateCw size={14} /></button>
+          <span className="text-micro text-muted w-8 tabular">{ann.rotation || 0}°</span>
           <div className="w-px h-4 mx-1 bg-border" />
         </>
       )}

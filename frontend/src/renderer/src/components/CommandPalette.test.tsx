@@ -26,11 +26,31 @@ describe('paleta de comandos', () => {
 
   it('filtra por palabras sueltas del nombre y del grupo', () => {
     render(<CommandPalette onClose={() => {}} />)
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pagina rotar' } })
-    // «pagina» sin tilde no coincide con «Página»: se busca tal cual se escribe.
-    expect(screen.queryByText('Rotar a la derecha')).toBeNull()
-
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'rotar' } })
     expect(screen.getByText('Rotar a la derecha')).toBeTruthy()
+    expect(screen.queryByText('Abrir PDF')).toBeNull()
+  })
+
+  it('encuentra sin tildes: nadie escribe «Página» con acento en un buscador', () => {
+    render(<CommandPalette onClose={() => {}} />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'pagina rotar' } })
+    expect(screen.getByText('Rotar a la derecha')).toBeTruthy()
+  })
+
+  it('agrupa por sección en vez de repetir el grupo en cada fila', () => {
+    render(<CommandPalette onClose={() => {}} />)
+    const grupos = screen.getAllByRole('group').map((g) => g.getAttribute('aria-label'))
+    expect(grupos).toEqual(['Archivo', 'Página'])
+    // El nombre del grupo aparece UNA vez (la cabecera), no pegado a cada comando.
+    expect(screen.getAllByText('Archivo')).toHaveLength(1)
+  })
+
+  it('el comando resaltado usa el color de texto del relleno, no el del panel', () => {
+    render(<CommandPalette onClose={() => {}} />)
+    const fila = screen.getByRole('option', { selected: true })
+    expect(fila.className).toMatch(/bg-accent/)
+    // `text-toolbar` sobre relleno azul dejaba texto oscuro sobre oscuro en tema oscuro.
+    expect(fila.className).toMatch(/text-on-accent/)
+    expect(fila.className).not.toMatch(/text-toolbar/)
   })
 })

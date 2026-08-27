@@ -53,7 +53,7 @@ function FormModal({ title, fields, submitLabel, confirm, destructive, message, 
   })
   const set = (n: string, val: string | boolean) => setValues((p) => ({ ...p, [n]: val }))
   const showCancel = confirm || !fields.every((f) => f.readOnly)
-  const inputCls = `w-full border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent`
+  const inputCls = `w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent`
 
   const dialogRef = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -73,14 +73,14 @@ function FormModal({ title, fields, submitLabel, confirm, destructive, message, 
   }
 
   return (
-    <div className="overlay-in fixed inset-0 z-[95] flex items-center justify-center bg-black/50" onClick={onCancel}>
+    <div className="overlay-in fixed inset-0 z-prompt flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onCancel}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
         onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}
-        className="panel-in w-[380px] max-w-[92vw] rounded-lg border shadow-2xl bg-panel border-border text-fg">
+        className="panel-in w-[380px] max-w-[92vw] rounded-token border shadow-token-lg bg-panel border-border text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           {destructive && <AlertTriangle size={16} className="text-danger shrink-0" />}
           <h2 className="text-base font-semibold flex-1">{title}</h2>
-          <button onClick={onCancel} aria-label="Cerrar" className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+          <button onClick={onCancel} aria-label="Cerrar" className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
         </div>
         {confirm ? (
           <div className="px-4 py-4">
@@ -121,9 +121,9 @@ function FormModal({ title, fields, submitLabel, confirm, destructive, message, 
         </div>
         )}
         <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
-          {showCancel && <button ref={cancelRef} onClick={onCancel} className="px-3 py-1.5 text-base rounded text-fg hover:bg-hover transition-colors">Cancelar</button>}
+          {showCancel && <button ref={cancelRef} onClick={onCancel} className="px-3 py-1.5 text-base rounded-token-sm text-fg hover:bg-hover transition-colors">Cancelar</button>}
           <button onClick={() => onSubmit(values)}
-            className={`px-4 py-1.5 text-base rounded transition-opacity ${destructive ? 'bg-danger text-white hover:bg-danger' : 'bg-fg text-toolbar hover:opacity-90'}`}>{submitLabel}</button>
+            className={`px-4 py-1.5 text-base rounded-token-sm transition-[filter] duration-fast ease-token hover:brightness-110 active:brightness-95 ${destructive ? 'bg-danger text-white' : 'bg-accent text-on-accent'}`}>{submitLabel}</button>
         </div>
       </div>
     </div>

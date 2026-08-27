@@ -74,7 +74,7 @@ describe('chrome de zoom', () => {
     fireEvent.click(screen.getByLabelText('Nivel de zoom'))
     const current = screen.getByRole('button', { name: '100%' })
     expect(current.className).toMatch(/bg-accent/)
-    expect(current.className).toMatch(/text-toolbar/)
+    expect(current.className).toMatch(/text-on-accent/)
     expect(current.className).not.toMatch(/text-accent/)
   })
 

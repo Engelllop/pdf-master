@@ -41,6 +41,10 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
 
   const visibleRecents = recents.slice(0, 6)
 
+  const ATAJOS: Array<[string, string]> = [
+    ['Ctrl+O', 'abrir'], ['Ctrl+rueda', 'zoom'], ['Ctrl+K', 'comandos'], ['F1', 'atajos'],
+  ]
+
   const CAPABILITIES: Array<{ icon: typeof Ruler; title: string; text: string }> = [
     { icon: Highlighter, title: 'Marcá sin entregar', text: 'Resaltá, anotá y dibujá. El archivo en disco no cambia hasta Ctrl+S.' },
     { icon: Ruler, title: 'Medí y contá', text: 'Calibrá la escala, medí distancias y agrupá símbolos.' },
@@ -50,34 +54,41 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
   return (
     <div ref={containerRef} className="flex-1 flex flex-col items-center justify-center overflow-auto bg-surface p-6"
       onDragOver={onDragOver} onDrop={onDrop}>
-      <div className="w-full max-w-3xl space-y-6">
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center border border-dashed border-border bg-active">
-            <FileText size={28} className="text-muted" strokeWidth={1.5} />
+      <div className="w-full max-w-3xl space-y-7">
+        <div className="text-center">
+          <div className="w-14 h-14 mx-auto rounded-token-lg flex items-center justify-center bg-accent/10 text-accent">
+            <FileText size={26} className="icon-thin" />
           </div>
-          <div>
-            <h2 className="text-xl font-semibold text-fg">PDF Master</h2>
-            <p className="mt-1 text-base text-muted">Arrastrá un PDF acá para abrirlo</p>
-          </div>
-          <div className="flex items-center justify-center gap-2">
+          <h2 className="mt-4 text-xl font-semibold text-fg tracking-tight">PDF Master</h2>
+          <p className="mt-1 text-base text-muted">Arrastrá un PDF acá para abrirlo</p>
+
+          <div className="mt-4 flex items-center justify-center gap-2">
             <button onClick={handleOpen}
-              className="flex items-center gap-2 px-4 py-2 text-base rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity">
-              <FolderOpen size={15} /> Abrir PDF
+              className="flex items-center gap-2 px-4 h-9 text-base rounded-token bg-accent text-on-accent shadow-token-sm hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token">
+              <FolderOpen size={16} /> Abrir PDF
             </button>
             {lastSession && (
               <button onClick={() => { reopenLastSession() }}
-                className="flex items-center gap-2 px-4 py-2 text-base rounded-lg border border-border text-fg hover:bg-hover transition-colors">
-                <History size={15} /> Reabrir última sesión ({lastSession.docs.length})
+                className="flex items-center gap-2 px-4 h-9 text-base rounded-token border border-border bg-panel text-fg shadow-token-sm hover:bg-hover transition-colors duration-fast ease-token">
+                <History size={16} /> Reabrir última sesión ({lastSession.docs.length})
               </button>
             )}
           </div>
-          <p className="text-mini text-muted">Ctrl+O abrir · Ctrl+rueda zoom · F1 atajos</p>
-          <p className="text-mini text-fg">Nunca se guarda solo. Ctrl+S escribe el PDF.</p>
+
+          <div className="mt-4 flex items-center justify-center gap-x-4 gap-y-1 flex-wrap text-mini text-muted">
+            {ATAJOS.map(([tecla, que]) => (
+              <span key={tecla} className="flex items-center gap-1.5">
+                <kbd className="px-1.5 py-0.5 rounded-token-sm border border-border bg-active text-micro text-fg">{tecla}</kbd>
+                {que}
+              </span>
+            ))}
+          </div>
+          <p className="mt-3 text-mini text-fg">Nunca se guarda solo. Ctrl+S escribe el PDF.</p>
         </div>
 
         {visibleRecents.length > 0 && (
           <div>
-            <p className="text-mini font-medium text-fg mb-2">Recientes</p>
+            <p className="text-micro font-semibold uppercase tracking-wider text-muted mb-2">Recientes</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {visibleRecents.map((entry) => {
                 const name = entry.path.split(/[\\/]/).pop()
@@ -86,11 +97,11 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
                   : entry.pageCount ? `${entry.pageCount} pág.` : null
                 return (
                   <button key={entry.path} onClick={() => handleOpenRecent(entry)} title={entry.path}
-                    className="flex items-center gap-2.5 p-2 rounded-lg border border-border bg-panel hover:bg-hover transition-colors text-left">
-                    <div className="w-9 h-11 shrink-0 rounded border border-border bg-white overflow-hidden flex items-center justify-center">
+                    className="flex items-center gap-2.5 p-2 rounded-token border border-border bg-panel shadow-token-sm hover:border-accent/50 hover:bg-hover transition-colors duration-fast ease-token text-left">
+                    <div className="w-9 h-11 shrink-0 rounded-token-sm border border-border bg-white overflow-hidden flex items-center justify-center">
                       {entry.thumb
                         ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
-                        : <FileText size={15} className="text-muted" strokeWidth={1.5} />}
+                        : <FileText size={16} className="text-muted icon-thin" />}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="text-ui text-fg truncate leading-tight">{name}</div>
@@ -99,7 +110,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
                         {progress && <> · <span className="text-fg">{progress}</span></>}
                       </div>
                     </div>
-                    {entry.pinned && <Pin size={11} className="text-fg shrink-0" />}
+                    {entry.pinned && <Pin size={12} className="text-fg shrink-0" />}
                   </button>
                 )
               })}
@@ -109,12 +120,12 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
 
         {folders.length > 0 && (
           <div>
-            <p className="text-mini font-medium text-fg mb-2">Carpetas frecuentes</p>
+            <p className="text-micro font-semibold uppercase tracking-wider text-muted mb-2">Carpetas frecuentes</p>
             <div className="flex flex-wrap gap-2">
               {folders.map((f) => (
                 <button key={f.dir} onClick={() => handleOpenFolder(f.dir)} title={f.dir}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-mini text-fg hover:bg-hover transition-colors">
-                  <Folder size={13} className="text-muted" />
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-token border border-border bg-panel text-mini text-fg hover:border-accent/50 hover:bg-hover transition-colors duration-fast ease-token">
+                  <Folder size={14} className="text-muted" />
                   <span className="truncate max-w-[180px]">{f.name}</span>
                   <span className="text-muted">{f.count}</span>
                 </button>
@@ -123,10 +134,10 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
           </div>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-5 border-t border-border">
           {CAPABILITIES.map(({ icon: Icon, title, text }) => (
             <div key={title} className="flex gap-2.5 p-2">
-              <Icon size={15} className="text-muted shrink-0 mt-0.5" strokeWidth={1.75} />
+              <Icon size={16} className="text-accent shrink-0 mt-0.5" strokeWidth={1.75} />
               <div>
                 <div className="text-mini font-medium text-fg">{title}</div>
                 <div className="text-micro text-muted leading-snug mt-0.5">{text}</div>

@@ -42,17 +42,17 @@ export default function StatusBar() {
     setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight), false)
   }
 
-  const iconBtn = 'p-1 rounded hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-30'
+  const iconBtn = 'p-1 rounded-token-sm hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
 
   return (
-    <div className="h-8 border-t border-border bg-toolbar text-muted flex items-center px-3 text-mini select-none gap-3">
+    <div className="h-8 border-t border-border-strong bg-toolbar text-muted flex items-center px-3 text-mini select-none gap-3">
       {activeDoc ? (
         <span className="flex items-center gap-1">
           Pág.
           <input type="number" min={1} max={activeDoc.page_count} value={activeDoc.currentPage + 1}
             onChange={(e) => { const v = parseInt(e.target.value); if (v >= 1 && v <= activeDoc.page_count) setPage(activeDoc.doc_id, v - 1) }}
             aria-label="Página actual"
-            className="w-10 border border-border rounded px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
+            className="w-10 border border-border rounded-token-sm px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
           / {activeDoc.page_count}
         </span>
       ) : (
@@ -92,7 +92,7 @@ export default function StatusBar() {
         <span className="flex items-center gap-1.5 text-fg" title="Herramienta activa">
           <Pointer size={12} /> {toolLabel(activeTool)}
           {stickyTools && <span className="text-muted">(fija)</span>}
-          <kbd className="px-1 py-px rounded border border-border text-micro text-muted">Esc</kbd>
+          <kbd className="px-1 py-px rounded-token-sm border border-border text-micro text-muted">Esc</kbd>
         </span>
       )}
 
@@ -106,7 +106,7 @@ export default function StatusBar() {
           onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-save'))}
           className="flex items-center gap-1 text-warning hover:text-fg transition-colors"
           title="Guardar cambios" aria-label="Sin guardar. Guardar con Ctrl+S">
-          Sin guardar · <kbd className="px-1 py-px rounded border border-border text-micro text-muted">Ctrl+S</kbd>
+          Sin guardar · <kbd className="px-1 py-px rounded-token-sm border border-border text-micro text-muted">Ctrl+S</kbd>
         </button>
       )}
       {saveStatus === 'saved' && !activeDoc?.dirty && (
@@ -115,7 +115,7 @@ export default function StatusBar() {
 
       {activeDoc && !compareMode && (
         <>
-          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-accent text-toolbar hover:text-toolbar' : ''}`}
+          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-accent text-on-accent hover:text-on-accent' : ''}`}
             title="Scroll continuo" aria-label="Scroll continuo" aria-pressed={continuousMode}>
             <ScrollText size={14} />
           </button>
@@ -125,17 +125,17 @@ export default function StatusBar() {
           <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar" aria-label="Alejar"><ZoomOut size={14} /></button>
           <div className="relative">
             <button onClick={() => setZoomMenuOpen((o) => !o)}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded hover:bg-hover text-fg" title="Nivel de zoom" aria-label="Nivel de zoom" aria-haspopup="menu" aria-expanded={zoomMenuOpen}>
-              <span className="w-9 text-right tabular-nums">{zoomPercent}%</span>
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded-token-sm hover:bg-hover text-fg" title="Nivel de zoom" aria-label="Nivel de zoom" aria-haspopup="menu" aria-expanded={zoomMenuOpen}>
+              <span className="w-9 text-right tabular">{zoomPercent}%</span>
               <ChevronDown size={12} className="text-muted" />
             </button>
             {zoomMenuOpen && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setZoomMenuOpen(false)} />
-                <div className="absolute bottom-full right-0 mb-1 z-50 w-32 border border-border rounded-token shadow-token py-1 bg-panel">
+                <div className="fixed inset-0 z-sticky" onClick={() => setZoomMenuOpen(false)} />
+                <div className="absolute bottom-full right-0 mb-1 z-dropdown w-32 border border-border rounded-token shadow-token-md py-1 bg-panel">
                   {ZOOM_PRESETS.map((z) => (
                     <button key={z} onClick={() => { setZoom(activeDoc.doc_id, z); setFitMode(activeDoc.doc_id, 'custom'); setZoomMenuOpen(false) }}
-                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'bg-accent text-toolbar' : 'text-fg'}`}>
+                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'bg-accent text-on-accent' : 'text-fg'}`}>
                       {Math.round(z * 100)}%
                     </button>
                   ))}

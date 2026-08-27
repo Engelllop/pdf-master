@@ -13,7 +13,7 @@ import {
   FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
-  TextCursorInput, CircleDot, List, MoreHorizontal,
+  TextCursorInput, CircleDot, List, MoreHorizontal, Eraser,
 } from 'lucide-react'
 import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
 import { correrCola } from '../lib/batchQueue'
@@ -386,8 +386,8 @@ export default function Toolbar() {
   const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active, disabled = false }: any) => (
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
-        className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-          active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+        className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed ${
+          active ? 'bg-accent text-on-accent font-medium shadow-token-sm' : 'text-fg hover:bg-hover active:bg-active'
         }`}>
         <Icon size={16} strokeWidth={1.75} />
         <span>{label}</span>
@@ -404,7 +404,7 @@ export default function Toolbar() {
       closeCommentMenu()
     }}
       className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-        activeTool === id ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+        activeTool === id ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
       }`}>
       <Icon size={14} strokeWidth={1.75} className="shrink-0" />
       <span className="flex-1">{TOOL_LABELS[id] || label}</span>
@@ -431,7 +431,7 @@ export default function Toolbar() {
         <Tooltip content={tip} shortcut={shortcut}>
           <button onClick={() => { onActivate(); closeCommentMenu() }} aria-label={tip}
             className={`flex items-center gap-1.5 pl-2.5 pr-1.5 h-8 text-ui rounded-l-token whitespace-nowrap transition-colors ${
-              active ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+              active ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
             }`}>
             <Icon size={16} strokeWidth={1.75} />
             <span>{label}</span>
@@ -441,15 +441,15 @@ export default function Toolbar() {
           onClick={() => setCommentMenu(open ? null : family)}
           className={`px-1 h-8 rounded-r-token border-l transition-colors ${
             active || open
-              ? 'bg-accent text-toolbar border-toolbar/20'
+              ? 'bg-accent text-on-accent border-toolbar/20'
               : 'text-muted hover:text-fg hover:bg-hover border-border'
           }`}>
           <ChevronDown size={12} />
         </button>
         {open && (
           <>
-            <div className="fixed inset-0 z-40" onClick={closeCommentMenu} />
-            <div role="menu" className="menu-pop absolute top-full left-0 z-50 mt-1 min-w-[220px] border border-border rounded-token shadow-token py-1 bg-panel">
+            <div className="fixed inset-0 z-sticky" onClick={closeCommentMenu} />
+            <div role="menu" className="menu-pop absolute top-full left-0 z-dropdown mt-1 min-w-[220px] border border-border rounded-token shadow-token-md py-1 bg-panel">
               {children}
             </div>
           </>
@@ -472,7 +472,7 @@ export default function Toolbar() {
         <button type="button" aria-label={label} aria-expanded={open} aria-haspopup="menu"
           onClick={() => setCommentMenu(open ? null : id)}
           className={`flex items-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors ${
-            active || open ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+            active || open ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
           }`}>
           <Icon size={16} strokeWidth={1.75} />
           <span>{label}</span>
@@ -480,8 +480,8 @@ export default function Toolbar() {
         </button>
         {open && (
           <>
-            <div className="fixed inset-0 z-40" onClick={closeCommentMenu} />
-            <div role="menu" className="menu-pop absolute top-full right-0 z-50 mt-1 min-w-[220px] border border-border rounded-token shadow-token py-1 bg-panel">
+            <div className="fixed inset-0 z-sticky" onClick={closeCommentMenu} />
+            <div role="menu" className="menu-pop absolute top-full right-0 z-dropdown mt-1 min-w-[220px] border border-border rounded-token shadow-token-md py-1 bg-panel">
               {children}
             </div>
           </>
@@ -504,6 +504,7 @@ export default function Toolbar() {
 
   const COMMENT_TOOLS: Array<{ id: string; icon: any; label: string }> = [
     { id: 'select', icon: MousePointer2, label: 'Seleccionar' },
+    { id: 'eraser', icon: Eraser, label: 'Borrador' },
     { id: 'textselect', icon: TextSelect, label: 'Copiar texto' },
     { id: 'highlight', icon: Highlighter, label: 'Resaltar' },
     { id: 'underline', icon: Underline, label: 'Subrayar' },
@@ -571,14 +572,17 @@ export default function Toolbar() {
               ? 'Herramienta fija: se queda activa hasta pulsar Esc'
               : 'Herramienta de un solo uso: se suelta tras cada marca'}>
               <button onClick={() => setStickyTools(!stickyTools)} aria-label="Fijar herramienta"
-                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-                {stickyTools ? <Pin size={15} strokeWidth={1.75} /> : <PinOff size={15} strokeWidth={1.75} />}
+                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+                {stickyTools ? <Pin size={16} strokeWidth={1.75} /> : <PinOff size={16} strokeWidth={1.75} />}
               </button>
             </Tooltip>
             <Sep />
             <TBtn icon={MousePointer2} label="Seleccionar" tip={TOOL_LABELS.select}
               shortcut={TOOL_SHORTCUTS.select}
               onClick={() => handleToolClick('select')} active={activeTool === 'select'} />
+            <TBtn icon={Eraser} label="Borrador" tip="Borrador: pasá sobre un dibujo y lo corta, como el borrador de un lápiz"
+              shortcut={TOOL_SHORTCUTS.eraser}
+              onClick={() => handleToolClick('eraser')} active={activeTool === 'eraser'} />
             <TBtn icon={Highlighter} label="Resaltar" tip={TOOL_LABELS.highlight}
               shortcut={TOOL_SHORTCUTS.highlight}
               onClick={() => handleToolClick('highlight')} active={activeTool === 'highlight'} />
@@ -605,14 +609,14 @@ export default function Toolbar() {
                 <button type="button" role="menuitem"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDrawFormasOpen((o) => !o) }}
                   className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'
+                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
                   }`}>
                   <Hexagon size={14} strokeWidth={1.75} className="shrink-0" />
                   <span className="flex-1">Formas</span>
                   <ChevronRight size={12} />
                 </button>
                 {drawFormasOpen && (
-                  <div role="menu" className="menu-pop absolute left-full top-0 z-50 ml-1 min-w-[200px] border border-border rounded-token shadow-token py-1 bg-panel">
+                  <div role="menu" className="menu-pop absolute left-full top-0 z-dropdown ml-1 min-w-[200px] border border-border rounded-token shadow-token-md py-1 bg-panel">
                     {DRAW_SHAPE_IDS.map((id) => {
                       const t = byId(id)
                       return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
@@ -665,16 +669,16 @@ export default function Toolbar() {
                 <Sep />
                 <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
                   placeholder="Categoría" title="Categoría del conteo" aria-label="Categoría del conteo"
-                  className="w-28 px-2 py-1 text-mini rounded border border-border bg-surface text-fg shrink-0" />
+                  className="w-28 px-2 py-1 text-mini rounded-token-sm border border-border bg-surface text-fg shrink-0" />
                 <div className="flex items-center gap-0.5 shrink-0">
                   {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon }) => (
                     <button key={id} onClick={() => setCountSymbol(id)} title={`Símbolo: ${id}`} aria-label={`Símbolo ${id}`}
-                      className={`p-1 rounded transition-colors ${countSymbol === id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+                      className={`p-1 rounded-token-sm transition-colors ${countSymbol === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'}`}>
                       <Icon size={14} />
                     </button>
                   ))}
                 </div>
-                <span className="text-mini text-muted shrink-0 tabular-nums" title="Marcas de esta categoría en el documento">
+                <span className="text-mini text-muted shrink-0 tabular" title="Marcas de esta categoría en el documento">
                   = {activeDoc.annotations.filter((a) => a.type === 'count' && (a.text || 'General') === (countCategory || 'General')).length}
                 </span>
               </>
@@ -686,7 +690,7 @@ export default function Toolbar() {
         const contentOn = ['edittext', 'text', 'image', 'editimage'].includes(activeTool || '')
         const formOn = ['formtext', 'formcheck', 'formradio', 'formcombo'].includes(activeTool || '')
         const itemCls = (id: string) =>
-          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-accent text-toolbar' : 'text-fg'}`
+          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-accent text-on-accent' : 'text-fg'}`
         return (
           <>
             <OverflowMenu id="edit-content" icon={Type} label="Contenido" active={contentOn}>
@@ -854,7 +858,7 @@ export default function Toolbar() {
             {docs.length > 1 && (
               <>
                 <Sep />
-                <span className="text-mini text-muted px-1 shrink-0 self-center tabular-nums">Todos ({docs.length}):</span>
+                <span className="text-mini text-muted px-1 shrink-0 self-center tabular">Todos ({docs.length}):</span>
                 <TBtn icon={Minimize2} label="Comprimir" tip="Comprimir todos los documentos abiertos" onClick={handleBatchCompress} />
                 <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua en todos los abiertos" onClick={handleBatchWatermark} />
                 <TBtn icon={FileDown} label="A Word" tip="Exportar todos los abiertos a Word" onClick={handleBatchExportWord} />
@@ -880,19 +884,19 @@ export default function Toolbar() {
   }
 
   return (
-    <div className="flex flex-col shrink-0 select-none bg-toolbar text-fg">
+    <div className="flex flex-col shrink-0 select-none bg-toolbar text-fg border-b border-border-strong">
       <RibbonTabs />
 
       {/* Barra contextual del modo activo */}
       {activeDoc && (
-        <div className="min-h-11 border-b border-border bg-toolbar grid items-center px-3 py-1 gap-2" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
+        <div className="min-h-11 border-t border-border bg-toolbar grid items-center px-3 py-1 gap-2" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
           <div />
           <div className={`flex items-center justify-center gap-1 min-w-0 ${activeRibbon === 'comment' ? 'flex-nowrap' : 'flex-wrap'}`}>
             {renderRibbon()}
           </div>
           <div className="flex items-center gap-2 justify-end">
             {showSearch ? (
-              <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token">
+              <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token-md">
                 <div className="flex items-center gap-1">
                   <Search size={14} className="text-muted" />
                   <input ref={searchRef} type="text" placeholder="Buscar…" value={searchInput}
@@ -902,15 +906,15 @@ export default function Toolbar() {
                   {/* Con cero resultados no se mostraba NADA: ni contador ni aviso, así
                       que no se sabía si la búsqueda había llegado a ejecutarse. El
                       aria-live hace que un lector de pantalla cante el resultado. */}
-                  <span className="text-mini text-muted tabular-nums" aria-live="polite">
+                  <span className="text-mini text-muted tabular" aria-live="polite">
                     {activeDoc.searchResults.length > 0
                       ? `${activeDoc.searchIndex + 1}/${activeDoc.searchResults.length}${activeDoc.searchResults.length >= 500 ? '+' : ''}`
                       : activeDoc.searchQuery ? 'Sin resultados' : ''}
                   </span>
-                  <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
-                  <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-30 text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
+                  <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
+                  <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
                   <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
-                    className={`text-micro px-2 py-0.5 rounded border ${showReplace ? 'bg-fg text-toolbar border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
+                    className={`text-micro px-2 py-0.5 rounded-token-sm border ${showReplace ? 'bg-accent text-on-accent border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
                     Reemplazar
                   </button>
                   <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
@@ -937,14 +941,14 @@ export default function Toolbar() {
                       Todo el doc
                     </label>
                     <button onClick={handleReplace} disabled={!searchInput.trim()}
-                      className={`text-micro px-2 py-0.5 rounded border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
+                      className={`text-micro px-2 py-0.5 rounded-token-sm border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
                     <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
-                      className={`text-micro px-2 py-0.5 rounded ${searchInput.trim() ? 'bg-fg text-toolbar hover:opacity-90' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
+                      className={`text-micro px-2 py-0.5 rounded-token-sm ${searchInput.trim() ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
                   </div>
                 )}
               </div>
             ) : (
-              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)" aria-label="Buscar">
+              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded-token-sm transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)" aria-label="Buscar">
                 <Search size={16} />
               </button>
             )}

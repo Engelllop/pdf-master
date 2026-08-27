@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, MessageSquarePlus, Palette, Pencil, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, MessageSquarePlus, Palette, Pencil, Trash2, Tally5 } from 'lucide-react'
 import { type PdfDoc, type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
@@ -105,8 +105,9 @@ Ctrl+Z lo deshace.`,
 
   if (total === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <p className="text-mini text-center text-muted">
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
+        <Tally5 size={18} className="text-muted" />
+        <p className="text-mini text-muted">
           Sin marcas de conteo.<br />Elegí la herramienta <b className="text-fg">Conteo</b> y hacé clic sobre cada elemento: se numeran solas.
         </p>
       </div>
@@ -115,16 +116,20 @@ Ctrl+Z lo deshace.`,
 
   return (
     <div className="flex-1 overflow-y-auto text-base">
-      <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-        <span className="text-mini text-muted">{groups.size} categoría(s)</span>
-        <span className="text-mini font-semibold text-fg tabular-nums">{total} marcas</span>
+      <div className="sticky top-0 z-raised bg-panel/95 backdrop-blur-[2px] px-3 py-2 border-b border-border flex items-baseline justify-between">
+        <span className="text-micro font-semibold uppercase tracking-wider text-muted">
+          {groups.size} categoría(s)
+        </span>
+        <span className="text-mini font-semibold text-fg tabular">{total} marcas</span>
       </div>
       {[...groups.entries()].map(([cat, list]) => {
         const isOpen = open[cat] ?? true
         const color = list[0]?.color || '#fbbf24'
         return (
           <div key={cat} className="border-b border-border">
-            <div className="group/cat w-full flex items-center gap-2 px-2 py-1.5 hover:bg-hover">
+            <div className={`group/cat sticky top-[37px] z-raised w-full flex items-center gap-2 px-2 py-1.5 backdrop-blur-[2px] transition-colors duration-fast ease-token ${
+              countCategory === cat ? 'bg-accent/10 hover:bg-accent/15' : 'bg-panel/95 hover:bg-hover'
+            }`}>
               <button onClick={() => setOpen((o) => ({ ...o, [cat]: !isOpen }))} className="text-muted shrink-0" aria-label={`${isOpen ? 'Contraer' : 'Desplegar'} la categoría ${cat}`}>
                 {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
               </button>
@@ -138,17 +143,28 @@ Ctrl+Z lo deshace.`,
                   }}
                   onBlur={() => renombrar(cat, list)}
                   aria-label={`Nuevo nombre para la categoría ${cat}`}
-                  className="flex-1 px-2 py-0.5 text-mini rounded border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
+                  className="flex-1 px-2 py-0.5 text-mini rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
               ) : (
                 <>
-                  <button onClick={() => setCountCategory(cat)} title="Seguir contando en esta categoría"
-                    className="flex-1 text-left text-mini text-fg truncate">{cat}</button>
+                  <button onClick={() => setCountCategory(cat)}
+                    title={countCategory === cat
+                      ? 'Los conteos nuevos caen en esta categoría'
+                      : 'Seguir contando en esta categoría'}
+                    aria-current={countCategory === cat}
+                    className={`flex-1 text-left text-mini truncate ${
+                      countCategory === cat ? 'text-fg font-medium' : 'text-fg'
+                    }`}>
+                    {cat}
+                    {countCategory === cat && (
+                      <span className="ml-1.5 text-micro font-normal text-accent">· contando</span>
+                    )}
+                  </button>
                   <button onClick={() => { setRenombrando(cat); setNombreNuevo(cat) }}
                     title="Renombrar la categoría" aria-label={`Renombrar la categoría ${cat}`}
-                    className="p-1 rounded text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-active">
+                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-hover">
                     <Pencil size={12} />
                   </button>
-                  <label className="p-1 rounded text-muted opacity-0 group-hover/cat:opacity-100 focus-within:opacity-100 hover:text-fg hover:bg-active cursor-pointer"
+                  <label className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-within:opacity-100 hover:text-fg hover:bg-hover cursor-pointer"
                     title="Color de toda la categoría">
                     <Palette size={12} />
                     <input type="color" value={color}
@@ -158,29 +174,29 @@ Ctrl+Z lo deshace.`,
                   </label>
                   <button onClick={() => { void borrarCategoria(cat, list) }}
                     title="Eliminar toda la categoría" aria-label={`Eliminar la categoría ${cat}`}
-                    className="p-1 rounded text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-active">
+                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-hover">
                     <Trash2 size={12} />
                   </button>
                 </>
               )}
-              <span className="text-mini font-semibold text-fg tabular-nums shrink-0">{list.length}</span>
+              <span className="text-mini font-semibold text-fg tabular shrink-0">{list.length}</span>
             </div>
             {isOpen && list.map((a) => (
               <div key={a.id} className="pl-8 pr-2 py-1 hover:bg-hover group">
                 <div className="flex items-center gap-2">
                   <button onClick={() => goTo(a)} className="flex-1 flex items-center gap-2 text-left min-w-0">
-                    <span className={`w-5 h-5 rounded-full text-micro flex items-center justify-center shrink-0 tabular-nums ${inkOnTint(a.color || '#fbbf24')}`}
+                    <span className={`w-5 h-5 rounded-full text-micro flex items-center justify-center shrink-0 tabular ${inkOnTint(a.color || '#fbbf24')}`}
                       style={{ background: a.color || '#fbbf24' }}>{numbers.get(a.id)}</span>
                     <span className="text-micro text-muted shrink-0">Pág. {a.page + 1}</span>
                     <span className="text-micro text-fg truncate">{comment(a)}</span>
                   </button>
                   <button onClick={() => { setEditing(a.id); setDraft(comment(a)) }} title="Comentar" aria-label="Comentar esta marca"
-                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-active">
-                    <MessageSquarePlus size={13} />
+                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-hover">
+                    <MessageSquarePlus size={14} />
                   </button>
                   <button onClick={() => deleteAnnotation(activeDoc.doc_id, a.id)} title="Eliminar marca" aria-label="Eliminar esta marca de conteo"
-                    className="p-1 rounded text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-active">
-                    <Trash2 size={13} />
+                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-hover">
+                    <Trash2 size={14} />
                   </button>
                 </div>
                 {editing === a.id && (
@@ -189,7 +205,7 @@ Ctrl+Z lo deshace.`,
                       onKeyDown={(e) => { if (e.key === 'Enter') saveComment(a); if (e.key === 'Escape') setEditing(null) }}
                       onBlur={() => saveComment(a)}
                       placeholder="Comentario…"
-                      className="flex-1 px-2 py-1 text-micro rounded border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
+                      className="flex-1 px-2 py-1 text-micro rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
                   </div>
                 )}
               </div>

@@ -86,7 +86,7 @@ export default function PresentationView() {
   return (
     <div role="dialog" aria-modal="true"
       aria-label={`Presentación, página ${activeDoc.currentPage + 1} de ${activeDoc.page_count}`}
-      className="fixed inset-0 z-50 bg-black flex items-center justify-center select-none">
+      className="fixed inset-0 z-presentation bg-black flex items-center justify-center select-none">
       {img && (
         <img src={img} alt={`Página ${activeDoc.currentPage + 1}`} className="max-h-screen max-w-full object-contain" draggable={false} />
       )}
@@ -96,10 +96,10 @@ export default function PresentationView() {
       <div aria-hidden className="absolute inset-y-0 right-0 w-1/2 cursor-e-resize" onClick={() => store.nextPage(activeDoc.doc_id)} />
 
       {/* Controls */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/60 rounded-full px-5 py-2 text-white/90 backdrop-blur">
-        <button onClick={() => store.prevPage(activeDoc.doc_id)} disabled={activeDoc.currentPage <= 0} aria-label="Página anterior" className="disabled:opacity-30 hover:text-white"><ChevronLeft size={20} /></button>
-        <span className="text-base tabular-nums">{activeDoc.currentPage + 1} / {activeDoc.page_count}</span>
-        <button onClick={() => store.nextPage(activeDoc.doc_id)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1} aria-label="Página siguiente" className="disabled:opacity-30 hover:text-white"><ChevronRight size={20} /></button>
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-4 bg-black/50 backdrop-blur-[2px] rounded-full px-5 py-2 text-white/90 backdrop-blur">
+        <button onClick={() => store.prevPage(activeDoc.doc_id)} disabled={activeDoc.currentPage <= 0} aria-label="Página anterior" className="disabled:opacity-40 disabled:cursor-not-allowed hover:text-white"><ChevronLeft size={20} /></button>
+        <span className="text-base tabular">{activeDoc.currentPage + 1} / {activeDoc.page_count}</span>
+        <button onClick={() => store.nextPage(activeDoc.doc_id)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1} aria-label="Página siguiente" className="disabled:opacity-40 disabled:cursor-not-allowed hover:text-white"><ChevronRight size={20} /></button>
       </div>
 
       <button onClick={() => store.togglePresentationMode()} className="absolute top-5 right-5 text-white/70 hover:text-white" title="Salir (Esc)" aria-label="Salir de la presentación">

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, act } from '@testing-library/react'
+import { render, act, screen } from '@testing-library/react'
 
 const renderPdfThumbnail = vi.fn(async (_d: string, _v: number, p: number) => ({
   url: `blob:t${p}`, width: 225, height: 300, originalWidth: 612, originalHeight: 792,
@@ -81,5 +81,26 @@ describe('organizador de páginas', () => {
     unmount()
     expect(revoke).toHaveBeenCalledWith('blob:t0')
     revoke.mockRestore()
+  })
+})
+
+describe('tarjeta de página y barra', () => {
+  it('el número va fuera del papel, como en el panel de miniaturas', () => {
+    const { container } = render(<PageOrganizer onClose={() => {}} />)
+    const celda = container.querySelector('[data-page="0"]') as HTMLElement
+    const papel = celda.querySelector('.ring-1, .ring-2') as HTMLElement
+    // Las dos vistas de páginas del proyecto se veían distintas: aquí el borde de
+    // 2 px englobaba el rótulo y el papel no tenía filo ni sombra.
+    expect(papel).toBeTruthy()
+    expect(papel.textContent).toBe('1')
+    expect(celda.lastElementChild!.textContent).toBe('1')
+    expect(celda.lastElementChild).not.toBe(papel)
+  })
+
+  it('no hay dos formas de cerrar pegadas en la misma barra', () => {
+    render(<PageOrganizer onClose={() => {}} />)
+    // «Volver» y una ✕ hacían exactamente lo mismo, separadas por seis botones.
+    expect(screen.queryByLabelText('Cerrar')).toBeNull()
+    expect(screen.getByTitle('Volver (Esc)')).toBeTruthy()
   })
 })

@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react'
-import { type Annotation } from '../store/usePdfStore'
+import { usePdfStore, type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { usePageLoader } from '../hooks/usePageLoader'
 import { usePanZoom } from '../hooks/usePanZoom'
@@ -10,7 +10,8 @@ import { useRightPageResize } from '../hooks/useRightPageResize'
 import { useImageEdit } from '../hooks/useImageEdit'
 import { useAreaSelect } from '../hooks/useAreaSelect'
 import { isFormTool } from '../lib/formFields'
-import { SEL } from '../lib/selectionChrome'
+import { SEL, BORRA, BORRA_RELLENO } from '../lib/selectionChrome'
+import { aplicarBorrador, marcasBajoBorrador } from '../lib/eraser'
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { useContextMenu } from '../hooks/useContextMenu'
@@ -46,7 +47,8 @@ export default function Viewer() {
     'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'releaseTool', 'setDocDirty',
     'setSelectedImageData', 'setSelectedImagePath', 'setViewerScroll', 'showToast',
     'updateAnnotation', 'updateAnnotationUndoable', 'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
-    'textStyle', 'setTextStyle',
+    'textStyle', 'setTextStyle', 'eraserRadius', 'eraserMode', 'setAnnotations', 'commitAnnotationGesture',
+    'copyAnnotations', 'pasteAnnotations', 'deleteAnnotations', 'annotationClipboard',
   )
   const {
     docs, activeDocId,
@@ -190,6 +192,14 @@ export default function Viewer() {
     return () => window.removeEventListener('app:place-signature', onPlace as EventListener)
   }, [])
 
+  // Borrador: el pincel se pinta en el visor (cursor propio) y el gesto entero —
+  // arrastrar tachando varias marcas — es UN paso de deshacer, no uno por marca.
+  const [eraserPos, setEraserPos] = useState<{ x: number; y: number } | null>(null)
+  // Qué se va a llevar el pincel en modo «marca entera»: sin esto el usuario se
+  // entera de qué borró cuando ya desapareció.
+  const [eraserHits, setEraserHits] = useState<string[]>([])
+  const eraserAntesRef = useRef<Annotation[] | null>(null)
+
   // Marquesina de selección múltiple (herramienta Seleccionar)
   const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null)
@@ -209,6 +219,49 @@ export default function Viewer() {
     pageImages, selImg, setSelImg, imgPreview, setImgPreview,
     imgModeRef, imgStartRef, imgSx, imgSy, imgLocalOf, applyImageTransform,
   } = useImageEdit(activeDoc, pageData)
+
+  /** Pasada del borrador. Lee el estado vivo: en un arrastre hay varias pasadas por
+   * frame y `activeDoc` de este render ya viene con la lista anterior. No apila
+   * deshacer — lo hace el commit del gesto en mouseup. */
+  const borrarBajoCursor = (pt: { x: number; y: number }) => {
+    if (!pageData) return
+    const st = usePdfStore.getState()
+    const doc = st.docs.find((d) => d.doc_id === activeDocId)
+    if (!doc) return
+    const siguiente = aplicarBorrador({
+      todas: doc.annotations,
+      visibles: st.getAnnotationsForPage(doc.doc_id, doc.currentPage),
+      punto: pt,
+      radio: st.eraserRadius,
+      modo: st.eraserMode,
+      pageData,
+      boundsOf: (ann) => getAnnotationBounds(ann, pageData, toScreenCoords),
+      toScreen: toScreenCoords,
+      nuevoId: () => crypto.randomUUID(),
+    })
+    if (!siguiente) return
+    st.setAnnotations(doc.doc_id, siguiente)
+    st.setDocDirty(doc.doc_id, true)
+  }
+
+  /** Previsualiza las marcas que el pincel se llevaría enteras. En modo «trazo» el
+   * corte se ve al instante, así que no hace falta anticiparlo. */
+  const marcarLoQueSeVa = (pt: { x: number; y: number }) => {
+    const st = usePdfStore.getState()
+    if (!pageData || st.eraserMode !== 'whole') {
+      setEraserHits((prev) => (prev.length ? [] : prev))
+      return
+    }
+    const doc = st.docs.find((d) => d.doc_id === activeDocId)
+    if (!doc) return
+    const ids = marcasBajoBorrador(
+      st.getAnnotationsForPage(doc.doc_id, doc.currentPage), pt, st.eraserRadius,
+      (ann) => getAnnotationBounds(ann, pageData, toScreenCoords), toScreenCoords,
+    )
+    // Comparar antes de asignar: si no, cada mousemove por el aire re-renderiza el
+    // visor entero con la misma lista vacía.
+    setEraserHits((prev) => (prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids))
+  }
 
   // Mouse handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -346,6 +399,17 @@ export default function Viewer() {
       return
     }
 
+    // Borrador: un clic borra lo que toca; arrastrando, tacha varias marcas de una
+    // pasada y todo el gesto se deshace junto.
+    if (store.activeTool === 'eraser') {
+      e.preventDefault()
+      const doc = usePdfStore.getState().docs.find((d) => d.doc_id === activeDoc.doc_id)
+      eraserAntesRef.current = doc?.annotations ?? []
+      setEraserPos(pt)
+      borrarBajoCursor(pt)
+      return
+    }
+
     // Con la herramienta Seleccionar: arrastrar una marca la mueve y arrastrar en
     // vacío dibuja una marquesina (con las demás herramientas, arrastrar dibuja).
     if (store.activeTool === 'select') {
@@ -377,6 +441,12 @@ export default function Viewer() {
     const pt = getSvgPoint(e)
     // Fantasma del sello: se ve qué se va a colocar y dónde antes de soltar el clic
     if (store.activeTool === 'stamp') setStampGhost(pt)
+    if (store.activeTool === 'eraser') {
+      setEraserPos(pt)
+      marcarLoQueSeVa(pt)
+      if (eraserAntesRef.current) borrarBajoCursor(pt)
+      return
+    }
     if (marqueeStartRef.current) {
       const s = marqueeStartRef.current
       setMarquee({ x0: s.x, y0: s.y, x1: pt.x, y1: pt.y })
@@ -397,6 +467,12 @@ export default function Viewer() {
   }
 
   const handleMouseUp = () => {
+    if (eraserAntesRef.current) {
+      const antes = eraserAntesRef.current
+      eraserAntesRef.current = null
+      if (activeDoc) store.commitAnnotationGesture(activeDoc.doc_id, antes)
+      return
+    }
     if (marqueeStartRef.current) {
       const start = marqueeStartRef.current
       const box = marquee
@@ -526,6 +602,11 @@ export default function Viewer() {
 
   // Render annotations
   const annotations = activeDoc && pageData ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage) : []
+  // Marcas sobre las que actúa el menú contextual: la selección múltiple si la hay,
+  // si no la única seleccionada (las dos vías coexisten en el store).
+  const seleccionadas = store.selectedAnnotationIds.length > 0
+    ? store.selectedAnnotationIds
+    : store.selectedAnnotationId ? [store.selectedAnnotationId] : []
   const annotationsRight = activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []
 
   const textDefaults = { fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }
@@ -581,14 +662,14 @@ export default function Viewer() {
         {pageData && (
           <div className="relative" data-page-wrapper="left" style={{ width: displayWidth, height: displayHeight, overflow: 'hidden', flexShrink: 0 }}>
             {loading && (
-              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded bg-surface/80`}>
+              <div className={`absolute inset-0 flex items-center justify-center z-canvas rounded-token-sm bg-surface/80`}>
                 <Loader2 className="animate-spin text-accent" size={32} />
               </div>
             )}
             <div className="relative"
               style={{ width: pageData.width, height: pageData.height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               <img src={pageData.image} alt={`Página ${activeDoc.currentPage + 1}`}
-                className="rounded shadow-lg bg-white block" style={{ width: pageData.width, height: pageData.height }} draggable={false}
+                className="rounded-token-sm page-sheet bg-white block" style={{ width: pageData.width, height: pageData.height }} draggable={false}
                 onError={(e) => recoverImage(e.currentTarget, pageData.image)} />
 
               {/* Crisp deep-zoom overlay for dense plans (single view only) */}
@@ -612,8 +693,9 @@ export default function Viewer() {
 
               <svg ref={svgRef} width={pageData.width} height={pageData.height}
                 className="absolute top-0 left-0"
-                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: isPanning ? 'grabbing' : ['highlight', 'underline', 'strikethrough'].includes(store.activeTool || '') ? 'text' : store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
-                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}
+                style={{ pointerEvents: store.activeTool === 'textselect' ? 'none' : 'auto', cursor: isPanning ? 'grabbing' : store.activeTool === 'eraser' ? 'none' : ['highlight', 'underline', 'strikethrough'].includes(store.activeTool || '') ? 'text' : store.activeTool ? 'crosshair' : 'grab', zIndex: 20 }}
+                onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}
+                onMouseLeave={() => { setEraserPos(null); setEraserHits([]); handleMouseUp() }}
                 onDoubleClick={() => { if (drawingArea) closeArea() }}>
                 {/* Modo edición: contorno punteado sobre cada bloque de texto editable */}
                 {store.activeRibbon === 'edit' && pageText.map((b, i) => {
@@ -636,6 +718,32 @@ export default function Viewer() {
                   textDefaults,
                   countNumbers: countNums,
                 }))}
+
+                {/* Pincel del borrador: el cursor del sistema se apaga y el círculo dice
+                    exactamente qué se va a llevar. Doble aro (oscuro + claro) para que
+                    se vea igual sobre un plano blanco que sobre una foto oscura. */}
+                {store.activeTool === 'eraser' && eraserHits.length > 0 && (
+                  <g pointerEvents="none">
+                    {eraserHits.map((id) => {
+                      const ann = annotations.find((x) => x.id === id)
+                      const b = ann && getAnnotationBounds(ann, pageData, toScreenCoords)
+                      if (!b) return null
+                      return <rect key={`era-${id}`} x={b.x - 2} y={b.y - 2} width={b.w + 4} height={b.h + 4}
+                        fill={BORRA_RELLENO} stroke={BORRA} strokeWidth={1.5}
+                        strokeDasharray="4 3" rx={2} />
+                    })}
+                  </g>
+                )}
+                {store.activeTool === 'eraser' && eraserPos && (
+                  <g pointerEvents="none">
+                    <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
+                      fill="rgba(255,255,255,0.18)" stroke="rgba(0,0,0,0.55)" strokeWidth={2.5}
+                      strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
+                    <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
+                      fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth={1}
+                      strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
+                  </g>
+                )}
 
                 {/* Preview while drawing (el marcado de texto muestra su preview por línea) */}
                 {drawPreview && (drawPreview as any).type !== 'textselect' && markupRects.length === 0 &&
@@ -771,12 +879,12 @@ export default function Viewer() {
                 const im = pageImages[selImg]
                 const s = toScreenCoords(im.x0, im.y0)
                 return (
-                  <div className="absolute z-30 flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
+                  <div className="absolute z-float flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
                     <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
-                      className="px-2 py-1 text-mini rounded bg-danger text-white shadow hover:bg-danger">Eliminar</button>
+                      className="px-2 py-1 text-mini rounded-token-sm bg-danger text-white shadow-token-sm transition-[filter] duration-fast ease-token hover:brightness-110">Eliminar</button>
                     <button onMouseDown={(e) => e.stopPropagation()}
                       onClick={async () => { const p = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
-                      className="px-2 py-1 text-mini rounded bg-fg text-toolbar shadow hover:opacity-90">Reemplazar</button>
+                      className="px-2 py-1 text-mini rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token shadow-token-sm">Reemplazar</button>
                   </div>
                 )
               })()}
@@ -808,7 +916,7 @@ export default function Viewer() {
                       else if (e.key === 'Escape') { e.preventDefault(); setEditSpan(null) }
                     }}
                     onBlur={commit}
-                    className="absolute z-30 outline-none resize-none overflow-hidden leading-tight"
+                    className="absolute z-float outline-none resize-none overflow-hidden leading-tight"
                     style={{
                       left: s.x, top: s.y, fontSize: fpx, fontFamily: editSpan.font || 'Arial',
                       color: editSpan.color || '#000', background: '#fff',
@@ -820,11 +928,11 @@ export default function Viewer() {
 
               {/* Area measurement floating controls */}
               {drawingArea && (
-                <div className="absolute z-30 bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-toolbar text-mini rounded shadow-lg hover:opacity-90">
+                <div className="absolute z-float bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-on-accent text-mini rounded-token-sm shadow-token-md hover:brightness-110">
                     {store.activeTool === 'measure_perimeter' ? 'Terminar medición (Enter)' : 'Cerrar polígono (Enter)'}
                   </button>
-                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-mini rounded shadow-lg bg-active text-fg hover:bg-hover`}>
+                  <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-mini rounded-token-sm shadow-token-md bg-active text-fg hover:bg-hover`}>
                     Cancelar
                   </button>
                 </div>
@@ -847,11 +955,11 @@ export default function Viewer() {
             {/* Los campos rellenables no se distinguían del fondo: aviso de que los
                 hay, con la misma forma que el de calibración (mismo tipo de mensaje) */}
             {formFields.length > 0 && !formHintOff && (
-              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-info/60 bg-panel shadow-token text-mini text-fg">
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 z-float flex items-center gap-3 pl-3 pr-2 py-2 rounded-token-lg border border-info/60 bg-panel shadow-token-md text-mini text-fg">
                 <span className="w-2 h-2 rounded-full bg-info shrink-0" />
                 Formulario: {formFields.length} campo(s). Seleccioná (V) para mover o borrar.
                 <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
-                  className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
+                  className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
                   <X size={14} />
                 </button>
               </div>
@@ -912,14 +1020,14 @@ export default function Viewer() {
         {isDouble && pageDataRight && (
           <div className="relative" data-page-wrapper="right" style={{ width: displayWidthRight, height: displayHeightRight, overflow: 'hidden', flexShrink: 0 }}>
             {loadingRight && (
-              <div className={`absolute inset-0 flex items-center justify-center z-20 rounded bg-surface/60`}>
+              <div className={`absolute inset-0 flex items-center justify-center z-canvas rounded-token-sm bg-surface/60`}>
                 <Loader2 className="animate-spin text-accent" size={24} />
               </div>
             )}
             <div className="relative"
               style={{ width: pageDataRight.width, height: pageDataRight.height, transform: `scale(${scaleRight})`, transformOrigin: 'top left' }}>
               <img src={pageDataRight.image} alt={`Página ${activeDoc.currentPage + 2}`}
-                className="rounded shadow-lg bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
+                className="rounded-token-sm page-sheet bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
                 onError={(e) => recoverImage(e.currentTarget, pageDataRight.image)} />
 
               {/* Selectable text layer (right page) */}
@@ -975,9 +1083,9 @@ export default function Viewer() {
 
       {/* Drag & Drop overlay */}
       {isDraggingFile && (
-        <div className={`absolute inset-0 z-40 flex items-center justify-center pointer-events-none bg-surface/80`}>
-          <div className="border-2 border-dashed border-fg rounded-lg p-12 flex flex-col items-center gap-4">
-            <svg className="w-16 h-16 text-fg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="overlay-in absolute inset-0 z-sticky flex items-center justify-center pointer-events-none bg-surface/70 backdrop-blur-[2px]">
+          <div className="border-2 border-dashed border-accent rounded-token-lg px-14 py-12 flex flex-col items-center gap-4 bg-panel/80 shadow-token-lg">
+            <svg className="w-14 h-14 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
             <span className="text-fg text-lg font-medium">Soltá el PDF acá</span>
@@ -988,9 +1096,41 @@ export default function Viewer() {
       {/* Context Menu */}
       {contextMenu?.visible && activeDoc && (
         <ViewerContextMenu x={contextMenu.x} y={contextMenu.y}
-          hasSelection={!!store.selectedAnnotationId}
+          selectionCount={seleccionadas.length}
+          canPaste={store.annotationClipboard.length > 0}
+          pageMarkCount={annotations.length}
           canExportImage={!!pageData}
-          onDeleteAnnotation={() => { deleteAnnotation(activeDoc.doc_id, store.selectedAnnotationId!); closeMenu() }}
+          onCopy={() => {
+            const n = store.copyAnnotations(activeDoc.doc_id, seleccionadas)
+            if (n > 0) store.showToast(`${n} marca(s) copiada(s)`, 'info')
+            closeMenu()
+          }}
+          onDuplicate={() => {
+            store.copyAnnotations(activeDoc.doc_id, seleccionadas)
+            const n = store.pasteAnnotations(activeDoc.doc_id, activeDoc.currentPage)
+            if (n > 0) store.showToast(`${n} marca(s) duplicada(s)`, 'success')
+            closeMenu()
+          }}
+          onPaste={() => {
+            const n = store.pasteAnnotations(activeDoc.doc_id, activeDoc.currentPage)
+            if (n > 0) store.showToast(`${n} marca(s) pegada(s)`, 'success')
+            closeMenu()
+          }}
+          onSelectAllOnPage={() => {
+            store.selectAnnotations(activeDoc.doc_id, annotations.map((ann) => ann.id))
+            closeMenu()
+          }}
+          onClearPage={() => {
+            // Un solo paso de deshacer para toda la página, como el borrador.
+            store.deleteAnnotations(activeDoc.doc_id, annotations.map((ann) => ann.id))
+            store.showToast('Marcas de la página borradas. Ctrl+Z las devuelve.', 'success')
+            closeMenu()
+          }}
+          onDeleteAnnotation={() => {
+            if (seleccionadas.length > 1) store.deleteAnnotations(activeDoc.doc_id, seleccionadas)
+            else deleteAnnotation(activeDoc.doc_id, seleccionadas[0])
+            closeMenu()
+          }}
           onAddBookmark={() => {
             addBookmark({ id: crypto.randomUUID(), filePath: activeDoc.file_path, page: activeDoc.currentPage, label: `Página ${activeDoc.currentPage + 1}` })
             store.showToast('Marcador agregado', 'success')

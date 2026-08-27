@@ -1,9 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Search, CornerDownLeft } from 'lucide-react'
+import {
+  Search, CornerDownLeft, FileText, Eye, Pencil, Files, Highlighter,
+  Shield, FileOutput, Sparkles, TextCursorInput, Command as CommandIcon,
+} from 'lucide-react'
 import { getCommands, subscribeCommands, type Command } from '../lib/commands'
+import { sinTildes } from '../lib/texto'
+
+/** Icono por grupo. Los ~60 comandos no traen icono propio a propósito: darle uno a
+ * cada uno sería sesenta decisiones que envejecen mal, y lo que el ojo necesita en
+ * una lista larga es ritmo por sección, no un pictograma distinto por fila. */
+const ICONO_GRUPO: Record<string, typeof FileText> = {
+  Archivo: FileText,
+  Ver: Eye,
+  Herramienta: Pencil,
+  Página: Files,
+  Marcas: Highlighter,
+  Editar: TextCursorInput,
+  Proteger: Shield,
+  Convertir: FileOutput,
+  Formulario: TextCursorInput,
+  IA: Sparkles,
+}
 
 /** Paleta de comandos (Ctrl+K): la app tiene ~60 acciones repartidas en 7 cintas y
- * sin esto casi ninguna se descubre. Filtra por subsecuencia sobre nombre y grupo. */
+ * sin esto casi ninguna se descubre. Filtra por palabras sobre nombre y grupo. */
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
@@ -14,14 +34,26 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
 
   const results = useMemo(() => {
     const all = getCommands().filter((c) => !c.disabled)
-    const q = query.trim().toLowerCase()
+    const q = sinTildes(query.trim())
     if (!q) return all
     const words = q.split(/\s+/)
     return all.filter((c) => {
-      const hay = `${c.label} ${c.group}`.toLowerCase()
+      const hay = sinTildes(`${c.label} ${c.group}`)
       return words.every((w) => hay.includes(w))
     })
   }, [query])
+
+  /** Mismos comandos, partidos por sección y conservando el índice plano de cada uno
+   * para que las flechas sigan recorriendo la lista de arriba abajo. */
+  const secciones = useMemo(() => {
+    const orden: string[] = []
+    const porGrupo = new Map<string, Array<{ cmd: Command; i: number }>>()
+    results.forEach((cmd, i) => {
+      if (!porGrupo.has(cmd.group)) { porGrupo.set(cmd.group, []); orden.push(cmd.group) }
+      porGrupo.get(cmd.group)!.push({ cmd, i })
+    })
+    return orden.map((group) => ({ group, filas: porGrupo.get(group)! }))
+  }, [results])
 
   useEffect(() => { setIndex(0) }, [query])
 
@@ -45,11 +77,11 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="overlay-in fixed inset-0 z-[94] flex items-start justify-center pt-[12vh] bg-black/40" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-palette flex items-start justify-center pt-[12vh] bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
       <div role="dialog" aria-modal="true" aria-label="Paleta de comandos" onClick={(e) => e.stopPropagation()}
-        className="panel-in w-[560px] max-w-[92vw] rounded-lg border border-border shadow-2xl bg-panel overflow-hidden">
-        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border">
-          <Search size={15} className="text-muted shrink-0" />
+        className="panel-in w-[560px] max-w-[92vw] rounded-token-lg border border-border shadow-token-lg bg-panel overflow-hidden">
+        <div className="flex items-center gap-2.5 px-3.5 py-3 border-b border-border">
+          <Search size={16} className="text-muted shrink-0" />
           {/* Combobox: el foco se queda en el campo mientras las flechas mueven la
               selección, así que sin `aria-activedescendant` un lector de pantalla no
               anuncia sobre qué comando está el usuario. */}
@@ -58,30 +90,51 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
             aria-activedescendant={results[index] ? `paleta-cmd-${results[index].id}` : undefined}
             aria-label="Buscar una acción"
             placeholder="Buscar una acción… (p. ej. medir, marcas, comprimir)"
-            className="flex-1 min-w-0 bg-transparent text-ui text-fg placeholder:text-muted focus:outline-none" />
-          <kbd className="px-1.5 py-0.5 rounded border border-border text-micro text-muted">Esc</kbd>
+            className="flex-1 min-w-0 bg-transparent text-base text-fg placeholder:text-muted focus:outline-none" />
+          <kbd className="px-1.5 py-0.5 rounded-token-sm border border-border bg-active text-micro text-muted">Esc</kbd>
         </div>
 
         <div ref={listRef} id="paleta-lista" role="listbox" aria-label="Acciones"
-          className="max-h-[52vh] overflow-y-auto py-1">
+          className="max-h-[52vh] overflow-y-auto pb-1">
           {results.length === 0 && (
-            <div className="px-3 py-6 text-center text-mini text-muted">Sin coincidencias para “{query}”.</div>
+            <div className="px-3 py-8 flex flex-col items-center gap-2 text-center">
+              <CommandIcon size={18} className="text-muted" />
+              <p className="text-mini text-muted">Sin coincidencias para «{query}».</p>
+            </div>
           )}
-          {results.map((cmd, i) => (
-            <button key={cmd.id} id={`paleta-cmd-${cmd.id}`} data-active={i === index}
-              role="option" aria-selected={i === index} tabIndex={-1}
-              onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition-colors ${
-                i === index ? 'bg-accent text-toolbar' : ''
-              }`}>
-              <span className={`text-micro uppercase tracking-wider w-20 shrink-0 truncate ${i === index ? 'text-toolbar/70' : 'text-muted'}`}>{cmd.group}</span>
-              <span className={`flex-1 text-ui truncate ${i === index ? 'text-toolbar' : 'text-fg'}`}>{cmd.label}</span>
-              {cmd.shortcut && (
-                <kbd className={`px-1.5 py-0.5 rounded border text-micro shrink-0 ${i === index ? 'border-toolbar/30 text-toolbar' : 'border-border text-muted'}`}>{cmd.shortcut}</kbd>
-              )}
-              {i === index && <CornerDownLeft size={12} className="text-toolbar shrink-0" />}
-            </button>
-          ))}
+          {secciones.map(({ group, filas }) => {
+            const Icono = ICONO_GRUPO[group] || CommandIcon
+            return (
+              <div key={group} role="group" aria-label={group}>
+                {/* Pegajosa: en una lista de sesenta acciones, al desplazarse se
+                    perdía de vista a qué sección pertenece lo que se está mirando. */}
+                <div className="sticky top-0 z-raised bg-panel/95 backdrop-blur-[2px] px-3.5 pt-2.5 pb-1 text-micro font-semibold uppercase tracking-wider text-muted">
+                  {group}
+                </div>
+                {filas.map(({ cmd, i }) => {
+                  const activa = i === index
+                  return (
+                    <button key={cmd.id} id={`paleta-cmd-${cmd.id}`} data-active={activa}
+                      role="option" aria-selected={activa} tabIndex={-1}
+                      onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left transition-colors duration-fast ease-token ${
+                        activa ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+                      }`}>
+                      <Icono size={14} className={`shrink-0 ${activa ? 'text-on-accent' : 'text-muted'}`} />
+                      <span className="flex-1 text-base truncate">{cmd.label}</span>
+                      {cmd.shortcut && (
+                        <kbd className={`px-1.5 py-0.5 rounded-token-sm border text-micro shrink-0 tabular ${
+                          activa ? 'border-on-accent/40 text-on-accent' : 'border-border bg-active text-muted'
+                        }`}>{cmd.shortcut}</kbd>
+                      )}
+                      <CornerDownLeft size={12}
+                        className={`shrink-0 ${activa ? 'text-on-accent' : 'text-transparent'}`} aria-hidden />
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

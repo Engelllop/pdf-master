@@ -4,6 +4,7 @@
 export const TOOL_LABELS: Record<string, string> = {
   select: 'Seleccionar',
   textselect: 'Copiar texto',
+  eraser: 'Borrador',
   highlight: 'Resaltar',
   underline: 'Subrayar',
   strikethrough: 'Tachar',
@@ -41,6 +42,7 @@ export const TOOL_LABELS: Record<string, string> = {
 /** tecla (en minúscula, con prefijo `shift+` si aplica) → id de herramienta */
 export const TOOL_KEYS: Record<string, string> = {
   v: 'select',
+  e: 'eraser',
   h: 'highlight',
   u: 'underline',
   k: 'strikethrough',

@@ -13,6 +13,7 @@ import {
 } from '../lib/recents'
 import { loadLastSession, reopenLastSession, type SessionSnapshot } from '../lib/session'
 import { formatWhen } from '../lib/format'
+import { contieneSinTildes } from '../lib/texto'
 import { apiFetch } from '../lib/api'
 import { saveDocument } from '../lib/saveDocument'
 
@@ -185,15 +186,17 @@ export default function FileMenu() {
     disabled?: boolean
   }) => (
     <button role="menuitem" onClick={() => { onClick(); setOpen(false) }} disabled={disabled}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 text-ui text-left rounded-md transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'text-fg hover:bg-hover'}`}>
-      <Icon size={15} className="text-muted shrink-0" strokeWidth={1.75} />
-      <span className="flex-1">{label}</span>
-      {shortcut && <span className="text-micro text-muted">{shortcut}</span>}
+      className="w-full flex items-center gap-2.5 px-3 py-2 text-ui text-left rounded-token text-fg transition-colors duration-fast ease-token hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
+      <Icon size={16} className="text-muted shrink-0" />
+      <span className="flex-1 truncate">{label}</span>
+      {shortcut && (
+        <kbd className="shrink-0 px-1.5 py-0.5 rounded-token-sm border border-border bg-active text-micro text-muted tabular">{shortcut}</kbd>
+      )}
     </button>
   )
 
   const SectionLabel = ({ children }: { children: React.ReactNode }) => (
-    <div className="px-2 pt-2 pb-1 text-micro font-medium uppercase tracking-wider text-muted">{children}</div>
+    <div className="px-2 pt-3 pb-1 text-micro font-semibold uppercase tracking-wider text-muted">{children}</div>
   )
 
   const RecentRow = ({ entry }: { entry: RecentEntry }) => {
@@ -203,13 +206,13 @@ export default function FileMenu() {
       ? `pág. ${entry.lastPage + 1}/${entry.pageCount}`
       : entry.pageCount ? `${entry.pageCount} pág.` : null
     return (
-      <div className="group flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer"
+      <div className="group flex items-center gap-2.5 px-2 py-1.5 rounded-token hover:bg-hover cursor-pointer"
         title={entry.path}
         onClick={() => handleOpenRecent(entry)}>
-        <div className="w-9 h-11 shrink-0 rounded border border-border bg-white overflow-hidden flex items-center justify-center">
+        <div className="w-9 h-11 shrink-0 rounded-token-sm ring-1 ring-border shadow-token-sm bg-white overflow-hidden flex items-center justify-center">
           {entry.thumb
             ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
-            : <FileText size={16} className="text-muted" strokeWidth={1.5} />}
+            : <FileText size={16} className="text-muted icon-thin" />}
         </div>
         <div className="flex-1 min-w-0">
           <div className="text-ui text-fg truncate leading-tight">{name}</div>
@@ -218,34 +221,34 @@ export default function FileMenu() {
             {pageBadge && <> · <span className="text-fg">{pageBadge}</span></>}
           </div>
         </div>
-        <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+        <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-fast ease-token">
           <button title={entry.pinned ? 'Desfijar' : 'Fijar'}
             onClick={(e) => { e.stopPropagation(); setRecentPinned(entry.path, !entry.pinned); setRecents(loadRecents()) }}
-            className="p-1 rounded text-muted hover:text-fg hover:bg-hover">
+            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover">
             {entry.pinned ? <PinOff size={12} /> : <Pin size={12} />}
           </button>
           <button title="Abrir ubicación"
             onClick={(e) => { e.stopPropagation(); window.api.showInFolder(entry.path) }}
-            className="p-1 rounded text-muted hover:text-fg hover:bg-hover">
+            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover">
             <FolderOpen size={12} />
           </button>
           <button title="Quitar de recientes"
             onClick={(e) => { e.stopPropagation(); removeRecent(entry.path); setRecents(loadRecents()); setFolders(frequentFolders()) }}
-            className="p-1 rounded text-muted hover:text-danger hover:bg-hover">
+            className="p-1 rounded-token-sm text-muted hover:text-danger hover:bg-hover">
             <X size={12} />
           </button>
         </div>
-        {entry.pinned && <Pin size={11} className="text-fg shrink-0 group-hover:hidden" />}
+        {entry.pinned && <Pin size={12} className="text-fg shrink-0 group-hover:hidden" />}
       </div>
     )
   }
 
   const FolderRow = ({ folder }: { folder: FrequentFolder }) => (
-    <div className="group flex items-center gap-2.5 px-2 py-1.5 rounded-md hover:bg-hover cursor-pointer"
+    <div className="group flex items-center gap-2.5 px-2 py-1.5 rounded-token hover:bg-hover cursor-pointer"
       title={`${folder.dir}\nClic: abrir un PDF de esta carpeta`}
       onClick={() => handleOpenFromFolder(folder.dir)}>
-      <div className="w-9 h-8 shrink-0 rounded bg-hover flex items-center justify-center">
-        <Folder size={15} className="text-muted" strokeWidth={1.75} />
+      <div className="w-9 h-8 shrink-0 rounded-token-sm bg-hover flex items-center justify-center">
+        <Folder size={16} className="text-muted" strokeWidth={1.75} />
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-ui text-fg truncate leading-tight">{folder.name}</div>
@@ -253,27 +256,27 @@ export default function FileMenu() {
       </div>
       <button title="Abrir en el Explorador"
         onClick={(e) => { e.stopPropagation(); window.api.openFolder(folder.dir) }}
-        className="hidden group-hover:block p-1 rounded text-muted hover:text-fg hover:bg-hover shrink-0">
+        className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-fast ease-token">
         <FolderOpen size={12} />
       </button>
     </div>
   )
 
-  const q = query.trim().toLowerCase()
-  const matches = (e: RecentEntry) => !q || e.path.toLowerCase().includes(q)
+  const q = query.trim()
+  const matches = (e: RecentEntry) => !q || contieneSinTildes(e.path, q)
   const pinned = recents.filter((r) => r.pinned && matches(r))
   const unpinned = recents.filter((r) => !r.pinned && matches(r))
-  const visibleFolders = folders.filter((f) => !q || f.dir.toLowerCase().includes(q))
+  const visibleFolders = folders.filter((f) => !q || contieneSinTildes(f.dir, q))
   const nothingFound = q && pinned.length === 0 && unpinned.length === 0 && visibleFolders.length === 0
 
   return (
     <div className="relative h-full" ref={menuRef}>
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
-        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-accent text-toolbar' : 'text-fg hover:bg-hover'}`}>
-        Archivo <ChevronDown size={13} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'}`}>
+        Archivo <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="menu-pop absolute top-full left-0 z-50 flex w-[640px] max-w-[92vw] border border-border rounded-lg shadow-xl bg-panel overflow-hidden">
+        <div className="menu-pop absolute top-full left-0 z-dropdown flex w-[640px] max-w-[92vw] border border-border rounded-token shadow-token-lg bg-panel overflow-hidden">
           <div role="menu" aria-label="Archivo" className="w-56 shrink-0 p-1.5 border-r border-border">
             <Item icon={FolderOpen} label="Abrir…" shortcut="Ctrl+O" onClick={handleOpen} />
             <Item icon={History} label={lastSession ? `Reabrir última sesión (${lastSession.docs.length})` : 'Reabrir última sesión'}
@@ -292,8 +295,8 @@ export default function FileMenu() {
           </div>
           <div className="flex-1 min-w-0 flex flex-col max-h-[480px]">
             <div className="p-2 pb-1 shrink-0">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-hover border border-transparent focus-within:border-border">
-                <Search size={13} className="text-muted shrink-0" />
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-token bg-hover border border-transparent focus-within:border-border">
+                <Search size={14} className="text-muted shrink-0" />
                 <input ref={searchRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar en recientes…"
                   className="flex-1 min-w-0 bg-transparent text-mini text-fg placeholder:text-muted focus:outline-none" />
@@ -309,12 +312,12 @@ export default function FileMenu() {
                   {pinned.map((r) => <RecentRow key={r.path} entry={r} />)}
                 </>
               )}
-              <div className="flex items-center justify-between pr-2">
+              <div className="flex items-baseline justify-between">
                 <SectionLabel>Recientes</SectionLabel>
                 {unpinned.length > 0 && !q && (
                   <button onClick={() => { clearUnpinnedRecents(); setRecents(loadRecents()); setFolders(frequentFolders()) }}
-                    className="flex items-center gap-1 text-micro text-muted hover:text-danger">
-                    <Trash2 size={10} /> Limpiar
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-token-sm text-micro text-muted transition-colors duration-fast ease-token hover:text-danger hover:bg-danger/10">
+                    <Trash2 size={12} /> Limpiar
                   </button>
                 )}
               </div>

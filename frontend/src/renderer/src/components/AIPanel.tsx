@@ -137,25 +137,25 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
 
   if (!hasKey || editingKey) {
     return (
-      <div className="w-[360px] border-l border-border bg-panel flex flex-col shrink-0">
+      <div className="w-[360px] border-l border-border-strong bg-panel flex flex-col shrink-0">
         <Header onClose={onClose} onKey={() => {}} />
         <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
           <KeyRound size={28} className="text-muted" />
           <p className="text-base text-fg font-medium">Conecta tu cuenta de Anthropic</p>
-          <p className="text-mini text-muted">Usa tu suscripción (Claude Pro/Max): instala Claude Code y ejecuta <code className="px-1 rounded bg-surface border border-border">claude setup-token</code> en una terminal. Copia el token (empieza por <code className="px-1 rounded bg-surface border border-border">sk-ant-oat…</code>) y pégalo aquí.</p>
-          <p className="text-micro text-muted">También sirve una API key de pago (<code className="px-1 rounded bg-surface border border-border">sk-ant-api…</code>). Se guarda solo en este equipo.</p>
+          <p className="text-mini text-muted">Usa tu suscripción (Claude Pro/Max): instala Claude Code y ejecuta <code className="px-1 rounded-token-sm bg-surface border border-border">claude setup-token</code> en una terminal. Copia el token (empieza por <code className="px-1 rounded-token-sm bg-surface border border-border">sk-ant-oat…</code>) y pégalo aquí.</p>
+          <p className="text-micro text-muted">También sirve una API key de pago (<code className="px-1 rounded-token-sm bg-surface border border-border">sk-ant-api…</code>). Se guarda solo en este equipo.</p>
           <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && saveKey()} placeholder="sk-ant-oat… o sk-ant-api…"
-            className="w-full border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
           <button onClick={saveKey} disabled={!keyInput.trim()}
-            className="w-full px-3 py-1.5 text-base rounded bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40">Conectar</button>
+            className="w-full px-3 py-1.5 text-base rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">Conectar</button>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="w-[360px] border-l border-border bg-panel flex flex-col shrink-0">
+    <div className="w-[360px] border-l border-border-strong bg-panel flex flex-col shrink-0">
       <Header onClose={onClose} onKey={() => { setKeyInput(''); setEditingKey(true) }} />
       {/* live region: sin esto, un lector de pantalla no anuncia la respuesta que va
           llegando por streaming. */}
@@ -165,14 +165,14 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
           <div className="text-mini text-muted text-center mt-6 px-4 space-y-3">
             <p>{emptyHint(activeDoc?.file_name)}</p>
             {activeDoc && (
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-wrap justify-center gap-1.5">
                 {[
                   ['Resumí las marcas de este PDF: tipo, página y texto.', 'Resumir marcas'],
                   ['Listá los pendientes abiertos (marcas no resueltas) por página.', 'Pendientes'],
                   ['Extraé tablas o cómputos que veas en el documento, en formato lista.', 'Extraer tablas'],
                 ].map(([prompt, label]) => (
                   <button key={label} onClick={() => send(prompt)}
-                    className="px-2 py-1 rounded border border-border text-mini text-fg hover:bg-hover">
+                    className="px-2.5 h-7 rounded-token border border-border text-mini text-fg transition-colors duration-fast ease-token hover:border-accent/50 hover:bg-hover">
                     {label}
                   </button>
                 ))}
@@ -182,8 +182,8 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[85%] rounded-lg px-3 py-2 text-base whitespace-pre-wrap ${
-              m.role === 'user' ? 'bg-fg text-toolbar' : 'bg-surface text-fg border border-border'
+            <div className={`max-w-[85%] rounded-token px-3 py-2 text-base whitespace-pre-wrap ${
+              m.role === 'user' ? 'bg-accent text-on-accent' : 'bg-active text-fg border border-border'
             }`}>
               {m.text || (streaming && reqKeyRef.current === convKey && i === messages.length - 1 ? <Loader2 size={14} className="animate-spin" /> : '')}
             </div>
@@ -191,30 +191,34 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         ))}
       </div>
       <div className="border-t border-border p-2">
-        <div className="flex items-center gap-1 mb-1.5 text-micro">
-          <span className="text-muted">Contexto:</span>
-          {(['doc', 'page'] as const).map((s) => (
-            <button key={s} onClick={() => setScope(s)} aria-pressed={scope === s}
-              className={`px-2 py-0.5 rounded transition-colors ${scope === s ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover'}`}>
-              {s === 'doc' ? 'Documento' : 'Página actual'}
-            </button>
-          ))}
+        <div className="flex items-center gap-1.5 mb-1.5 text-micro">
+          <span className="text-muted shrink-0">Contexto</span>
+          <div className="flex items-center gap-0.5 rounded-token border border-border bg-surface p-0.5">
+            {(['doc', 'page'] as const).map((s) => (
+              <button key={s} onClick={() => setScope(s)} aria-pressed={scope === s}
+                className={`px-2 h-6 rounded-token-sm transition-colors duration-fast ease-token ${
+                  scope === s ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+                }`}>
+                {s === 'doc' ? 'Documento' : 'Página actual'}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-end gap-2">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
             aria-label="Pregunta para el asistente" 
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder={activeDoc ? `Pregunta sobre ${activeDoc.file_name}…` : 'Abre un PDF para preguntar…'}
-            className="flex-1 resize-none border border-border rounded px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="flex-1 resize-none border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
           <button onClick={() => (streaming ? stop() : send(input))} disabled={!streaming && !input.trim()}
             title={streaming ? 'Detener' : 'Enviar'} aria-label={streaming ? 'Detener la respuesta' : 'Enviar la pregunta'}
-            className="p-2 rounded-lg bg-fg text-toolbar hover:opacity-90 transition-opacity disabled:opacity-40 shrink-0">
+            className="p-2 rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
             {streaming ? <Square size={16} /> : <Send size={16} />}
           </button>
         </div>
         {messages.length > 0 && (
-          <button onClick={() => setMsgsFor(convKey, () => [])} className="mt-1 text-micro text-muted hover:text-fg flex items-center gap-1">
-            <Eraser size={11} /> Limpiar conversación
+          <button onClick={() => setMsgsFor(convKey, () => [])} className="mt-1 -ml-1 px-1.5 py-0.5 rounded-token-sm text-micro text-muted flex items-center gap-1 transition-colors duration-fast ease-token hover:text-fg hover:bg-hover">
+            <Eraser size={12} /> Limpiar conversación
           </button>
         )}
       </div>
@@ -228,11 +232,11 @@ function emptyHint(name?: string) {
 
 function Header({ onClose, onKey }: { onClose: () => void; onKey: () => void }) {
   return (
-    <div className="h-10 flex items-center gap-2 px-3 border-b border-border shrink-0">
-      <Sparkles size={16} className="text-fg" />
+    <div className="h-10 flex items-center gap-2 px-3 border-b border-border bg-panel shrink-0">
+      <Sparkles size={16} className="text-accent" />
       <span className="text-base font-semibold flex-1">Asistente IA</span>
-      <button onClick={onKey} title="Cambiar API key" aria-label="Cambiar la clave de Anthropic" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={15} /></button>
-      <button onClick={onClose} title="Cerrar" aria-label="Cerrar el asistente" className="p-1.5 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+      <button onClick={onKey} title="Cambiar API key" aria-label="Cambiar la clave de Anthropic" className="p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={16} /></button>
+      <button onClick={onClose} title="Cerrar" aria-label="Cerrar el asistente" className="p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
     </div>
   )
 }

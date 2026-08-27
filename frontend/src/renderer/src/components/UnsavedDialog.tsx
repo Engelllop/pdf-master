@@ -88,7 +88,7 @@ export default function UnsavedDialog() {
   }
 
   return (
-    <div className="overlay-in fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
+    <div className="overlay-in fixed inset-0 z-modal flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) finish('cancel') }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="unsaved-title" tabIndex={-1}
         onKeyDown={(e) => {
@@ -100,7 +100,7 @@ export default function UnsavedDialog() {
           if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
           else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
         }}
-        className="panel-in w-[440px] max-w-[92vw] rounded-lg border border-border bg-panel shadow-2xl overflow-hidden">
+        className="panel-in w-[440px] max-w-[92vw] rounded-token border border-border bg-panel shadow-token-lg overflow-hidden">
         <div className="flex items-start gap-3 p-5">
           <span className="mt-0.5 p-2 rounded-full bg-warning/15 text-warning shrink-0"><AlertTriangle size={18} /></span>
           <div className="min-w-0">
@@ -119,16 +119,16 @@ export default function UnsavedDialog() {
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface">
           <button onClick={() => finish('cancel')} disabled={saving}
-            className="px-3 py-1.5 text-mini rounded-lg text-fg hover:bg-hover transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 text-mini rounded-token text-fg hover:bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             Cancelar
           </button>
           <button onClick={() => finish('discard')} disabled={saving}
-            className="px-3 py-1.5 text-mini rounded-lg text-danger hover:bg-danger/10 transition-colors disabled:opacity-50">
+            className="px-3 py-1.5 text-mini rounded-token text-danger hover:bg-danger/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {isAppClose ? 'Salir sin guardar' : 'Cerrar sin guardar'}
           </button>
           <button onClick={saveAll} disabled={saving} autoFocus
-            className="px-3 py-1.5 text-mini rounded-lg bg-accent text-toolbar hover:opacity-90 transition-opacity flex items-center gap-1.5 disabled:opacity-70">
-            {saving && <Loader2 size={13} className="animate-spin" />}
+            className="px-3 py-1.5 text-mini rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-opacity flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+            {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? 'Guardando…' : isAppClose ? 'Guardar y salir' : 'Guardar y cerrar'}
           </button>
         </div>

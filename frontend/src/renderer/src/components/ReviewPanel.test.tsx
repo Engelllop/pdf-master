@@ -113,3 +113,53 @@ describe('apagar y prender capas', () => {
     expect(screen.queryByText('Ver:')).toBeNull()
   })
 })
+
+describe('estado deshabilitado', () => {
+  it('un botón apagado se ve apagado y lo dice el cursor', () => {
+    const doc = conMarcas([marca('a')])
+    render(<ReviewPanel activeDoc={doc} />)
+    fireEvent.click(screen.getByTitle('Responder'))
+    const enviar = screen.getByLabelText('Enviar respuesta')
+    expect((enviar as HTMLButtonElement).disabled).toBe(true)
+    // Había cuatro opacidades distintas para «deshabilitado» (30/40/50/70) y solo
+    // 2 de 19 botones cambiaban el cursor.
+    expect(enviar.className).toMatch(/disabled:opacity-40/)
+    expect(enviar.className).toMatch(/disabled:cursor-not-allowed/)
+  })
+})
+
+describe('densidad y jerarquía del panel', () => {
+  it('el tipo de marca pesa más que sus metadatos', () => {
+    const doc = conMarcas([marca('a', { author: 'Engell', text: 'revisar cota' })])
+    render(<ReviewPanel activeDoc={doc} />)
+    // Antes el panel entero era text-micro: título, texto, autor y fecha al mismo
+    // tamaño, sin punto de entrada para el ojo.
+    const titulo = screen.getAllByText('Rectángulo').find((el) => el.tagName === 'SPAN')!
+    expect(titulo.className).toMatch(/text-mini/)
+    const meta = screen.getAllByText(/Engell/).find((el) => el.tagName === 'DIV')!
+    expect(meta.className).toMatch(/text-micro/)
+  })
+
+  it('la cabecera de página se queda a la vista al desplazar', () => {
+    const doc = conMarcas([marca('a'), marca('b', { page: 1 })])
+    render(<ReviewPanel activeDoc={doc} />)
+    expect(screen.getByText(/Página 1/).closest('button')!.className).toMatch(/sticky/)
+  })
+
+  it('«Mover a capa» sale del bloque de filtros y baja al pie', () => {
+    const doc = conMarcas([marca('a')])
+    const { container } = render(<ReviewPanel activeDoc={doc} />)
+    const boton = screen.getByText('Mover a capa…').closest('button')!
+    const filtros = container.querySelector('.border-b')!
+    // Ocupaba una quinta fila fija de cabecera en un panel de 320 px de ancho.
+    expect(filtros.contains(boton)).toBe(false)
+  })
+
+  it('una marca resuelta apaga su contenido, no sus acciones', () => {
+    const doc = conMarcas([marca('a', { status: 'resolved' })])
+    render(<ReviewPanel activeDoc={doc} />)
+    const borrar = screen.getByLabelText('Eliminar anotación')
+    expect(borrar.closest('div')!.className).not.toMatch(/^opacity-60/)
+    expect(borrar.className).not.toMatch(/opacity-60/)
+  })
+})

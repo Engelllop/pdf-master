@@ -52,46 +52,46 @@ export default function TextBoxEditor({
   // llegaba a re-pulsarlo). Los `select` y el color NO llevan esto: necesitan el foco
   // para desplegarse.
   const keepFocus = { onMouseDown: (e: React.MouseEvent) => e.preventDefault() }
-  const btn = 'p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors'
-  const toggleBtn = (active: boolean) => `p-1 rounded transition-colors ${active ? 'bg-accent text-toolbar' : 'text-muted hover:text-fg hover:bg-hover'}`
+  const btn = 'p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors'
+  const toggleBtn = (active: boolean) => `p-1 rounded-token-sm transition-colors ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
   const ListIcon = style.listStyle === 'number' ? ListOrdered : List
 
   return (
     // El contenedor confirma solo cuando el foco sale del editor completo: mover el
     // foco del textarea a la toolbar (select de fuente, botones) no debe confirmar.
     <div onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) onCommit() }}>
-      <div className="absolute z-40 flex items-center gap-0.5 px-1.5 rounded-lg border border-border bg-panel shadow-xl select-none"
+      <div className="absolute z-sticky flex items-center gap-0.5 px-1.5 rounded-token border border-border bg-panel shadow-token-lg select-none"
         style={{ left: barLeft, top: barTop, height: BAR_H, width: 'max-content', maxWidth: wrapperWidth - 8 }}>
         <select value={fontFamily} onChange={(e) => onFontFamily(e.target.value)}
-          className="border border-border rounded px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-24 shrink-0">
+          className="border border-border rounded-token-sm px-1 py-0.5 text-micro bg-panel text-fg focus:outline-none w-24 shrink-0">
           {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
         </select>
         <button {...keepFocus} title="Reducir tamaño" aria-label="Reducir tamaño" className={`${btn} text-micro font-semibold`}
           onClick={() => onFontSize(Math.max(4, fontSize - 2))}>A</button>
-        <span className="text-micro text-fg w-5 text-center tabular-nums">{fontSize}</span>
+        <span className="text-micro text-fg w-5 text-center tabular">{fontSize}</span>
         <button {...keepFocus} title="Aumentar tamaño" aria-label="Aumentar tamaño" className={`${btn} text-base font-semibold`}
           onClick={() => onFontSize(Math.min(72, fontSize + 2))}>A</button>
         <div className="w-px h-4 mx-0.5 bg-border" />
         <button {...keepFocus} title="Negrita (Ctrl+B)" aria-label="Negrita" className={toggleBtn(style.bold)}
-          onClick={() => onStyle({ bold: !style.bold })}><Bold size={13} /></button>
+          onClick={() => onStyle({ bold: !style.bold })}><Bold size={14} /></button>
         <button {...keepFocus} title="Cursiva (Ctrl+I)" aria-label="Cursiva" className={toggleBtn(style.italic)}
-          onClick={() => onStyle({ italic: !style.italic })}><Italic size={13} /></button>
+          onClick={() => onStyle({ italic: !style.italic })}><Italic size={14} /></button>
         {/* Las tres alineaciones a la vista: el botón que rotaba obligaba a adivinar */}
         {(['left', 'center', 'right'] as const).map((a) => {
           const Icon = ALIGN_ICONS[a]
           return (
             <button key={a} {...keepFocus} title={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
               aria-label={`Alinear a la ${a === 'left' ? 'izquierda' : a === 'center' ? 'centro' : 'derecha'}`}
-              className={toggleBtn(style.align === a)} onClick={() => onStyle({ align: a })}><Icon size={13} /></button>
+              className={toggleBtn(style.align === a)} onClick={() => onStyle({ align: a })}><Icon size={14} /></button>
           )
         })}
         <button {...keepFocus} title={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           aria-label={style.listStyle === 'none' ? 'Lista' : style.listStyle === 'bullet' ? 'Viñetas → numerada' : 'Quitar lista'}
           className={toggleBtn(style.listStyle !== 'none')}
-          onClick={() => onStyle({ listStyle: LIST_NEXT[style.listStyle] })}><ListIcon size={13} /></button>
+          onClick={() => onStyle({ listStyle: LIST_NEXT[style.listStyle] })}><ListIcon size={14} /></button>
         <select title="Interlineado" aria-label="Interlineado" value={style.lineHeight}
           onChange={(e) => onStyle({ lineHeight: parseFloat(e.target.value) })}
-          className="border border-border rounded px-0.5 py-0.5 text-micro bg-panel text-fg focus:outline-none w-12 shrink-0">
+          className="border border-border rounded-token-sm px-0.5 py-0.5 text-micro bg-panel text-fg focus:outline-none w-12 shrink-0">
           {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
         </select>
         <div className="w-px h-4 mx-0.5 bg-border" />
@@ -105,14 +105,14 @@ export default function TextBoxEditor({
         {onDelete && (
           <button {...keepFocus} title="Eliminar texto" aria-label="Eliminar texto" className={`${btn} hover:text-danger`} onClick={onDelete}><Trash2 size={14} /></button>
         )}
-        <button {...keepFocus} title="Cancelar (Esc)" aria-label="Cancelar" className={btn} onClick={onCancel}><X size={15} /></button>
+        <button {...keepFocus} title="Cancelar (Esc)" aria-label="Cancelar" className={btn} onClick={onCancel}><X size={16} /></button>
         <button {...keepFocus} title="Confirmar (Ctrl+Enter)" aria-label="Confirmar" className={`${btn} text-success hover:text-success`} onClick={onCommit}>
           <Check size={16} />
         </button>
       </div>
 
       <textarea autoFocus
-        className="absolute z-30 bg-transparent outline-none resize-none overflow-hidden"
+        className="absolute z-float bg-transparent outline-none resize-none overflow-hidden"
         style={{
           left: x, top: y, fontSize: fpx, fontFamily, color,
           width: boxW, height: boxH, lineHeight: style.lineHeight,

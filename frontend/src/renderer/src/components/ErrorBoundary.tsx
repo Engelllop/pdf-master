@@ -30,12 +30,12 @@ export default class ErrorBoundary extends Component<Props, State> {
             <p className="text-base text-muted mb-4 max-w-md text-center">
               PDF Master encontró un error inesperado. Guarda tu trabajo y reinicia la aplicación.
             </p>
-            <pre className="text-mini bg-panel border border-border p-3 rounded max-w-lg overflow-auto text-muted">
+            <pre className="text-mini bg-panel border border-border p-3 rounded-token-sm max-w-lg overflow-auto text-muted">
               {this.state.error?.message}
             </pre>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-fg text-toolbar hover:opacity-90 rounded text-base font-medium transition-opacity"
+              className="mt-4 px-4 py-2 rounded-token-sm text-base font-medium bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token transition-opacity"
             >
               Reiniciar
             </button>

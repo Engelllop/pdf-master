@@ -44,6 +44,7 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
       ['Ctrl+F', 'Buscar'],
       ['Supr / Retroceso', 'Eliminar la selección'],
       ['Enter', 'Cerrar polígono de medición de área'],
+      ['[ / ]', 'Pincel del borrador más chico / más grande'],
       ['Esc', 'Soltar herramienta y selección'],
     ],
   },
@@ -89,7 +90,7 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   useEffect(() => { dialogRef.current?.focus() }, [])
 
   return (
-    <div className="overlay-in fixed inset-0 z-[90] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
       <div
         ref={dialogRef}
         tabIndex={-1}
@@ -98,13 +99,13 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
         aria-label="Atajos de teclado"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
-        className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-lg border border-border shadow-2xl bg-panel text-fg"
+        className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-token border border-border shadow-token-lg bg-panel text-fg"
       >
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">
           <Keyboard size={18} className="text-muted" />
           <h2 className="text-base font-semibold flex-1">Atajos de teclado</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded transition-colors text-muted hover:bg-hover">
+            className="p-1 rounded-token-sm transition-colors text-muted hover:bg-hover">
             <X size={16} />
           </button>
         </div>
@@ -118,7 +119,7 @@ export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
                 {section.items.map(([keys, label]) => (
                   <li key={keys + label} className="flex items-center justify-between gap-3 text-mini">
                     <span className="text-fg">{label}</span>
-                    <kbd className="shrink-0 px-1.5 py-0.5 rounded border border-border font-sans text-micro bg-surface text-muted">
+                    <kbd className="shrink-0 px-1.5 py-0.5 rounded-token-sm border border-border font-sans text-micro bg-surface text-muted">
                       {keys}
                     </kbd>
                   </li>

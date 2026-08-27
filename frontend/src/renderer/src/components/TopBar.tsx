@@ -12,7 +12,7 @@ export default function TopBar() {
     'sidebarOpen', 'toggleSidebar', 'theme', 'setTheme',
   )
 
-  const rightBtn = 'p-2 h-full transition-colors text-muted hover:text-fg hover:bg-hover disabled:opacity-30'
+  const rightBtn = 'p-2 h-full transition-colors text-muted hover:text-fg hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed'
 
   return (
     <div className="app-drag h-10 border-b border-border flex items-center bg-toolbar shrink-0 select-none pr-[140px]">
@@ -41,7 +41,7 @@ export default function TopBar() {
         <Tooltip content={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'} shortcut="Ctrl+Shift+L">
           <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
             aria-pressed={sidebarOpen}
-            className={`p-2 h-full transition-colors hover:bg-hover ${sidebarOpen ? 'bg-accent text-toolbar' : 'text-muted'}`}>
+            className={`p-2 h-full transition-colors hover:bg-hover ${sidebarOpen ? 'bg-accent text-on-accent' : 'text-muted'}`}>
             <PanelLeft size={16} />
           </button>
         </Tooltip>

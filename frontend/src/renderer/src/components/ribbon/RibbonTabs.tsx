@@ -34,10 +34,10 @@ export default function RibbonTabs() {
   }) => (
     <Tooltip content={tip} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip}
-        className={`p-1.5 rounded transition-colors disabled:opacity-30 disabled:hover:bg-transparent ${
-          emphasized ? 'bg-accent text-toolbar hover:opacity-90' : 'text-muted hover:text-fg hover:bg-hover'
+        className={`p-1.5 rounded-token-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
+          emphasized ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'text-muted hover:text-fg hover:bg-hover'
         }`}>
-        <Icon size={15} />
+        <Icon size={16} />
       </button>
     </Tooltip>
   )

@@ -305,6 +305,15 @@ function App() {
         }
       }
 
+      // Tamaño del pincel del borrador con [ y ], como en cualquier editor de mapa
+      // de bits: cambiarlo sin soltar el ratón es la mitad de la herramienta.
+      if (!isMeta && !isEditing && usePdfStore.getState().activeTool === 'eraser' && (e.key === '[' || e.key === ']')) {
+        e.preventDefault()
+        const st = usePdfStore.getState()
+        st.setEraserRadius(st.eraserRadius + (e.key === ']' ? 2 : -2))
+        return
+      }
+
       // Herramientas con una sola tecla (V, H, R, M…). Comparar y presentación no dibujan.
       if (!isMeta && activeDoc && !compareMode && !presentationMode) {
         const tool = TOOL_KEYS[(e.shiftKey ? 'shift+' : '') + e.key.toLowerCase()]
@@ -390,7 +399,7 @@ function App() {
     <div className="h-screen w-screen flex flex-col overflow-hidden transition-colors bg-surface">
       {!backendOk && (
         <div className="bg-danger text-white text-mini text-center py-1 px-3 font-medium flex items-center justify-center gap-1.5">
-          <AlertTriangle size={13} className="shrink-0" />
+          <AlertTriangle size={14} className="shrink-0" />
           Motor PDF desconectado — Guarda tu trabajo y reinicia la aplicación
         </div>
       )}
@@ -420,7 +429,7 @@ function App() {
           onClick={() => store.toggleReadingMode()}
           title="Salir del modo lectura (Esc)"
           aria-label="Salir del modo lectura"
-          className="fixed top-3 right-3 z-40 p-2 rounded-full bg-panel/80 border border-border text-muted shadow-token backdrop-blur opacity-40 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+          className="fixed top-3 right-3 z-sticky p-2 rounded-full bg-panel/80 border border-border text-muted shadow-token-md backdrop-blur opacity-40 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
         >
           <X size={16} />
         </button>

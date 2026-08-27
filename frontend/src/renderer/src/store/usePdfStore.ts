@@ -3,6 +3,7 @@ import { revokePageUrl } from '../lib/blobUrl'
 import { normalizarRuta } from '../lib/rutas'
 import { measurementFor } from '../lib/measure'
 import { apiFetch } from '../lib/api'
+import { ERASER_DEFAULT, ERASER_MAX, ERASER_MIN, type EraserMode } from '../lib/eraser'
 
 export type FitMode = 'fit-width' | 'fit-page' | 'custom'
 
@@ -246,6 +247,8 @@ export interface PdfState {
   annotationOpacity: number
   annotationFillColor: string | null
   annotationFillOpacity: number
+  eraserRadius: number
+  eraserMode: EraserMode
   viewMode: 'single' | 'double'
   theme: 'dark' | 'light'
   readingMode: boolean
@@ -352,6 +355,8 @@ export interface PdfState {
   setAnnotationStatus: (docId: string, annId: string, status: AnnotationStatus) => void
   addReply: (docId: string, annId: string, text: string) => void
   deleteReply: (docId: string, annId: string, replyId: string) => void
+  setEraserRadius: (radio: number) => void
+  setEraserMode: (modo: EraserMode) => void
   addAnnotation: (docId: string, ann: Annotation) => void
   deleteAnnotation: (docId: string, annId: string) => void
   setAnnotations: (docId: string, anns: Annotation[]) => void
@@ -467,7 +472,7 @@ const ONE_SHOT_TOOLS = ['image', 'measure_calibrate', 'croparea', 'redactarea']
 // elemento por elemento. Con la herramienta «de un solo uso» se soltaba tras cada
 // marca, así que contar 50 piezas pedía elegir la herramienta 50 veces. Se queda
 // puesta y sale con Esc, como en Bluebeam.
-const ALWAYS_STICKY_TOOLS = ['count']
+const ALWAYS_STICKY_TOOLS = ['count', 'eraser']
 
 function loadStrokePrefs(): Record<string, unknown> {
   try { return JSON.parse(localStorage.getItem(STROKE_KEY) || '{}') } catch { return {} }
@@ -634,6 +639,8 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   annotationOpacity: typeof strokePrefs.opacity === 'number' ? strokePrefs.opacity as number : 1,
   annotationFillColor: typeof strokePrefs.fillColor === 'string' ? strokePrefs.fillColor as string : null,
   annotationFillOpacity: typeof strokePrefs.fillOpacity === 'number' ? strokePrefs.fillOpacity as number : 0.3,
+  eraserRadius: typeof strokePrefs.eraserRadius === 'number' ? strokePrefs.eraserRadius as number : ERASER_DEFAULT,
+  eraserMode: strokePrefs.eraserMode === 'whole' ? 'whole' : 'partial',
   viewMode: 'single',
   toasts: [],
   undoStack: [],
@@ -992,6 +999,15 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     const v = Math.max(0.05, Math.min(1, opacity))
     persistStrokePrefs({ fillOpacity: v })
     set({ annotationFillOpacity: v })
+  },
+  setEraserRadius: (radio) => {
+    const v = Math.max(ERASER_MIN, Math.min(ERASER_MAX, Math.round(radio)))
+    persistStrokePrefs({ eraserRadius: v })
+    set({ eraserRadius: v })
+  },
+  setEraserMode: (modo) => {
+    persistStrokePrefs({ eraserMode: modo })
+    set({ eraserMode: modo })
   },
 
   setViewMode: (mode) => set({ viewMode: mode }),

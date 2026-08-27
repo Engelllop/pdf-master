@@ -22,7 +22,7 @@ function TextWidget({ field, style, onCommit }: {
         if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
         else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
       }}
-      className="bg-info/10 hover:bg-info/20 focus:bg-white text-black text-mini border border-info/70 focus:border-info rounded px-1 outline-none transition-colors"
+      className="bg-info/10 hover:bg-info/20 focus:bg-white text-black text-mini border border-info/70 focus:border-info rounded-token-sm px-1 outline-none transition-colors"
       style={style}
       title={field.field_name}
       aria-label={field.field_name || 'Campo de texto'}
@@ -100,12 +100,12 @@ function LayoutChrome({
           <button type="button" aria-label="Eliminar campo"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="absolute -top-6 right-0 px-1.5 py-0.5 text-micro rounded bg-danger text-white shadow">
+            className="absolute -top-6 right-0 px-1.5 py-0.5 text-micro rounded-token-sm bg-danger text-white shadow">
             Borrar
           </button>
           <div
             onPointerDown={(e) => onDown(e, 'resize')}
-            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-accent rounded-sm cursor-nwse-resize"
+            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-accent rounded-token-sm cursor-nwse-resize"
           />
         </>
       )}
@@ -212,7 +212,7 @@ export default function FormFieldsLayer({
             <select key={`${field.field_name}-${i}`}
               value={field.value}
               onChange={(e) => onChange(field.field_name, e.target.value)}
-              className="bg-white text-black text-mini border border-info rounded"
+              className="bg-white text-black text-mini border border-info rounded-token-sm"
               style={style}
               title={field.field_name}
               aria-label={field.field_name || 'Lista'}

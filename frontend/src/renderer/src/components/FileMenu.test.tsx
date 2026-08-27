@@ -19,3 +19,24 @@ describe('FileMenu', () => {
     expect(screen.queryByRole('menu', { name: 'Archivo' })).toBeNull()
   })
 })
+
+describe('recientes', () => {
+  it('busca sin tildes: «ingenieria» encuentra la carpeta «Ingeniería»', () => {
+    localStorage.setItem('pdfmaster_recent_v2', JSON.stringify([
+      { path: 'C:/planos/Ingeniería/fachada.pdf', lastOpened: Date.now() },
+      { path: 'C:/planos/estructura.pdf', lastOpened: Date.now() },
+    ]))
+    render(<FileMenu />)
+    fireEvent.click(screen.getByText('Archivo'))
+    fireEvent.change(screen.getByPlaceholderText('Buscar en recientes…'), { target: { value: 'ingenieria' } })
+    expect(screen.getByText('fachada.pdf')).toBeTruthy()
+    expect(screen.queryByText('estructura.pdf')).toBeNull()
+  })
+
+  it('los atajos del menú van como tecla, no como texto gris suelto', () => {
+    render(<FileMenu />)
+    fireEvent.click(screen.getByText('Archivo'))
+    const abrir = screen.getByRole('menuitem', { name: /Abrir…/ })
+    expect(abrir.querySelector('kbd')?.textContent).toBe('Ctrl+O')
+  })
+})

@@ -129,3 +129,38 @@ describe('marcadores del archivo abierto', () => {
     expect(screen.getByText('Sin marcadores')).toBeTruthy()
   })
 })
+
+describe('panel de páginas — jerarquía', () => {
+  const abrir = () => {
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1', file_path: 'C:/planos/a.pdf', page_count: 3,
+      title: null, author: null, subject: null,
+      page_sizes: Array.from({ length: 3 }, (_, i) => ({ page_num: i, width: 612, height: 792 })),
+    })
+    const r = render(<ThumbnailPanel />)
+    fireEvent.click(screen.getByTitle('Páginas'))
+    return r
+  }
+
+  it('el número de página va FUERA del papel, no dentro del recuadro', () => {
+    abrir()
+    const opcion = screen.getByRole('option', { name: 'Página 1 de 3' })
+    const papel = opcion.querySelector('.ring-2, .ring-1') as HTMLElement
+    expect(papel).toBeTruthy()
+    // Si el rótulo colgara del papel, el anillo de selección lo englobaría y la hoja
+    // dejaría de tener la proporción de una página.
+    expect(papel.textContent).toBe('')
+    expect(opcion.textContent).toBe('1')
+  })
+
+  it('de las acciones de la selección, solo eliminar se tiñe de peligro', () => {
+    abrir()
+    fireEvent.click(screen.getByRole('option', { name: 'Página 1 de 3' }), { ctrlKey: true })
+    const borrar = screen.getByLabelText('Eliminar página(s)')
+    const rotar = screen.getByLabelText('Rotar 90° derecha')
+    expect(borrar.className).toMatch(/text-danger/)
+    expect(rotar.className).not.toMatch(/danger/)
+    // Antes las seis iban con relleno de tinta: seis bloques negros sin jerarquía.
+    expect(rotar.className).not.toMatch(/bg-fg/)
+  })
+})

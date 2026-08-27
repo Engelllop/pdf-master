@@ -31,7 +31,7 @@ export default function CalibrationBanner() {
   if (!activeDoc || dismissed || (!hint && !needsScale)) return null
 
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-warning/60 bg-panel shadow-token max-w-[min(680px,90%)]">
+    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-float flex items-center gap-3 pl-3 pr-2 py-2 rounded-token-lg border border-warning/60 bg-panel shadow-token-md max-w-[min(680px,90%)]">
       <Ruler size={16} className="text-warning shrink-0" />
       <span className="text-mini text-fg">
         {needsScale && <b className="text-warning">Sin calibrar — las medidas saldrán en píxeles. </b>}
@@ -39,12 +39,12 @@ export default function CalibrationBanner() {
       </span>
       {needsScale && (
         <button onClick={() => setActiveTool('measure_calibrate')}
-          className="text-mini px-2.5 py-1 rounded bg-fg text-toolbar hover:opacity-90 transition-opacity shrink-0">
+          className="text-mini px-2.5 py-1 rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token shrink-0">
           Calibrar
         </button>
       )}
       <button onClick={() => setDismissed(true)} aria-label="Descartar aviso"
-        className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
+        className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
         <X size={14} />
       </button>
     </div>

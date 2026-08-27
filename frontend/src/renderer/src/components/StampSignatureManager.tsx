@@ -47,22 +47,22 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
 
   const tabBtn = (id: typeof tab, label: string, Icon: typeof StampIcon) => (
     <button onClick={() => setTab(id)} aria-pressed={tab === id}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-mini rounded transition-colors ${
-        tab === id ? 'bg-accent text-toolbar' : 'text-muted hover:bg-hover hover:text-fg'
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-mini rounded-token-sm transition-colors ${
+        tab === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
       }`}>
-      <Icon size={13} /> {label}
+      <Icon size={14} /> {label}
     </button>
   )
 
   return (
-    <div className="overlay-in fixed inset-0 z-[93] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-sheet flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Sellos y firmas" onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-        className="panel-in w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col rounded-lg border border-border shadow-2xl bg-panel text-fg">
+        className="panel-in w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col rounded-token border border-border shadow-token-lg bg-panel text-fg">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
           <h2 className="text-base font-semibold flex-1">Sellos y firmas</h2>
           <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
         </div>
 
         <div className="flex items-center gap-1 px-3 py-2 border-b border-border">
@@ -77,7 +77,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
               <div className="flex flex-wrap gap-1.5">
                 {BUILTIN_STAMPS.map((s) => (
                   <button key={s} onClick={() => colocarSello(s, '#22c55e')}
-                    className="px-2.5 py-1 rounded border border-border text-micro text-fg hover:bg-hover transition-colors">
+                    className="px-2.5 py-1 rounded-token-sm border border-border text-micro text-fg hover:bg-hover transition-colors">
                     {s}
                   </button>
                 ))}
@@ -89,14 +89,14 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
               {stamps.length === 0 && <p className="text-micro text-muted">Aún no has creado ninguno.</p>}
               <div className="space-y-1">
                 {stamps.map((s) => (
-                  <div key={s.id} className="group flex items-center gap-2 px-2 py-1.5 rounded border border-border">
+                  <div key={s.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-token-sm border border-border">
                     <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                     <button onClick={() => colocarSello(renderStampText(s, annotationAuthor), s.color)}
                       className="flex-1 min-w-0 text-left text-mini text-fg truncate">
                       {renderStampText(s, annotationAuthor)}
                     </button>
                     <button onClick={() => { removeStamp(s.id); setStamps(loadStamps()) }} aria-label="Eliminar sello"
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted hover:text-danger transition-opacity">
+                      className="opacity-0 group-hover:opacity-100 p-1 rounded-token-sm text-muted hover:text-danger transition-opacity">
                       <Trash2 size={12} />
                     </button>
                   </div>
@@ -109,12 +109,12 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
               <div className="flex items-center gap-2">
                 <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Texto del sello"
                   onKeyDown={(e) => { if (e.key === 'Enter') create() }}
-                  className="flex-1 min-w-0 border border-border rounded px-2 py-1.5 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+                  className="flex-1 min-w-0 border border-border rounded-token-sm px-2 py-1.5 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
                 <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Color"
-                  className="w-8 h-8 rounded cursor-pointer border border-border p-0 bg-transparent shrink-0" />
+                  className="w-8 h-8 rounded-token-sm cursor-pointer border border-border p-0 bg-transparent shrink-0" />
                 <button onClick={create} disabled={!text.trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded text-mini bg-fg text-toolbar disabled:opacity-40 hover:opacity-90 transition-opacity">
-                  <Plus size={13} /> Crear
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-token-sm text-mini bg-accent text-on-accbar disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110">
+                  <Plus size={14} /> Crear
                 </button>
               </div>
               <div className="flex items-center gap-4">
@@ -139,15 +139,15 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
               </p>
             )}
             {signatures.map((sig) => (
-              <div key={sig.id} className="group flex items-center gap-2 px-2 py-1.5 rounded border border-border">
+              <div key={sig.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-token-sm border border-border">
                 <SignaturePreview sig={sig} />
                 <input defaultValue={sig.name}
                   onBlur={(e) => { renameSignature(sig.id, e.target.value.trim() || sig.name); setSignatures(loadSignatures()) }}
                   className="flex-1 min-w-0 bg-transparent text-mini text-fg focus:outline-none focus:border-b focus:border-accent" />
                 <button onClick={() => colocarFirma(sig)} title="Colocar en el documento"
-                  className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"><Check size={14} /></button>
+                  className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><Check size={14} /></button>
                 <button onClick={() => { removeSignature(sig.id); setSignatures(loadSignatures()) }} aria-label="Eliminar firma"
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted hover:text-danger transition-opacity">
+                  className="opacity-0 group-hover:opacity-100 p-1 rounded-token-sm text-muted hover:text-danger transition-opacity">
                   <Trash2 size={12} />
                 </button>
               </div>

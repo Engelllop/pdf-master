@@ -22,11 +22,11 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
     if (n > 0) showToast(`${n} marca(s) duplicada(s)`, 'success')
   }
 
-  const btn = 'flex items-center gap-1 px-2 py-1 rounded text-micro text-fg hover:bg-hover transition-colors'
+  const btn = 'flex items-center gap-1 px-2 py-1 rounded-token-sm text-micro text-fg hover:bg-hover transition-colors'
 
   return (
-    <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5 rounded-xl border border-border bg-panel shadow-token">
-      <span className="text-micro text-muted px-1 tabular-nums">{ids.length} seleccionadas</span>
+    <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-sticky flex items-center gap-1 px-2 py-1.5 rounded-token-lg border border-border bg-panel shadow-token-md">
+      <span className="text-micro text-muted px-1 tabular">{ids.length} seleccionadas</span>
       <div className="w-px h-4 bg-border mx-0.5" />
       <button title="Color" onClick={() => colorRef.current?.click()}
         className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-110 transition-transform"
@@ -35,15 +35,15 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
           className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
       </button>
       <button className={btn} onClick={() => updateAnnotationsUndoable(docId, ids, { status: resolvedAll ? 'open' : 'resolved' })}>
-        <Check size={13} /> {resolvedAll ? 'Reabrir' : 'Resolver'}
+        <Check size={14} /> {resolvedAll ? 'Reabrir' : 'Resolver'}
       </button>
-      <button className={btn} onClick={duplicate}><Copy size={13} /> Duplicar</button>
+      <button className={btn} onClick={duplicate}><Copy size={14} /> Duplicar</button>
       <button className={`${btn} hover:text-danger`} onClick={() => deleteAnnotations(docId, ids)}>
-        <Trash2 size={13} /> Eliminar
+        <Trash2 size={14} /> Eliminar
       </button>
       <div className="w-px h-4 bg-border mx-0.5" />
       <button title="Quitar selección (Esc)" aria-label="Quitar selección"
-        className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors"
+        className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"
         onClick={() => selectAnnotation(docId, null)}>
         <X size={14} />
       </button>

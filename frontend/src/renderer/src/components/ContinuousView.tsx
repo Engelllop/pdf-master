@@ -20,7 +20,8 @@ import MultiSelectionBar from './viewer/MultiSelectionBar'
 import TextBoxEditor from './viewer/TextBoxEditor'
 import ViewerEmptyState from './viewer/ViewerEmptyState'
 import { isFormTool, placeFormField } from '../lib/formFields'
-import { SEL } from '../lib/selectionChrome'
+import { SEL, BORRA, BORRA_RELLENO } from '../lib/selectionChrome'
+import { aplicarBorrador, marcasBajoBorrador } from '../lib/eraser'
 import { useFileDrop } from '../hooks/useFileDrop'
 import { reopenDeadDoc } from '../lib/openDocument'
 import { X } from 'lucide-react'
@@ -74,7 +75,7 @@ function ContinuousPageOverlay({
     'selectedAnnotationId', 'updateAnnotation', 'updateAnnotationUndoable', 'deleteAnnotation',
     'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory', 'moveAnnotations',
     'countSymbol', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
-    'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor',
+    'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor', 'eraserRadius', 'eraserMode',
   )
   const pageRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<Preview | null>(null)
@@ -84,6 +85,9 @@ function ContinuousPageOverlay({
   const [textValue, setTextValue] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [eraserPos, setEraserPos] = useState<{ x: number; y: number } | null>(null)
+  const [eraserHits, setEraserHits] = useState<string[]>([])
+  const eraserAntesRef = useRef<Annotation[] | null>(null)
   const dragRef = useRef<{ x: number; y: number } | null>(null)
   const drawPts = useRef<Array<{ x: number; y: number }>>([])
   const svgRef = useRef<SVGSVGElement>(null)
@@ -218,11 +222,55 @@ function ContinuousPageOverlay({
     return null
   }
 
+  /** Borrador: mismo contrato que en página única — el pincel es de píxeles de
+   * pantalla y todo el arrastre se deshace como un solo paso. */
+  const borrarBajoCursor = (sx: number, sy: number) => {
+    const st = usePdfStore.getState()
+    const vivo = st.docs.find((d) => d.doc_id === doc.doc_id)
+    if (!vivo) return
+    const siguiente = aplicarBorrador({
+      todas: vivo.annotations,
+      visibles: vivo.annotations.filter((x) => x.page === page && !esCapaOculta(vivo, x)),
+      punto: { x: sx, y: sy },
+      radio: st.eraserRadius,
+      modo: st.eraserMode,
+      pageData: pd,
+      boundsOf: (ann) => getAnnotationBounds(ann, pd, toScreen),
+      toScreen,
+      nuevoId: () => crypto.randomUUID(),
+    })
+    if (!siguiente) return
+    st.setAnnotations(doc.doc_id, siguiente)
+    st.setDocDirty(doc.doc_id, true)
+  }
+
+  /** Previsualiza lo que el pincel se llevaría entero (ver Viewer). */
+  const marcarLoQueSeVa = (sx: number, sy: number) => {
+    const st = usePdfStore.getState()
+    if (st.eraserMode !== 'whole') {
+      setEraserHits((prev) => (prev.length ? [] : prev))
+      return
+    }
+    const ids = marcasBajoBorrador(anns, { x: sx, y: sy }, st.eraserRadius,
+      (ann) => getAnnotationBounds(ann, pd, toScreen), toScreen)
+    setEraserHits((prev) => (prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids))
+  }
+
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = pageRef.current
     if (!el) return
     const pt = pagePoint(e, el, pw, ph)
     const tool = store.activeTool
+
+    if (tool === 'eraser') {
+      e.stopPropagation()
+      e.preventDefault()
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      eraserAntesRef.current = usePdfStore.getState().docs.find((d) => d.doc_id === doc.doc_id)?.annotations ?? []
+      setEraserPos({ x: pt.sx, y: pt.sy })
+      borrarBajoCursor(pt.sx, pt.sy)
+      return
+    }
 
     if (!tool || tool === 'select') {
       const hit = hitTest(pt.sx, pt.sy)
@@ -300,7 +348,15 @@ function ContinuousPageOverlay({
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const el = pageRef.current
-    if (!el || !dragRef.current) return
+    if (!el) return
+    if (store.activeTool === 'eraser') {
+      const p = pagePoint(e, el, pw, ph)
+      setEraserPos({ x: p.sx, y: p.sy })
+      marcarLoQueSeVa(p.sx, p.sy)
+      if (eraserAntesRef.current) borrarBajoCursor(p.sx, p.sy)
+      return
+    }
+    if (!dragRef.current) return
     const pt = pagePoint(e, el, pw, ph)
     const origin = dragRef.current
     if (isFormTool(store.activeTool)) {
@@ -316,6 +372,12 @@ function ContinuousPageOverlay({
   }
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (eraserAntesRef.current) {
+      const antes = eraserAntesRef.current
+      eraserAntesRef.current = null
+      usePdfStore.getState().commitAnnotationGesture(doc.doc_id, antes)
+      return
+    }
     const origin = dragRef.current
     dragRef.current = null
     const tool = store.activeTool
@@ -423,9 +485,11 @@ function ContinuousPageOverlay({
     <div
       ref={pageRef}
       className="absolute inset-0"
+      style={store.activeTool === 'eraser' ? { cursor: 'none' } : undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerLeave={() => { setEraserPos(null); setEraserHits([]) }}
       onDoubleClick={(e) => {
         const el = pageRef.current
         if (!el) return
@@ -485,6 +549,24 @@ function ContinuousPageOverlay({
               fill={SEL} fillOpacity={0.12} stroke={SEL} strokeWidth={1} strokeDasharray="4 3" />
           )
         })()}
+        {store.activeTool === 'eraser' && eraserHits.map((id) => {
+          const ann = anns.find((x) => x.id === id)
+          const b = ann && getAnnotationBounds(ann, pd, toScreen)
+          if (!b) return null
+          return <rect key={`era-${id}`} x={b.x - 2} y={b.y - 2} width={b.w + 4} height={b.h + 4}
+            pointerEvents="none" fill={BORRA_RELLENO} stroke={BORRA}
+            strokeWidth={1.5} strokeDasharray="4 3" rx={2} />
+        })}
+        {store.activeTool === 'eraser' && eraserPos && (
+          <g pointerEvents="none">
+            <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
+              fill="rgba(255,255,255,0.18)" stroke="rgba(0,0,0,0.55)" strokeWidth={2.5}
+              strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
+            <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
+              fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth={1}
+              strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
+          </g>
+        )}
       </svg>
       <FormFieldsLayer fields={formFields} pageData={pd} onChange={updateFormField}
         onTransform={(xref, next) => { void transformField(xref, 'delete' in next ? { delete: true } : next) }}
@@ -767,11 +849,11 @@ export default function ContinuousView() {
               key={i}
               data-page={i}
               onClick={() => { internalPageRef.current = i; store.setPage(activeDoc.doc_id, i) }}
-              className="relative shadow-lg bg-white"
+              className="relative page-sheet bg-white"
               style={{ width: widths[i], height: heights[i] }}
             >
               {loaded[i] ? (
-                <img src={loaded[i]} alt={`Página ${i + 1}`} className="w-full h-full block rounded-sm" draggable={false} />
+                <img src={loaded[i]} alt={`Página ${i + 1}`} className="w-full h-full block rounded-token-sm" draggable={false} />
               ) : (
                 <div className="skeleton w-full h-full flex items-center justify-center text-muted">
                   {i + 1}
@@ -785,7 +867,7 @@ export default function ContinuousView() {
                 pw={pw}
                 ph={ph}
               />
-              <div className="absolute bottom-1 right-2 text-micro px-1 rounded bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
+              <div className="absolute bottom-1 right-2 text-micro px-1 rounded-token-sm bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
             </div>
           )
         })}
@@ -794,11 +876,11 @@ export default function ContinuousView() {
       </div>
     </div>
       {currentFormFields.length > 0 && !formHintOff && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 pl-3 pr-2 py-2 rounded-xl border border-info/60 bg-panel shadow-token text-mini text-fg">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-float flex items-center gap-3 pl-3 pr-2 py-2 rounded-token-lg border border-info/60 bg-panel shadow-token-md text-mini text-fg">
           <span className="w-2 h-2 rounded-full bg-info shrink-0" />
           Formulario: {currentFormFields.length} campo(s). Seleccioná (V) para mover o borrar.
           <button onClick={() => setFormHintOff(true)} aria-label="Ocultar aviso"
-            className="p-1 rounded text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
+            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors shrink-0">
             <X size={14} />
           </button>
         </div>

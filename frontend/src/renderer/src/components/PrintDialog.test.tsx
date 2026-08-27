@@ -112,3 +112,17 @@ describe('capas apagadas', () => {
     expect(pushAnnotations.mock.calls[0][1]).toEqual({ excluirCapasOcultas: false })
   })
 })
+
+describe('acción primaria', () => {
+  it('Imprimir usa el acento, no tinta plana', async () => {
+    render(<PrintDialog docId="doc-1" pageCount={3} currentPage={0} onClose={() => {}} />)
+    const imprimir = screen.getByRole('button', { name: /Imprimir$/ })
+    // El mismo rol se pintaba de dos colores según el archivo: este diálogo en
+    // `bg-fg` (que en tema oscuro es un botón BLANCO) y el de «sin guardar» en acento.
+    expect(imprimir.className).toMatch(/bg-accent/)
+    expect(imprimir.className).toMatch(/text-on-accent/)
+    expect(imprimir.className).not.toMatch(/bg-fg/)
+    // `hover:opacity-90` sobre un relleno sólido transparenta, no aclara.
+    expect(imprimir.className).not.toMatch(/hover:opacity/)
+  })
+})

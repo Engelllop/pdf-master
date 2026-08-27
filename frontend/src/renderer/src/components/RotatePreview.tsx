@@ -46,7 +46,7 @@ export default function RotatePreview({ degrees, all = false, children }: {
     <div className="relative" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {children}
       {hover && src && (
-        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-[61] p-2 rounded-lg border border-border bg-panel shadow-xl pointer-events-none">
+        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-overlay-menu p-2 rounded-token border border-border bg-panel shadow-token-lg pointer-events-none">
           <div className="w-24 h-24 flex items-center justify-center overflow-hidden">
             <img src={src} alt="" draggable={false}
               className="max-w-full max-h-full shadow transition-transform duration-200"

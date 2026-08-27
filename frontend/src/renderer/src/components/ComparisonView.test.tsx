@@ -46,3 +46,16 @@ describe('comparar dos revisiones', () => {
     expect(screen.queryByLabelText('Página siguiente del documento de la derecha')).toBeNull()
   })
 })
+
+describe('identificar cada revisión', () => {
+  it('cada panel lleva el mismo color con el que se tiñe al superponer', () => {
+    const { container } = render(<ComparisonView />)
+    const puntos = [...container.querySelectorAll('span[aria-hidden]')]
+      .map((el) => (el as HTMLElement).style.background)
+      .filter(Boolean)
+    // En superposición cada revisión ya iba teñida y con leyenda; en lado a lado no
+    // había ninguna pista de cuál era cuál sobre dos planos casi idénticos.
+    expect(puntos).toContain('rgb(255, 34, 34)')
+    expect(puntos).toContain('rgb(34, 68, 255)')
+  })
+})

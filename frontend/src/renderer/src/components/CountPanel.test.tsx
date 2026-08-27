@@ -141,3 +141,31 @@ describe('acciones sobre toda la categoría', () => {
     expect(conteos().length).toBe(2)
   })
 })
+
+describe('categoría activa', () => {
+  const categorias = (c: HTMLElement) =>
+    [...c.querySelectorAll('button[aria-current]')] as HTMLElement[]
+
+  it('el panel dice en cuál caen los conteos nuevos', () => {
+    const doc = conConteos({ Luminarias: 3, Tomas: 2 })
+    usePdfStore.getState().setCountCategory('Tomas')
+    const { container } = render(<CountPanel activeDoc={doc} />)
+    // Había un botón «Seguir contando en esta categoría» pero nada señalaba cuál era
+    // la actual: al hacer clic en el plano, la marca caía en una categoría invisible.
+    const activa = categorias(container).find((b) => b.getAttribute('aria-current') === 'true')!
+    expect(activa.textContent).toMatch(/^Tomas/)
+    expect(activa.textContent).toMatch(/contando/)
+
+    const otra = categorias(container).find((b) => b.getAttribute('aria-current') === 'false')!
+    expect(otra.textContent).toBe('Luminarias')
+  })
+
+  it('elegir otra categoría mueve el indicador', () => {
+    const doc = conConteos({ Luminarias: 3, Tomas: 2 })
+    usePdfStore.getState().setCountCategory('Tomas')
+    const { container } = render(<CountPanel activeDoc={doc} />)
+    const otra = categorias(container).find((b) => b.textContent === 'Luminarias')!
+    fireEvent.click(otra)
+    expect(usePdfStore.getState().countCategory).toBe('Luminarias')
+  })
+})
