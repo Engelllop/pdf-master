@@ -14,8 +14,9 @@ const TABS: Array<{ id: RibbonTab; label: string }> = [
   { id: 'ai', label: 'IA' },
 ]
 
-// Fila de la cinta: menú Archivo + acciones rápidas (guardar, imprimir, deshacer,
-// rehacer) a la izquierda, pestañas de modo centradas.
+// Fila de la cinta: pestañas de modo pegadas al eje izquierdo del chrome (el mismo
+// que la pestaña de documento y los tools), acciones rápidas (guardar, imprimir,
+// deshacer, rehacer) empujadas a la derecha.
 export default function RibbonTabs() {
   const { activeRibbon, setActiveRibbon, docs, activeDocId, undo, redo, undoStack, redoStack, pageUndoBusy } = useStoreSlice(
     'activeRibbon', 'setActiveRibbon', 'docs', 'activeDocId', 'undo', 'redo', 'undoStack', 'redoStack', 'pageUndoBusy',
@@ -35,7 +36,7 @@ export default function RibbonTabs() {
     <Tooltip content={tip} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip}
         className={`p-1.5 rounded-token-sm transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent ${
-          emphasized ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'text-muted hover:text-fg hover:bg-hover'
+          emphasized ? 'text-warning hover:bg-hover' : 'text-muted hover:text-fg hover:bg-hover'
         }`}>
         <Icon size={16} />
       </button>
@@ -44,21 +45,13 @@ export default function RibbonTabs() {
 
   return (
     <div className="h-9 bg-toolbar flex items-center px-2">
-      <div className="flex items-center h-full gap-0.5 shrink-0">
+      <div className="flex items-center h-full shrink-0">
         <FileMenu />
         <div className="w-px h-4 mx-1 bg-border" />
-        <QBtn icon={Save} tip={dirty ? 'Sin guardar · Ctrl+S' : 'Guardar'} shortcut="Ctrl+S" disabled={!hasDoc}
-          emphasized={dirty}
-          onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-save'))} />
-        <QBtn icon={Printer} tip="Imprimir" shortcut="Ctrl+P" disabled={!hasDoc}
-          onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} />
-        <div className="w-px h-4 mx-1 bg-border" />
-        <QBtn icon={Undo2} tip="Deshacer" shortcut="Ctrl+Z" disabled={undoStack.length === 0 || pageUndoBusy} onClick={undo} />
-        <QBtn icon={Redo2} tip="Rehacer" shortcut="Ctrl+Y" disabled={redoStack.length === 0 || pageUndoBusy} onClick={redo} />
       </div>
       {/* Patrón tablist de W3C: una sola parada de tabulación y flechas para moverse. */}
       <div role="tablist" aria-label="Modos de la cinta"
-        className="flex-1 flex items-center justify-center gap-1 h-full overflow-x-auto no-scrollbar">
+        className="flex items-center gap-1 h-full min-w-0 overflow-x-auto no-scrollbar">
         {TABS.map((t, i) => {
           const active = activeRibbon === t.id
           return (
@@ -87,7 +80,17 @@ export default function RibbonTabs() {
           )
         })}
       </div>
-      <div className="w-[140px] shrink-0" />
+      <div className="flex-1" />
+      <div className="flex items-center h-full gap-0.5 shrink-0">
+        <QBtn icon={Save} tip={dirty ? 'Sin guardar · Ctrl+S' : 'Guardar'} shortcut="Ctrl+S" disabled={!hasDoc}
+          emphasized={dirty}
+          onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-save'))} />
+        <QBtn icon={Printer} tip="Imprimir" shortcut="Ctrl+P" disabled={!hasDoc}
+          onClick={() => window.dispatchEvent(new CustomEvent('app:shortcut-print'))} />
+        <div className="w-px h-4 mx-1 bg-border" />
+        <QBtn icon={Undo2} tip="Deshacer" shortcut="Ctrl+Z" disabled={undoStack.length === 0 || pageUndoBusy} onClick={undo} />
+        <QBtn icon={Redo2} tip="Rehacer" shortcut="Ctrl+Y" disabled={redoStack.length === 0 || pageUndoBusy} onClick={redo} />
+      </div>
     </div>
   )
 }

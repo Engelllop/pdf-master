@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { act, render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
 import UnsavedDialog from './UnsavedDialog'
 import { askUnsaved } from '../lib/unsavedPrompt'
 import { usePdfStore } from '../store/usePdfStore'
@@ -31,7 +31,9 @@ describe('UnsavedDialog', () => {
     await act(async () => {})
     fireEvent.keyDown(document, { key: 'Escape' })
     await expect(choice).resolves.toBe('cancel')
-    expect(screen.queryByRole('dialog')).toBeNull()
+    // La respuesta no espera a la animación de salida, así que el diálogo sigue en el
+    // DOM un instante marcado como saliente; lo que importa es que se vaya solo.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(usePdfStore.getState().docs[0].dirty).toBe(true)
   })
 })

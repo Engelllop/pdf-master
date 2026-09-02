@@ -15,13 +15,20 @@ type Request = {
   resolve: ((choice: UnsavedChoice) => void) | null
 }
 
+/** Lo que dura `panel-out`/`overlay-out` en App.css (`--dur-fast`). */
+const SALIDA = 120
+const sinMovimiento = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
 export default function UnsavedDialog() {
   const { docs, showToast } = useStoreSlice('docs', 'showToast')
   const [request, setRequest] = useState<Request | null>(null)
   const [saving, setSaving] = useState(false)
+  const [saliendo, setSaliendo] = useState(false)
   const dialogRef = useRef<HTMLDivElement>(null)
   const requestRef = useRef(request)
   const savingRef = useRef(saving)
+  const cerrando = useRef(false)
+  const salida = useRef<number | null>(null)
   requestRef.current = request
   savingRef.current = saving
 
@@ -39,16 +46,36 @@ export default function UnsavedDialog() {
     }))
   }, [])
 
+  useEffect(() => () => { if (salida.current) clearTimeout(salida.current) }, [])
+
+  /** Único camino de cierre para Esc, el clic en el fondo y los tres botones: la
+   * respuesta se entrega YA y el diálogo se desmonta cuando acaba su salida. El
+   * guardia impide entregar dos respuestas o animar la salida dos veces. */
+  const finish = (choice: UnsavedChoice) => {
+    if (cerrando.current) return
+    cerrando.current = true
+    const resolve = requestRef.current?.resolve
+    if (resolve) resolve(choice)
+    else if (choice !== 'cancel') window.api.forceClose()
+    // `saving` se limpia al desmontar, no ahora: el botón no puede volver de
+    // «Guardando…» a su texto normal mientras el panel todavía se está yendo.
+    const desmontar = () => {
+      cerrando.current = false
+      setSaliendo(false)
+      setSaving(false)
+      setRequest(null)
+    }
+    if (sinMovimiento()) { desmontar(); return }
+    setSaliendo(true)
+    salida.current = window.setTimeout(desmontar, SALIDA)
+  }
+
   useEffect(() => {
     if (!request) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || savingRef.current) return
+      if (e.key !== 'Escape' || savingRef.current || cerrando.current) return
       e.preventDefault()
-      const current = requestRef.current
-      if (!current) return
-      setRequest(null)
-      setSaving(false)
-      if (current.resolve) current.resolve('cancel')
+      finish('cancel')
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -58,37 +85,26 @@ export default function UnsavedDialog() {
   const affected = docs.filter((d) => request.docIds.includes(d.doc_id))
   const isAppClose = request.resolve === null
 
-  const finish = (choice: UnsavedChoice) => {
-    const { resolve } = request
-    setRequest(null)
-    setSaving(false)
-    if (resolve) resolve(choice)
-    else if (choice !== 'cancel') window.api.forceClose()
-  }
-
   const saveAll = async () => {
     setSaving(true)
     try {
       for (const d of affected) {
         if (!(await saveDocument(d.doc_id))) {
-          setSaving(false)
-          setRequest(null)
-          request.resolve?.('cancel')
           showToast(`No se pudo guardar ${d.file_name}.`, 'error')
+          finish('cancel')
           return
         }
       }
       finish('save')
     } catch {
-      setSaving(false)
-      setRequest(null)
-      request.resolve?.('cancel')
       showToast('No se pudo guardar.', 'error')
+      finish('cancel')
     }
   }
 
   return (
-    <div className="overlay-in fixed inset-0 z-modal flex items-center justify-center bg-black/40 backdrop-blur-[2px]"
+    <div className="overlay-in fixed inset-0 z-modal flex items-center justify-center bg-[rgb(var(--scrim)/0.45)] backdrop-blur-[2px]"
+      data-closing={saliendo || undefined}
       onMouseDown={(e) => { if (e.target === e.currentTarget && !saving) finish('cancel') }}>
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="unsaved-title" tabIndex={-1}
         onKeyDown={(e) => {
@@ -119,15 +135,15 @@ export default function UnsavedDialog() {
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-border bg-surface">
           <button onClick={() => finish('cancel')} disabled={saving}
-            className="px-3 py-1.5 text-mini rounded-token text-fg hover:bg-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="px-3 py-1.5 text-mini rounded-token text-fg hover:bg-hover transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">
             Cancelar
           </button>
           <button onClick={() => finish('discard')} disabled={saving}
-            className="px-3 py-1.5 text-mini rounded-token text-danger hover:bg-danger/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="px-3 py-1.5 text-mini rounded-token text-danger hover:bg-danger/10 transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">
             {isAppClose ? 'Salir sin guardar' : 'Cerrar sin guardar'}
           </button>
           <button onClick={saveAll} disabled={saving} autoFocus
-            className="px-3 py-1.5 text-mini rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-opacity flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+            className="px-3 py-1.5 text-mini rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 active:scale-[0.97] transition-[filter,transform] duration-fast ease-token flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? 'Guardando…' : isAppClose ? 'Guardar y salir' : 'Guardar y cerrar'}
           </button>

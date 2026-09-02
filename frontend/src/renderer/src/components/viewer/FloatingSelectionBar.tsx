@@ -69,8 +69,10 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
     selectAnnotation(docId, copy.id)
   }
 
-  const btn = 'p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors'
-  const onBtn = (active: boolean) => `p-1.5 rounded-token-sm transition-colors ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+  // `active:scale` en la superficie más pulsada al anotar: sin él, veinte botones
+  // no devolvían ningún acuse de la pulsación.
+  const btn = 'p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover active:scale-[0.97] transition-[color,background-color,transform] duration-fast ease-token'
+  const onBtn = (active: boolean) => `p-1.5 rounded-token-sm active:scale-[0.97] transition-[color,background-color,transform] duration-fast ease-token ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
   const styleVal: LineStyle = ann.lineStyle || 'solid'
   const opacityPct = Math.round((ann.opacity ?? (ann.type === 'highlight' ? 0.5 : 1)) * 100)
 
@@ -81,7 +83,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
       {hasColor && (
         <>
           <button title="Color" aria-label="Color" onClick={() => colorInputRef.current?.click()}
-            className="relative w-6 h-6 rounded-full border-2 border-border hover:scale-110 transition-transform shrink-0"
+            className="relative w-6 h-6 rounded-full border-2 border-border hover:scale-105 active:scale-100 transition-transform duration-fast ease-token shrink-0"
             style={{ backgroundColor: ann.color || '#fbbf24' }}>
             <input ref={colorInputRef} type="color" value={ann.color || '#fbbf24'}
               onChange={(e) => apply({ color: e.target.value })}

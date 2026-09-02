@@ -33,13 +33,13 @@ describe('coincidencias de la búsqueda', () => {
   })
 
   // En una lámina con doscientas etiquetas, saber que hay 12 resultados no sirve si no
-  // se ve en cuál estás: la actual va en naranja y latiendo.
+  // se ve en cuál estás: la actual va en --hit-active y latiendo.
   it('distingue la coincidencia actual', () => {
     const c = pintar(1, 2)
     const marcados = rects(c).map((r) => r.getAttribute('data-search-hit'))
     expect(marcados).toEqual(['otro', 'actual'])
     const actual = rects(c)[1]
-    expect(actual.getAttribute('fill')).toBe('#f97316')
+    expect(actual.getAttribute('fill')).toBe('rgb(var(--hit-active))')
     expect(actual.querySelector('animate')).toBeTruthy()
   })
 

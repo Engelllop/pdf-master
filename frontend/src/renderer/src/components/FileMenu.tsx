@@ -209,7 +209,7 @@ export default function FileMenu() {
       <div className="group flex items-center gap-2.5 px-2 py-1.5 rounded-token hover:bg-hover cursor-pointer"
         title={entry.path}
         onClick={() => handleOpenRecent(entry)}>
-        <div className="w-9 h-11 shrink-0 rounded-token-sm ring-1 ring-border shadow-token-sm bg-white overflow-hidden flex items-center justify-center">
+        <div className="w-9 h-11 shrink-0 rounded-token-sm ring-1 ring-border shadow-token-sm bg-paper overflow-hidden flex items-center justify-center">
           {entry.thumb
             ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
             : <FileText size={16} className="text-muted icon-thin" />}

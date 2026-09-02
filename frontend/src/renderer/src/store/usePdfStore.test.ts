@@ -340,7 +340,7 @@ describe('búsqueda', () => {
 })
 
 describe('pageCache', () => {
-  it('evicta la entrada más vieja al superar 100 páginas', () => {
+  it('evicta las entradas más viejas al superar el tope de páginas', () => {
     usePdfStore.getState().addDoc(docInfo({ page_count: 200 }))
     for (let i = 0; i < 101; i++) {
       usePdfStore.getState().cachePage('doc-1', i, {
@@ -348,9 +348,36 @@ describe('pageCache', () => {
       })
     }
     const doc = usePdfStore.getState().docs[0]
-    expect(doc.pageCache.size).toBe(100)
+    expect(doc.pageCache.size).toBe(40)
     expect(doc.pageCache.has('0')).toBe(false)
     expect(doc.pageCache.has('100')).toBe(true)
+  })
+
+  // El tope real es de píxeles, no de entradas: un plano rasterizado grande llena el
+  // presupuesto con muy pocas páginas, y con el tope viejo (100 entradas a secas) la
+  // caché de un solo documento se comía más de un giga de RAM.
+  it('evicta por píxeles cuando los bitmaps son grandes', () => {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 200 }))
+    for (let i = 0; i < 10; i++) {
+      usePdfStore.getState().cachePage('doc-1', i, {
+        image: `img-${i}`, width: 6000, height: 4000, originalWidth: 612, originalHeight: 792,
+      })
+    }
+    const doc = usePdfStore.getState().docs[0]
+    expect(doc.pageCache.size).toBeLessThan(10)
+    expect(doc.pageCache.has('9')).toBe(true)
+  })
+
+  // Nunca por debajo del mínimo: la página actual y sus vecinas precargadas tienen que
+  // sobrevivir aunque una sola de ellas ya se pase del presupuesto.
+  it('conserva un mínimo de páginas aunque se pase del presupuesto', () => {
+    usePdfStore.getState().addDoc(docInfo({ page_count: 200 }))
+    for (let i = 0; i < 6; i++) {
+      usePdfStore.getState().cachePage('doc-1', i, {
+        image: `img-${i}`, width: 12000, height: 12000, originalWidth: 612, originalHeight: 792,
+      })
+    }
+    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(4)
   })
 })
 
@@ -660,13 +687,13 @@ describe('dirty / saveStatus', () => {
 describe('bitmaps de página (blob URLs)', () => {
   const bitmap = (image: string) => ({ image, width: 612, height: 792, originalWidth: 612, originalHeight: 792 })
 
-  it('revoca el bitmap desalojado del cache al pasar de 100 páginas', () => {
+  it('revoca el bitmap desalojado del cache al llenarse', () => {
     const revoke = vi.spyOn(URL, 'revokeObjectURL')
     const s = usePdfStore.getState()
     s.addDoc(docInfo({ page_count: 200 }))
     for (let i = 0; i < 101; i++) usePdfStore.getState().cachePage('doc-1', i, bitmap(`blob:p${i}`))
     expect(revoke).toHaveBeenCalledWith('blob:p0')
-    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(100)
+    expect(usePdfStore.getState().docs[0].pageCache.size).toBe(40)
     revoke.mockRestore()
   })
 

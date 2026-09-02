@@ -59,7 +59,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
           <div className="w-14 h-14 mx-auto rounded-token-lg flex items-center justify-center bg-accent/10 text-accent">
             <FileText size={26} className="icon-thin" />
           </div>
-          <h2 className="mt-4 text-xl font-semibold text-fg tracking-tight">PDF Master</h2>
+          <h2 className="mt-4 text-display font-semibold text-fg tracking-tight">PDF Master</h2>
           <p className="mt-1 text-base text-muted">Arrastrá un PDF acá para abrirlo</p>
 
           <div className="mt-4 flex items-center justify-center gap-2">
@@ -98,7 +98,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
                 return (
                   <button key={entry.path} onClick={() => handleOpenRecent(entry)} title={entry.path}
                     className="flex items-center gap-2.5 p-2 rounded-token border border-border bg-panel shadow-token-sm hover:border-accent/50 hover:bg-hover transition-colors duration-fast ease-token text-left">
-                    <div className="w-9 h-11 shrink-0 rounded-token-sm border border-border bg-white overflow-hidden flex items-center justify-center">
+                    <div className="w-9 h-11 shrink-0 rounded-token-sm border border-border bg-paper overflow-hidden flex items-center justify-center">
                       {entry.thumb
                         ? <img src={entry.thumb} alt="" className="w-full h-full object-cover object-top" draggable={false} />
                         : <FileText size={16} className="text-muted icon-thin" />}

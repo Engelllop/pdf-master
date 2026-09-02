@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, X, Send, KeyRound, Loader2, Eraser, Square } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { PanelHeader, SegmentedGroup, iconBtn } from './panelUi'
 
 const LEGACY_KEY_STORAGE = 'pdfmaster_anthropic_key'
 
@@ -16,8 +17,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const { docs, activeDocId } = useStoreSlice('docs', 'activeDocId')
   const activeDoc = docs.find((d) => d.doc_id === activeDocId)
 
-  // La key vive cifrada en el main (safeStorage); aquí solo se sabe si existe.
-  const [hasKey, setHasKey] = useState(false)
+  // La key vive cifrada en el main (safeStorage); aquí solo se sabe si existe. `null`
+  // mientras se pregunta: arrancando en `false`, cada apertura del panel pintaba un
+  // frame del onboarding de «conecta tu cuenta» aunque la key estuviera guardada.
+  const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
 
@@ -46,7 +49,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const convKey = activeDocId || '__nodoc__'
-  const messages = conversations[convKey] || []
+  // `|| []` a secas devolvia un array nuevo por render, asi que el efecto que baja el
+  // scroll dependia de una identidad que cambiaba siempre: se ejecutaba en cada render
+  // del panel, no cuando llegaba un mensaje.
+  const messages = useMemo(() => conversations[convKey] || [], [conversations, convKey])
   const setMsgsFor = (key: string, fn: (prev: Msg[]) => Msg[]) =>
     setConversations((c) => {
       const next = { ...c, [key]: fn(c[key] || []) }
@@ -135,6 +141,15 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   }
   sendRef.current = send
 
+  if (hasKey === null) {
+    return (
+      <div className="w-[360px] border-l border-border-strong bg-panel flex flex-col shrink-0">
+        <Header onClose={onClose} onKey={() => {}} />
+        <div className="flex-1 skeleton opacity-40 m-3 rounded-token" />
+      </div>
+    )
+  }
+
   if (!hasKey || editingKey) {
     return (
       <div className="w-[360px] border-l border-border-strong bg-panel flex flex-col shrink-0">
@@ -193,16 +208,8 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
       <div className="border-t border-border p-2">
         <div className="flex items-center gap-1.5 mb-1.5 text-micro">
           <span className="text-muted shrink-0">Contexto</span>
-          <div className="flex items-center gap-0.5 rounded-token border border-border bg-surface p-0.5">
-            {(['doc', 'page'] as const).map((s) => (
-              <button key={s} onClick={() => setScope(s)} aria-pressed={scope === s}
-                className={`px-2 h-6 rounded-token-sm transition-colors duration-fast ease-token ${
-                  scope === s ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
-                }`}>
-                {s === 'doc' ? 'Documento' : 'Página actual'}
-              </button>
-            ))}
-          </div>
+          <SegmentedGroup<'doc' | 'page'> value={scope} onChange={setScope}
+            options={[['doc', 'Documento'], ['page', 'Página actual']]} />
         </div>
         <div className="flex items-end gap-2">
           <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={2}
@@ -232,11 +239,11 @@ function emptyHint(name?: string) {
 
 function Header({ onClose, onKey }: { onClose: () => void; onKey: () => void }) {
   return (
-    <div className="h-10 flex items-center gap-2 px-3 border-b border-border bg-panel shrink-0">
-      <Sparkles size={16} className="text-accent" />
-      <span className="text-base font-semibold flex-1">Asistente IA</span>
-      <button onClick={onKey} title="Cambiar API key" aria-label="Cambiar la clave de Anthropic" className="p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><KeyRound size={16} /></button>
-      <button onClick={onClose} title="Cerrar" aria-label="Cerrar el asistente" className="p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
-    </div>
+    // El accent está reservado al relleno de un estado activo: decorando el icono del
+    // título competía con el segmentado de contexto, que sí dice algo.
+    <PanelHeader icon={Sparkles} title="Asistente IA">
+      <button onClick={onKey} title="Cambiar API key" aria-label="Cambiar la clave de Anthropic" className={iconBtn}><KeyRound size={14} /></button>
+      <button onClick={onClose} title="Cerrar" aria-label="Cerrar el asistente" className={iconBtn}><X size={14} /></button>
+    </PanelHeader>
   )
 }

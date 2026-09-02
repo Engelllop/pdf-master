@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { X, Plus, Trash2, Stamp as StampIcon, Signature as SignatureIcon, Check } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Trash2, Stamp as StampIcon, Signature as SignatureIcon, Check } from 'lucide-react'
+import {
+  DialogShell, DialogHeader, EmptyState, btnPrimary, fieldInput, iconBtn, iconBtnDanger, nativeAccent,
+} from './panelUi'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   loadStamps, addStamp, removeStamp, renderStampText, BUILTIN_STAMPS, type CustomStamp,
@@ -41,121 +44,119 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
     showToast(`Haz clic para colocar la firma «${sig.name}»`, 'info')
   }
 
-  // Sin foco al abrir, el Esc del contenedor no hacía nada hasta clicar dentro.
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { dialogRef.current?.focus() }, [])
-
   const tabBtn = (id: typeof tab, label: string, Icon: typeof StampIcon) => (
     <button onClick={() => setTab(id)} aria-pressed={tab === id}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-mini rounded-token-sm transition-colors ${
+      className={`flex items-center gap-1.5 h-8 px-3 text-mini rounded-token-sm transition-colors duration-fast ease-token ${
         tab === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
       }`}>
       <Icon size={14} /> {label}
     </button>
   )
 
+  const filaCls = 'group flex items-center gap-2 px-2 h-9 rounded-token-sm border border-border'
+  const revelar = 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+
   return (
-    <div className="overlay-in fixed inset-0 z-sheet flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
-      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label="Sellos y firmas" onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
-        className="panel-in w-[520px] max-w-[92vw] max-h-[84vh] flex flex-col rounded-token border border-border shadow-token-lg bg-panel text-fg">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          <h2 className="text-base font-semibold flex-1">Sellos y firmas</h2>
-          <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
-        </div>
+    <DialogShell label="Sellos y firmas" zClass="z-sheet"
+      panelClass="w-[520px] max-h-[84vh] flex flex-col" onClose={onClose}>
+      <DialogHeader icon={StampIcon} title="Sellos y firmas" onClose={onClose} />
 
-        <div className="flex items-center gap-1 px-3 py-2 border-b border-border">
-          {tabBtn('stamps', 'Sellos', StampIcon)}
-          {tabBtn('signatures', 'Firmas', SignatureIcon)}
-        </div>
+      <div className="flex items-center gap-1 px-3 py-2 border-b border-border shrink-0">
+        {tabBtn('stamps', 'Sellos', StampIcon)}
+        {tabBtn('signatures', 'Firmas', SignatureIcon)}
+      </div>
 
-        {tab === 'stamps' ? (
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            <div>
-              <p className="text-micro uppercase tracking-wider text-muted mb-1.5">De fábrica</p>
-              <div className="flex flex-wrap gap-1.5">
-                {BUILTIN_STAMPS.map((s) => (
-                  <button key={s} onClick={() => colocarSello(s, '#22c55e')}
-                    className="px-2.5 py-1 rounded-token-sm border border-border text-micro text-fg hover:bg-hover transition-colors">
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-micro uppercase tracking-wider text-muted mb-1.5">Mis sellos</p>
-              {stamps.length === 0 && <p className="text-micro text-muted">Aún no has creado ninguno.</p>}
-              <div className="space-y-1">
-                {stamps.map((s) => (
-                  <div key={s.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-token-sm border border-border">
-                    <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                    <button onClick={() => colocarSello(renderStampText(s, annotationAuthor), s.color)}
-                      className="flex-1 min-w-0 text-left text-mini text-fg truncate">
-                      {renderStampText(s, annotationAuthor)}
-                    </button>
-                    <button onClick={() => { removeStamp(s.id); setStamps(loadStamps()) }} aria-label="Eliminar sello"
-                      className="opacity-0 group-hover:opacity-100 p-1 rounded-token-sm text-muted hover:text-danger transition-opacity">
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="border-t border-border pt-3 space-y-2">
-              <p className="text-micro uppercase tracking-wider text-muted">Nuevo sello</p>
-              <div className="flex items-center gap-2">
-                <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Texto del sello"
-                  onKeyDown={(e) => { if (e.key === 'Enter') create() }}
-                  className="flex-1 min-w-0 border border-border rounded-token-sm px-2 py-1.5 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
-                <input type="color" value={color} onChange={(e) => setColor(e.target.value)} title="Color"
-                  className="w-8 h-8 rounded-token-sm cursor-pointer border border-border p-0 bg-transparent shrink-0" />
-                <button onClick={create} disabled={!text.trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-token-sm text-mini bg-accent text-on-accbar disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110">
-                  <Plus size={14} /> Crear
+      {tab === 'stamps' ? (
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+          <div>
+            <p className="text-micro font-semibold uppercase tracking-wider text-muted mb-1.5">De fábrica</p>
+            <div className="flex flex-wrap gap-1.5">
+              {BUILTIN_STAMPS.map((s) => (
+                <button key={s} onClick={() => colocarSello(s, '#22c55e')}
+                  className="h-8 px-2.5 rounded-token-sm border border-border text-mini text-fg hover:bg-hover transition-colors duration-fast ease-token">
+                  {s}
                 </button>
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-1.5 text-micro text-muted cursor-pointer">
-                  <input type="checkbox" checked={withDate} onChange={(e) => setWithDate(e.target.checked)}
-                    className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                  Añadir fecha
-                </label>
-                <label className="flex items-center gap-1.5 text-micro text-muted cursor-pointer">
-                  <input type="checkbox" checked={withAuthor} onChange={(e) => setWithAuthor(e.target.checked)}
-                    className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                  Añadir mi nombre
-                </label>
-              </div>
+              ))}
             </div>
           </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
-            {signatures.length === 0 && (
-              <p className="text-micro text-muted">
-                No hay firmas guardadas. Dibuja una con la herramienta Firma y ponle nombre al terminar.
-              </p>
-            )}
-            {signatures.map((sig) => (
-              <div key={sig.id} className="group flex items-center gap-2 px-2 py-1.5 rounded-token-sm border border-border">
+
+          <div>
+            <p className="text-micro font-semibold uppercase tracking-wider text-muted mb-1.5">Mis sellos</p>
+            {stamps.length === 0
+              ? <p className="text-mini text-muted">Aún no has creado ninguno. Escribí el texto abajo.</p>
+              : (
+                <div className="space-y-1">
+                  {stamps.map((s) => (
+                    <div key={s.id} className={filaCls}>
+                      <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                      <button onClick={() => colocarSello(renderStampText(s, annotationAuthor), s.color)}
+                        className="flex-1 min-w-0 self-stretch text-left text-mini text-fg truncate">
+                        {renderStampText(s, annotationAuthor)}
+                      </button>
+                      <button onClick={() => { removeStamp(s.id); setStamps(loadStamps()) }} aria-label="Eliminar sello"
+                        className={`${iconBtnDanger} ${revelar}`}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+          </div>
+
+          <div className="border-t border-border pt-3 space-y-2">
+            <p className="text-micro font-semibold uppercase tracking-wider text-muted">Nuevo sello</p>
+            <div className="flex items-center gap-2">
+              <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Texto del sello"
+                onKeyDown={(e) => { if (e.key === 'Enter') create() }}
+                className={`${fieldInput} flex-1 min-w-0`} />
+              <input type="color" value={color} onChange={(e) => setColor(e.target.value)}
+                title="Color del sello" aria-label="Color del sello"
+                className="w-8 h-8 rounded-token-sm cursor-pointer border border-border-control p-0 bg-transparent shrink-0" />
+              <button onClick={create} disabled={!text.trim()} className={btnPrimary}>
+                <Plus size={14} /> Crear
+              </button>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5 text-mini text-muted cursor-pointer">
+                <input type="checkbox" checked={withDate} onChange={(e) => setWithDate(e.target.checked)}
+                  className="w-3.5 h-3.5" style={nativeAccent} />
+                Añadir fecha
+              </label>
+              <label className="flex items-center gap-1.5 text-mini text-muted cursor-pointer">
+                <input type="checkbox" checked={withAuthor} onChange={(e) => setWithAuthor(e.target.checked)}
+                  className="w-3.5 h-3.5" style={nativeAccent} />
+                Añadir mi nombre
+              </label>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1 flex flex-col">
+          {signatures.length === 0
+            ? (
+              <EmptyState icon={SignatureIcon}>
+                No hay firmas guardadas. Dibujá una con la herramienta Firma y ponele nombre al terminar.
+              </EmptyState>
+            )
+            : signatures.map((sig) => (
+              <div key={sig.id} className={`${filaCls} shrink-0`}>
                 <SignaturePreview sig={sig} />
-                <input defaultValue={sig.name}
+                {/* El nombre se edita en el sitio; sin borde en reposo no se veía que
+                    fuera un campo, y el `border-b` que aparecía al enfocar movía la fila. */}
+                <input defaultValue={sig.name} aria-label="Nombre de la firma"
                   onBlur={(e) => { renameSignature(sig.id, e.target.value.trim() || sig.name); setSignatures(loadSignatures()) }}
-                  className="flex-1 min-w-0 bg-transparent text-mini text-fg focus:outline-none focus:border-b focus:border-accent" />
-                <button onClick={() => colocarFirma(sig)} title="Colocar en el documento"
-                  className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><Check size={14} /></button>
+                  className="flex-1 min-w-0 px-1.5 py-0.5 rounded-token-sm bg-transparent border border-transparent text-mini text-fg transition-colors duration-fast ease-token hover:border-border-control focus:outline-none focus:border-accent" />
+                <button onClick={() => colocarFirma(sig)} title="Colocar en el documento" aria-label="Colocar en el documento"
+                  className={iconBtn}><Check size={14} /></button>
                 <button onClick={() => { removeSignature(sig.id); setSignatures(loadSignatures()) }} aria-label="Eliminar firma"
-                  className="opacity-0 group-hover:opacity-100 p-1 rounded-token-sm text-muted hover:text-danger transition-opacity">
-                  <Trash2 size={12} />
+                  className={`${iconBtnDanger} ${revelar}`}>
+                  <Trash2 size={14} />
                 </button>
               </div>
             ))}
-          </div>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </DialogShell>
   )
 }
 

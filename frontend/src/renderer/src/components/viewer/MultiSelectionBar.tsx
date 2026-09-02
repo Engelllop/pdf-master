@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Copy, Trash2, Check, X } from 'lucide-react'
 import { useStoreSlice } from '../../hooks/useStoreSlice'
+import { COLORS } from '../PropertiesBar'
 
 /** Acciones sobre varias marcas a la vez. Flota abajo del visor (no junto a una
  * marca concreta, porque la selección puede estar repartida por toda la página). */
@@ -29,8 +30,8 @@ export default function MultiSelectionBar({ docId, ids }: { docId: string; ids: 
       <span className="text-micro text-muted px-1 tabular">{ids.length} seleccionadas</span>
       <div className="w-px h-4 bg-border mx-0.5" />
       <button title="Color" onClick={() => colorRef.current?.click()}
-        className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-110 transition-transform"
-        style={{ background: 'linear-gradient(135deg,#fbbf24,#ef4444,#3b82f6)' }}>
+        className="relative w-5 h-5 rounded-full border-2 border-border hover:scale-105 active:scale-100 transition-transform duration-fast ease-token"
+        style={{ background: `linear-gradient(135deg,${COLORS[0]},${COLORS[1]},${COLORS[2]})` }}>
         <input ref={colorRef} type="color" onChange={(e) => updateAnnotationsUndoable(docId, ids, { color: e.target.value })}
           className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
       </button>

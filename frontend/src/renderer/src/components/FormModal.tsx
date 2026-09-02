@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
-import { X, AlertTriangle } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
+import {
+  DialogShell, DialogHeader, DialogFooter, btnPrimary, btnDanger, btnGhost, fieldInput, nativeAccent,
+} from './panelUi'
 
 export interface Field {
   name: string
@@ -53,79 +56,62 @@ function FormModal({ title, fields, submitLabel, confirm, destructive, message, 
   })
   const set = (n: string, val: string | boolean) => setValues((p) => ({ ...p, [n]: val }))
   const showCancel = confirm || !fields.every((f) => f.readOnly)
-  const inputCls = `w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent`
-
-  const dialogRef = useRef<HTMLDivElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
 
   // Foco inicial: en confirmaciones destructivas, sobre Cancelar (opción segura).
   useEffect(() => { if (confirm) cancelRef.current?.focus() }, [confirm])
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { e.preventDefault(); onCancel(); return }
-    if (e.key !== 'Tab') return
-    const nodes = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button, input, select, textarea, [tabindex]:not([tabindex="-1"])')
-    if (!nodes || nodes.length === 0) return
-    const first = nodes[0], last = nodes[nodes.length - 1]
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
-  }
-
   return (
-    <div className="overlay-in fixed inset-0 z-prompt flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onCancel}>
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title}
-        onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}
-        className="panel-in w-[380px] max-w-[92vw] rounded-token border shadow-token-lg bg-panel border-border text-fg">
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-          {destructive && <AlertTriangle size={16} className="text-danger shrink-0" />}
-          <h2 className="text-base font-semibold flex-1">{title}</h2>
-          <button onClick={onCancel} aria-label="Cerrar" className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
+    <DialogShell label={title} zClass="z-prompt" panelClass="w-[380px] flex flex-col max-h-[84vh]" onClose={onCancel}>
+      <DialogHeader title={title} onClose={onCancel}
+        icon={destructive ? AlertTriangle : undefined} iconClass="text-danger" />
+      {confirm ? (
+        <div className="px-4 py-4">
+          <p className="text-base whitespace-pre-wrap text-fg">{message}</p>
         </div>
-        {confirm ? (
-          <div className="px-4 py-4">
-            <p className="text-base whitespace-pre-wrap text-fg">{message}</p>
-          </div>
-        ) : (
-        <div className="px-4 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
+      ) : (
+        <div className="px-4 py-4 space-y-3 flex-1 min-h-0 overflow-y-auto">
           {fields.map((f) => (
             <div key={f.name} className={f.type === 'checkbox' ? 'flex items-center gap-2' : 'space-y-1'}>
               {f.type === 'checkbox' ? (
                 <label className="flex items-center gap-2 text-base cursor-pointer text-fg">
-                  <input type="checkbox" checked={!!values[f.name]} onChange={(e) => set(f.name, e.target.checked)} />
+                  <input type="checkbox" checked={!!values[f.name]} style={nativeAccent}
+                    onChange={(e) => set(f.name, e.target.checked)} />
                   {f.label}
                 </label>
               ) : (
                 <>
-                  <label className="block text-mini text-muted">{f.label}</label>
+                  <label className="block text-mini text-muted" htmlFor={`fm-${f.name}`}>{f.label}</label>
                   {f.type === 'select' ? (
-                    <select value={String(values[f.name])} onChange={(e) => set(f.name, e.target.value)} className={inputCls}>
+                    <select id={`fm-${f.name}`} value={String(values[f.name])} onChange={(e) => set(f.name, e.target.value)}
+                      className={`${fieldInput} w-full`}>
                       {(f.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
                   ) : f.type === 'textarea' ? (
-                    <textarea value={String(values[f.name])} readOnly={f.readOnly} rows={f.readOnly ? 8 : 3}
+                    <textarea id={`fm-${f.name}`} value={String(values[f.name])} readOnly={f.readOnly} rows={f.readOnly ? 8 : 3}
                       onChange={(e) => set(f.name, e.target.value)} placeholder={f.placeholder}
-                      className={`${inputCls} resize-none ${f.readOnly ? 'whitespace-pre-wrap' : ''}`} />
+                      className={`${fieldInput} w-full resize-none ${f.readOnly ? 'whitespace-pre-wrap' : ''}`} />
                   ) : (
-                    <input type={f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text'}
+                    <input id={`fm-${f.name}`} type={f.type === 'password' ? 'password' : f.type === 'number' ? 'number' : 'text'}
                       autoFocus={fields.findIndex((x) => !x.readOnly) === fields.indexOf(f)}
                       value={String(values[f.name])} min={f.min} max={f.max} placeholder={f.placeholder}
+                      readOnly={f.readOnly}
                       onChange={(e) => set(f.name, e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') onSubmit(values) }}
-                      className={inputCls} />
+                      className={`${fieldInput} w-full`} />
                   )}
                 </>
               )}
             </div>
           ))}
         </div>
-        )}
-        <div className="flex justify-end gap-2 px-4 py-3 border-t border-border">
-          {showCancel && <button ref={cancelRef} onClick={onCancel} className="px-3 py-1.5 text-base rounded-token-sm text-fg hover:bg-hover transition-colors">Cancelar</button>}
-          <button onClick={() => onSubmit(values)}
-            className={`px-4 py-1.5 text-base rounded-token-sm transition-[filter] duration-fast ease-token hover:brightness-110 active:brightness-95 ${destructive ? 'bg-danger text-white' : 'bg-accent text-on-accent'}`}>{submitLabel}</button>
-        </div>
-      </div>
-    </div>
+      )}
+      <DialogFooter>
+        {showCancel && <button ref={cancelRef} onClick={onCancel} className={btnGhost}>Cancelar</button>}
+        <button onClick={() => onSubmit(values)} className={destructive ? btnDanger : btnPrimary}>
+          {submitLabel}
+        </button>
+      </DialogFooter>
+    </DialogShell>
   )
 }

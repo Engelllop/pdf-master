@@ -14,6 +14,9 @@ function TextWidget({ field, style, onCommit }: {
 }) {
   const [draft, setDraft] = useState(field.value)
   useEffect(() => { setDraft(field.value) }, [field.value])
+  // Los campos se apoyan en la lámina, que es blanca en los DOS temas: con
+  // `text-fg` en oscuro serían letras claras sobre papel blanco. De ahí los
+  // tokens del plano de la hoja en vez de los del chrome.
   return (
     <input type="text" value={draft}
       onChange={(e) => setDraft(e.target.value)}
@@ -22,7 +25,7 @@ function TextWidget({ field, style, onCommit }: {
         if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
         else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
       }}
-      className="bg-info/10 hover:bg-info/20 focus:bg-white text-black text-mini border border-info/70 focus:border-info rounded-token-sm px-1 outline-none transition-colors"
+      className="bg-info/10 hover:bg-info/20 focus:bg-paper text-paper-ink text-mini border border-border-control focus:border-paper-ink rounded-token-sm px-1 outline-none transition-colors"
       style={style}
       title={field.field_name}
       aria-label={field.field_name || 'Campo de texto'}
@@ -91,8 +94,15 @@ function LayoutChrome({
       onPointerDown={(e) => onDown(e, 'move')}
       onPointerMove={onMove}
       onPointerUp={onUp}
-      className={`absolute box-border ${selected ? 'ring-2 ring-accent' : 'ring-1 ring-info/70'} bg-info/10 cursor-move`}
-      style={{ left, top, width: w, height: h }}
+      className="absolute box-border cursor-move"
+      style={{
+        left, top, width: w, height: h, pointerEvents: 'auto',
+        // Chrome apoyado en la lámina: el papel no invierte con el tema, así que
+        // `ring-accent`/`ring-info` (azules claros en oscuro) caían a 2.0-2.2:1 sobre
+        // el blanco. El plano --paper-* se lee igual en los dos temas.
+        boxShadow: `0 0 0 ${selected ? 2 : 1}px rgb(var(${selected ? '--paper-ink' : '--paper-muted'}))`,
+        background: 'rgb(var(--paper-muted) / 0.10)',
+      }}
       title={`${field.field_name} — arrastrá para mover`}
     >
       {selected && (
@@ -100,12 +110,13 @@ function LayoutChrome({
           <button type="button" aria-label="Eliminar campo"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="absolute -top-6 right-0 px-1.5 py-0.5 text-micro rounded-token-sm bg-danger text-white shadow">
+            className="absolute -top-7 right-0 px-2 py-1 text-micro rounded-token-sm bg-danger text-on-danger shadow-token-sm transition-[filter] duration-fast ease-token hover:brightness-110 active:brightness-95">
             Borrar
           </button>
           <div
             onPointerDown={(e) => onDown(e, 'resize')}
-            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-accent rounded-token-sm cursor-nwse-resize"
+            className="absolute -right-1.5 -bottom-1.5 w-3 h-3 rounded-token-sm cursor-nwse-resize"
+            style={{ background: 'rgb(var(--paper-ink))' }}
           />
         </>
       )}
@@ -137,6 +148,11 @@ export default function FormFieldsLayer({
     setSelected(null)
   }
 
+  // El listener se registra por seleccion, no por render: `confirmDelete` se recrea en
+  // cada uno y en las deps re-suscribia el keydown sin parar.
+  const confirmDeleteRef = useRef(confirmDelete)
+  confirmDeleteRef.current = confirmDelete
+
   useEffect(() => {
     if (!layoutMode || selected == null) return
     const onKey = (e: KeyboardEvent) => {
@@ -144,22 +160,26 @@ export default function FormFieldsLayer({
       if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
-        void confirmDelete(selected)
+        void confirmDeleteRef.current(selected)
       } else if (e.key === 'Escape') {
         setSelected(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [layoutMode, selected, onTransform])
+  }, [layoutMode, selected])
 
   if (fields.length === 0) return null
   const sx = pageData.width / pageData.originalWidth
   const sy = pageData.height / pageData.originalHeight
   return (
+    // El contenedor NUNCA captura el ratón: cubre la página entera y va por encima
+    // del SVG de marcas, así que con `pointerEvents: auto` se comía TODOS los clics
+    // del documento (pan, seleccionar marca, seleccionar texto) en cuanto el PDF
+    // tenía campos. Cada widget se apunta solo, como en TextLayer.
     <div className="absolute top-0 left-0" style={{
       width: pageData.width, height: pageData.height,
-      pointerEvents: (interactive || layoutMode) ? 'auto' : 'none',
+      pointerEvents: 'none',
       zIndex: 25,
     }}>
       {layoutMode ? fields.map((field) => (
@@ -178,6 +198,7 @@ export default function FormFieldsLayer({
           top: field.rect.y * sy,
           width: field.rect.width * sx,
           height: field.rect.height * sy,
+          pointerEvents: interactive ? ('auto' as const) : ('none' as const),
         }
         const isCheckbox = field.field_type.toLowerCase().includes('check')
         const isRadio = field.field_type.toLowerCase().includes('radio')
@@ -187,7 +208,7 @@ export default function FormFieldsLayer({
             <input key={`${field.field_name}-${i}`} type="checkbox"
               checked={field.value === 'Yes' || field.value === 'On'}
               onChange={(e) => onChange(field.field_name, e.target.checked ? 'Yes' : 'Off')}
-              className="accent-[rgb(var(--info))]"
+              className="accent-[rgb(var(--paper-ink))]"
               style={style}
               title={field.field_name}
               aria-label={field.field_name || 'Casilla'}
@@ -200,7 +221,7 @@ export default function FormFieldsLayer({
             <input key={`${field.field_name}-${i}`} type="radio" name={field.field_name.split('.').slice(0, -1).join('.') || field.field_name}
               checked={checked}
               onChange={() => onChange(field.field_name, field.options[0] || 'Yes')}
-              className="accent-[rgb(var(--info))]"
+              className="accent-[rgb(var(--paper-ink))]"
               style={style}
               title={field.field_name}
               aria-label={field.field_name || 'Opción'}
@@ -212,7 +233,7 @@ export default function FormFieldsLayer({
             <select key={`${field.field_name}-${i}`}
               value={field.value}
               onChange={(e) => onChange(field.field_name, e.target.value)}
-              className="bg-white text-black text-mini border border-info rounded-token-sm"
+              className="bg-paper text-paper-ink text-mini border border-border-control rounded-token-sm"
               style={style}
               title={field.field_name}
               aria-label={field.field_name || 'Lista'}

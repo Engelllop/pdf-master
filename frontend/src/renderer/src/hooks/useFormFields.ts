@@ -13,6 +13,36 @@ export interface FormField {
   options: string[]
 }
 
+// Caché compartida de campos por página. En scroll continuo hay un hook por página
+// visible: sin caché, recorrer un documento largo disparaba una petición por página
+// —y cada una toma el lock global del motor, así que la cola se comía el scroll.
+// El `cancelled` anterior solo tiraba la respuesta: el trabajo en el backend se hacía
+// igual. La clave lleva `docVersion`, así que cualquier edición la invalida sola.
+const fieldsCache = new Map<string, Promise<FormField[]>>()
+
+function fetchFields(docId: string, pageNum: number, version: number): Promise<FormField[]> {
+  const key = `${docId}:${version}:${pageNum}`
+  let p = fieldsCache.get(key)
+  if (!p) {
+    const olvidar = (): FormField[] => { if (fieldsCache.get(key) === p) fieldsCache.delete(key); return [] }
+    p = apiFetch(`/pdf/widgets/${docId}/${pageNum}`)
+      .then((res) => (res.ok ? res.json() : null))
+      // Un 404 (doc_id muerto tras reiniciarse el motor) devuelve `{detail: …}`, no
+      // una lista: sin comprobarlo, el `.map` de la capa de campos reventaba la vista.
+      .then((data) => (Array.isArray(data) ? (data as FormField[]) : olvidar()))
+      .catch(olvidar)
+    fieldsCache.set(key, p)
+    if (fieldsCache.size > 120) {
+      const first = fieldsCache.keys().next().value
+      if (first !== undefined) fieldsCache.delete(first)
+    }
+  }
+  return p
+}
+
+// Toda escritura de campos sube `docVersion` (ver lib/pageUndo), así que la clave
+// cambia sola y no hace falta invalidar a mano.
+
 export function useFormFields(docId: string | null, pageNum: number) {
   const [fields, setFields] = useState<FormField[]>([])
   const docVersion = usePdfStore((s) => s.docs.find((d) => d.doc_id === docId)?.docVersion ?? 0)
@@ -23,16 +53,9 @@ export function useFormFields(docId: string | null, pageNum: number) {
       return
     }
     let cancelled = false
-    apiFetch(`/pdf/widgets/${docId}/${pageNum}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        // Un 404 (doc_id muerto tras reiniciarse el motor) devuelve `{detail: …}`, no
-        // una lista: sin comprobarlo, el `.map` de la capa de campos reventaba la vista.
-        if (!cancelled) setFields(Array.isArray(data) ? data : [])
-      })
-      .catch(() => {
-        if (!cancelled) setFields([])
-      })
+    fetchFields(docId, pageNum, docVersion).then((data) => {
+      if (!cancelled) setFields(data)
+    })
     return () => { cancelled = true }
   }, [docId, pageNum, docVersion])
 

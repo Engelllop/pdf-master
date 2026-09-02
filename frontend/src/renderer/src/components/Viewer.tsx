@@ -41,7 +41,7 @@ export default function Viewer() {
     'docs', 'activeDocId', 'activeTool', 'annotationColor', 'annotationLineWidth',
     'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotations', 'toggleAnnotationSelection',
     'selectedImageData', 'selectedStamp', 'stampColor', 'stampSize',
-    'textFontFamily', 'textFontSize', 'viewerScroll', 'viewMode', 'activeRibbon',
+    'textFontFamily', 'textFontSize', 'viewMode', 'activeRibbon',
     'setViewerSize', 'selectAnnotation', 'deleteAnnotation', 'addBookmark',
     'addAnnotation', 'getAnnotationsForPage', 'incrementDocVersion',
     'invalidatePageCache', 'invalidateThumbnails', 'setActiveTool', 'releaseTool', 'setDocDirty',
@@ -77,19 +77,30 @@ export default function Viewer() {
   const scrollMemRef = useRef(new Map<string, { left: number; top: number }>())
   const lastViewKeyRef = useRef<string | null>(null)
 
+  // El scroll dispara decenas de eventos por segundo y publicarlos uno a uno hacía
+  // un ciclo de render por evento. Se coalescen en un solo aviso por frame.
+  const scrollRafRef = useRef<number | null>(null)
+  useEffect(() => () => { if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current) }, [])
+
   const handleScroll = () => {
     const c = containerRef.current
     if (!c) return
     if (activeDoc && lastViewKeyRef.current === `${activeDoc.doc_id}:${activeDoc.currentPage}`) {
       scrollMemRef.current.set(lastViewKeyRef.current, { left: c.scrollLeft, top: c.scrollTop })
     }
-    store.setViewerScroll({
-      left: c.scrollLeft,
-      top: c.scrollTop,
-      clientWidth: c.clientWidth,
-      clientHeight: c.clientHeight,
-      scrollWidth: c.scrollWidth,
-      scrollHeight: c.scrollHeight,
+    if (scrollRafRef.current !== null) return
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollRafRef.current = null
+      const el = containerRef.current
+      if (!el) return
+      store.setViewerScroll({
+        left: el.scrollLeft,
+        top: el.scrollTop,
+        clientWidth: el.clientWidth,
+        clientHeight: el.clientHeight,
+        scrollWidth: el.scrollWidth,
+        scrollHeight: el.scrollHeight,
+      })
     })
   }
 
@@ -205,11 +216,12 @@ export default function Viewer() {
   const marqueeStartRef = useRef<{ x: number; y: number; additive: boolean } | null>(null)
 
   /** Clic sobre una marca: Ctrl/⌘ suma o resta de la selección, clic normal la aísla. */
-  const handleSelectAnnotation = (e: React.MouseEvent, annId: string) => {
-    if (!activeDoc) return
-    if (e.ctrlKey || e.metaKey) store.toggleAnnotationSelection(activeDoc.doc_id, annId)
-    else selectAnnotation(activeDoc.doc_id, annId)
-  }
+  const handleSelectAnnotation = useCallback((e: React.MouseEvent, annId: string) => {
+    const docId = activeDoc?.doc_id
+    if (!docId) return
+    if (e.ctrlKey || e.metaKey) store.toggleAnnotationSelection(docId, annId)
+    else selectAnnotation(docId, annId)
+  }, [activeDoc?.doc_id, store.toggleAnnotationSelection, selectAnnotation])
 
   // Selección visual de área para recortar/redactar (herramientas 'croparea'/'redactarea')
   const { areaSel, areaSelRef, areaDraggingRef, areaToolRef, setArea, applyArea } = useAreaSelect(activeDoc, pageData)
@@ -576,10 +588,10 @@ export default function Viewer() {
   const [stampGhost, setStampGhost] = useState<{ x: number; y: number } | null>(null)
   const [formHintOff, setFormHintOff] = useState(false)
 
-  const startEditText = (ann: Annotation) => {
+  const startEditText = useCallback((ann: Annotation) => {
     setEditingTextAnn(ann.id)
     setEditTextValue(ann.text || '')
-  }
+  }, [])
 
   // Un callout recién creado abre su editor de texto sin pasar por el doble clic.
   useEffect(() => {
@@ -600,19 +612,57 @@ export default function Viewer() {
     setEditTextValue('')
   }
 
-  // Render annotations
-  const annotations = activeDoc && pageData ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage) : []
+  // Render annotations. Memoizado: `getAnnotationsForPage` filtra y devuelve un array
+  // NUEVO en cada llamada, así que sin esto la capa de marcas se reconstruía entera en
+  // cada render del visor — incluido el que dispara un simple cambio de herramienta.
+  const annotations = useMemo(
+    () => (activeDoc && pageData ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage) : []),
+    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, !!pageData],
+  )
   // Marcas sobre las que actúa el menú contextual: la selección múltiple si la hay,
   // si no la única seleccionada (las dos vías coexisten en el store).
   const seleccionadas = store.selectedAnnotationIds.length > 0
     ? store.selectedAnnotationIds
     : store.selectedAnnotationId ? [store.selectedAnnotationId] : []
-  const annotationsRight = activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []
+  const annotationsRight = useMemo(
+    () => (activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []),
+    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, !!pageDataRight],
+  )
 
-  const textDefaults = { fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }
+  const textDefaults = useMemo(
+    () => ({ fontSize: store.textFontSize || 14, fontFamily: store.textFontFamily || 'Arial' }),
+    [store.textFontSize, store.textFontFamily],
+  )
   // La numeración es por categoría y de todo el documento, no de la página
   const countNums = useMemo(() => countNumbers(activeDoc?.annotations || []), [activeDoc?.annotations])
-  const openNotePopup = (ann: Annotation) => setNotePopup({ annId: ann.id })
+  const openNotePopup = useCallback((ann: Annotation) => setNotePopup({ annId: ann.id }), [])
+
+  // Capa de marcas ya construida. Con un plano de miles de marcas, rehacer estos
+  // elementos en cada render era el coste dominante: elegir una herramienta cambia
+  // `activeTool` (que el visor sí necesita para el cursor y los eventos) y arrastraba
+  // consigo la reconstrucción de TODA la capa. Memoizados, React reconoce los mismos
+  // elementos y se salta el subárbol entero.
+  const annotationEls = useMemo(() => {
+    if (!pageData) return null
+    return annotations.filter((a) => a.id !== editingTextAnn).map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
+      onSelect: (e) => handleSelectAnnotation(e, ann.id),
+      onNoteClick: openNotePopup,
+      onTextDoubleClick: startEditText,
+      textDefaults,
+      countNumbers: countNums,
+    }))
+  }, [annotations, editingTextAnn, pageData, toScreenCoords, handleSelectAnnotation, openNotePopup, startEditText, textDefaults, countNums])
+
+  const annotationElsRight = useMemo(() => {
+    const docId = activeDoc?.doc_id
+    if (!pageDataRight || !docId) return null
+    return annotationsRight.map((ann) => renderAnnotation(ann, pageDataRight, toScreenCoordsRight, {
+      onSelect: () => selectAnnotation(docId, ann.id),
+      onNoteClick: openNotePopup,
+      onTextDoubleClick: startEditText,
+      textDefaults,
+    }))
+  }, [annotationsRight, pageDataRight, toScreenCoordsRight, activeDoc?.doc_id, selectAnnotation, openNotePopup, startEditText, textDefaults])
 
   // Una nota recién colocada abre su globo para escribir de una
   useEffect(() => {
@@ -669,14 +719,13 @@ export default function Viewer() {
             <div className="relative"
               style={{ width: pageData.width, height: pageData.height, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
               <img src={pageData.image} alt={`Página ${activeDoc.currentPage + 1}`}
-                className="rounded-token-sm page-sheet bg-white block" style={{ width: pageData.width, height: pageData.height }} draggable={false}
+                className="rounded-token-sm page-sheet bg-paper block" style={{ width: pageData.width, height: pageData.height }} draggable={false}
                 onError={(e) => recoverImage(e.currentTarget, pageData.image)} />
 
               {/* Crisp deep-zoom overlay for dense plans (single view only) */}
               {!isDouble && (
                 <DetailTile docId={activeDoc.doc_id} page={activeDoc.currentPage} pageData={pageData}
-                  zoom={activeDoc.zoom} version={activeDoc.docVersion} containerRef={containerRef}
-                  scrollKey={`${store.viewerScroll.left}x${store.viewerScroll.top}`} />
+                  zoom={activeDoc.zoom} version={activeDoc.docVersion} containerRef={containerRef} />
               )}
 
               {/* Form fields overlay */}
@@ -705,19 +754,13 @@ export default function Viewer() {
                   return (
                     <rect key={`edit-outline-${i}`} x={b.x * bx - 2} y={b.y * by - 2}
                       width={b.width * bx + 4} height={b.height * by + 4}
-                      fill="none" stroke="#94a3b8" strokeWidth={1} strokeDasharray="4 3" rx={2}
+                      fill="none" stroke="rgb(var(--paper-muted))" strokeWidth={1} strokeDasharray="4 3" rx={2}
                       pointerEvents="none" opacity={0.8} />
                   )
                 })}
 
                 {/* Existing annotations (la que se está editando se oculta: la dibuja el editor) */}
-                {annotations.filter((a) => a.id !== editingTextAnn).map((ann) => renderAnnotation(ann, pageData, toScreenCoords, {
-                  onSelect: (e) => handleSelectAnnotation(e, ann.id),
-                  onNoteClick: openNotePopup,
-                  onTextDoubleClick: startEditText,
-                  textDefaults,
-                  countNumbers: countNums,
-                }))}
+                {annotationEls}
 
                 {/* Pincel del borrador: el cursor del sistema se apaga y el círculo dice
                     exactamente qué se va a llevar. Doble aro (oscuro + claro) para que
@@ -737,10 +780,10 @@ export default function Viewer() {
                 {store.activeTool === 'eraser' && eraserPos && (
                   <g pointerEvents="none">
                     <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
-                      fill="rgba(255,255,255,0.18)" stroke="rgba(0,0,0,0.55)" strokeWidth={2.5}
+                      fill="rgb(var(--on-scrim) / 0.18)" stroke="rgb(var(--scrim) / 0.55)" strokeWidth={2.5}
                       strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
                     <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
-                      fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth={1}
+                      fill="none" stroke="rgb(var(--on-scrim) / 0.9)" strokeWidth={1}
                       strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
                   </g>
                 )}
@@ -774,11 +817,11 @@ export default function Viewer() {
                   const sp = toScreenCoords(snapPoint.x, snapPoint.y)
                   return (
                     <g pointerEvents="none">
-                      <circle cx={sp.x} cy={sp.y} r={7} fill="none" stroke="#22c55e" strokeWidth={2} />
-                      <line x1={sp.x - 11} y1={sp.y} x2={sp.x - 4} y2={sp.y} stroke="#22c55e" strokeWidth={1.5} />
-                      <line x1={sp.x + 4} y1={sp.y} x2={sp.x + 11} y2={sp.y} stroke="#22c55e" strokeWidth={1.5} />
-                      <line x1={sp.x} y1={sp.y - 11} x2={sp.x} y2={sp.y - 4} stroke="#22c55e" strokeWidth={1.5} />
-                      <line x1={sp.x} y1={sp.y + 4} x2={sp.x} y2={sp.y + 11} stroke="#22c55e" strokeWidth={1.5} />
+                      <circle cx={sp.x} cy={sp.y} r={7} fill="none" stroke="rgb(var(--paper-ok))" strokeWidth={2} />
+                      <line x1={sp.x - 11} y1={sp.y} x2={sp.x - 4} y2={sp.y} stroke="rgb(var(--paper-ok))" strokeWidth={1.5} />
+                      <line x1={sp.x + 4} y1={sp.y} x2={sp.x + 11} y2={sp.y} stroke="rgb(var(--paper-ok))" strokeWidth={1.5} />
+                      <line x1={sp.x} y1={sp.y - 11} x2={sp.x} y2={sp.y - 4} stroke="rgb(var(--paper-ok))" strokeWidth={1.5} />
+                      <line x1={sp.x} y1={sp.y + 4} x2={sp.x} y2={sp.y + 11} stroke="rgb(var(--paper-ok))" strokeWidth={1.5} />
                     </g>
                   )
                 })()}
@@ -787,7 +830,7 @@ export default function Viewer() {
                     y={toScreenCoords(Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0)), Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))).y}
                     width={Math.abs((drawPreview.width || 0) * (pageData.width / pageData.originalWidth))}
                     height={Math.abs((drawPreview.height || 0) * (pageData.height / pageData.originalHeight))}
-                    fill="#10b981" fillOpacity={0.3} stroke="#10b981" strokeWidth={1} rx={2} />
+                    fill="rgb(var(--paper-ok))" fillOpacity={0.3} stroke="rgb(var(--paper-ok))" strokeWidth={1} rx={2} />
                 )}
                 {drawPreview?.type === 'draw' && drawPoints.length > 1 && (
                   <path d={drawPoints.map((p, i) => {
@@ -881,7 +924,7 @@ export default function Viewer() {
                 return (
                   <div className="absolute z-float flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
                     <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
-                      className="px-2 py-1 text-mini rounded-token-sm bg-danger text-white shadow-token-sm transition-[filter] duration-fast ease-token hover:brightness-110">Eliminar</button>
+                      className="px-2 py-1 text-mini rounded-token-sm bg-danger text-on-danger shadow-token-sm transition-[filter] duration-fast ease-token hover:brightness-110">Eliminar</button>
                     <button onMouseDown={(e) => e.stopPropagation()}
                       onClick={async () => { const p = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
                       className="px-2 py-1 text-mini rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token shadow-token-sm">Reemplazar</button>
@@ -919,7 +962,7 @@ export default function Viewer() {
                     className="absolute z-float outline-none resize-none overflow-hidden leading-tight"
                     style={{
                       left: s.x, top: s.y, fontSize: fpx, fontFamily: editSpan.font || 'Arial',
-                      color: editSpan.color || '#000', background: '#fff',
+                      color: editSpan.color || '#000', background: 'rgb(var(--paper))',
                       width: w, height: fpx * 1.5,
                       border: '1px solid rgb(var(--fg))', padding: 0, whiteSpace: 'pre',
                     }} />
@@ -1027,7 +1070,7 @@ export default function Viewer() {
             <div className="relative"
               style={{ width: pageDataRight.width, height: pageDataRight.height, transform: `scale(${scaleRight})`, transformOrigin: 'top left' }}>
               <img src={pageDataRight.image} alt={`Página ${activeDoc.currentPage + 2}`}
-                className="rounded-token-sm page-sheet bg-white block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
+                className="rounded-token-sm page-sheet bg-paper block" style={{ width: pageDataRight.width, height: pageDataRight.height }} draggable={false}
                 onError={(e) => recoverImage(e.currentTarget, pageDataRight.image)} />
 
               {/* Selectable text layer (right page) */}
@@ -1061,12 +1104,7 @@ export default function Viewer() {
                   if (!activeDoc) return
                   openMenu(e.clientX, e.clientY)
                 }}>
-                {annotationsRight.map((ann) => renderAnnotation(ann, pageDataRight, toScreenCoordsRight, {
-                  onSelect: () => selectAnnotation(activeDoc.doc_id, ann.id),
-                  onNoteClick: openNotePopup,
-                  onTextDoubleClick: startEditText,
-                  textDefaults,
-                }))}
+                {annotationElsRight}
                 {selectedAnnRight && (
                   <SelectionOverlay ann={selectedAnnRight} pageData={pageDataRight} toScreen={toScreenCoordsRight}
                     onResizeStart={setResizingAnnRight} onRotateStart={setRotatingAnn} />
@@ -1088,7 +1126,7 @@ export default function Viewer() {
             <svg className="w-14 h-14 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
-            <span className="text-fg text-lg font-medium">Soltá el PDF acá</span>
+            <span className="text-fg text-base font-medium">Soltá el PDF acá</span>
           </div>
         </div>
       )}

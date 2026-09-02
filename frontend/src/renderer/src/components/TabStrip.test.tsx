@@ -60,15 +60,19 @@ describe('sucio', () => {
 })
 
 describe('jerarquía de la tira', () => {
-  it('la pestaña activa no se pinta hundida: se marca con el acento', () => {
+  it('la pestaña activa no se pinta hundida: se levanta al plano de la barra', () => {
     openDoc('doc-1', 'a.pdf')
     openDoc('doc-2', 'b.pdf')
     render(<TabStrip />)
-    const activa = screen.getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!
-    // `bg-surface` es la mesa del documento: sobre la barra blanca dejaba la pestaña
-    // activa MÁS oscura que las inactivas, o sea hundida.
+    const tabs = screen.getAllByRole('tab')
+    const activa = tabs.find((t) => t.getAttribute('aria-selected') === 'true')!
+    const inactiva = tabs.find((t) => t.getAttribute('aria-selected') !== 'true')!
+    // Lógica tonal de navegador: la activa comparte plano con la barra y las
+    // inactivas se hunden a la mesa. El subrayado accent se retiró a propósito —
+    // marcaba el mismo eje que los modos de cinta, una fila más abajo.
+    expect(activa.className).toMatch(/bg-toolbar/)
     expect(activa.className).not.toMatch(/bg-surface/)
-    expect(activa.querySelector('.bg-accent')).toBeTruthy()
+    expect(inactiva.className).toMatch(/bg-surface/)
   })
 
   it('en la lista de pestañas, el activo no se marca con el color del hover', () => {

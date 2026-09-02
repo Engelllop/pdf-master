@@ -89,12 +89,9 @@ export default function TabStrip() {
                 dragId === doc.doc_id ? 'opacity-50' : ''
               } ${
                 doc.doc_id === activeDocId
-                  ? 'text-fg font-medium'
-                  : 'text-muted hover:bg-hover hover:text-fg'
+                  ? 'bg-toolbar text-fg font-medium border-x border-t border-border -mb-px'
+                  : 'bg-surface text-muted hover:bg-hover hover:text-fg'
               }`}>
-              {doc.doc_id === activeDocId && (
-                <span className="absolute left-1.5 right-1.5 bottom-0 h-0.5 rounded-full bg-accent" aria-hidden />
-              )}
               {loadingDocId === doc.doc_id
                 ? <Loader2 size={14} className="animate-spin text-accent shrink-0" />
                 : <FileText size={14} className="shrink-0 text-muted" />}
@@ -104,12 +101,12 @@ export default function TabStrip() {
               )}
               <button onClick={(e) => { e.stopPropagation(); requestCloseDoc(doc.doc_id) }}
                 aria-label={`Cerrar ${doc.file_name}`}
-                className={`shrink-0 p-0.5 rounded-token-sm transition-opacity hover:bg-hover ${
+                className={`shrink-0 p-1 rounded-token-sm transition-opacity hover:bg-hover ${
                   doc.doc_id === activeDocId
                     ? 'opacity-100'
                     : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100'
                 }`}>
-                <X size={12} />
+                <X size={14} />
               </button>
             </div>
           ))}
@@ -132,7 +129,9 @@ export default function TabStrip() {
         <div className="app-no-drag relative h-full flex items-center">
           <Tooltip content="Ir a pestaña…">
             <button onClick={() => setTabListOpen((o) => !o)} aria-label="Lista de pestañas"
-              className={`p-2 h-full transition-colors ${tabListOpen ? 'bg-accent text-on-accent' : 'text-muted'} hover:bg-hover`}>
+              className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-colors ${
+                tabListOpen ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
+              }`}>
               <ChevronsUpDown size={16} />
             </button>
           </Tooltip>

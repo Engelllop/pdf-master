@@ -10,16 +10,28 @@ module.exports = {
         toolbar: 'rgb(var(--toolbar) / <alpha-value>)',
         border: 'rgb(var(--border) / <alpha-value>)',
         'border-strong': 'rgb(var(--border-strong) / <alpha-value>)',
+        // Solo para el contorno de un control (input, select, textarea, casilla):
+        // `border` es hairline decorativo y no llega al 3:1 que pide WCAG 1.4.11.
+        'border-control': 'rgb(var(--border-control) / <alpha-value>)',
+        // La lámina de PDF: blanco a propósito e igual en los dos temas. Existe para
+        // distinguirla de un `bg-white` olvidado.
+        paper: 'rgb(var(--paper) / <alpha-value>)',
+        'paper-ink': 'rgb(var(--paper-ink) / <alpha-value>)',
         fg: 'rgb(var(--fg) / <alpha-value>)',
         muted: 'rgb(var(--muted) / <alpha-value>)',
         accent: 'rgb(var(--accent) / <alpha-value>)',
         // Texto/icono encima de --accent: en claro y en oscuro el relleno es azul, así
         // que `text-toolbar` (el color del panel) dejaba texto ilegible en oscuro.
         'on-accent': 'rgb(var(--on-accent) / <alpha-value>)',
+        // Encima del scrim, que es oscuro en los dos temas: `on-accent` no sirve
+        // porque en oscuro es tinta.
+        'on-scrim': 'rgb(var(--on-scrim) / <alpha-value>)',
         hover: 'rgb(var(--hover) / <alpha-value>)',
         active: 'rgb(var(--active) / <alpha-value>)',
         // Estados: versiones apagadas, no los rojos/verdes saturados de Tailwind.
         danger: 'rgb(var(--danger) / <alpha-value>)',
+        // --danger en oscuro es un salmon claro: `text-white` encima daba 2.56:1.
+        'on-danger': 'rgb(var(--on-danger) / <alpha-value>)',
         success: 'rgb(var(--success) / <alpha-value>)',
         warning: 'rgb(var(--warning) / <alpha-value>)',
         info: 'rgb(var(--info) / <alpha-value>)'
@@ -33,7 +45,6 @@ module.exports = {
       // popovers, lg modales y hojas, page la lámina de PDF sobre la mesa.
       boxShadow: {
         'token-sm': 'var(--shadow-sm)',
-        token: 'var(--shadow)',
         'token-md': 'var(--shadow-md)',
         'token-lg': 'var(--shadow-lg)',
         page: 'var(--shadow-page)'
@@ -52,7 +63,11 @@ module.exports = {
         micro: ['11px', '1.35'],
         mini: ['12px', '1.4'],
         ui: ['13px', '1.45'],
-        base: ['14px', '1.5']
+        base: ['14px', '1.5'],
+        // Único tamaño por encima del cuerpo: título de pantalla vacía y de pantalla
+        // de error. DESIGN.md ya lo declaraba y nunca existió como token, así que
+        // había text-lg, text-xl y text-2xl fuera de escala.
+        display: ['20px', '1.25']
       },
       // Escala de capas por ROL, de abajo arriba. Los números son los que la app ya
       // usaba: esto no reordena nada, le pone nombre. La escala anterior se quedaba

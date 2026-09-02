@@ -4,6 +4,7 @@ import { type PdfDoc, type Annotation } from '../store/usePdfStore'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
 import { countNumbers } from '../lib/counts'
+import { EmptyState, iconBtn, iconBtnDanger, rowIdle, rowSelected } from './panelUi'
 
 function inkOnTint(hex: string): 'text-black' | 'text-white' {
   const h = hex.replace('#', '')
@@ -13,8 +14,14 @@ function inkOnTint(hex: string): 'text-black' | 'text-white' {
   const r = (n >> 16) & 255
   const g = (n >> 8) & 255
   const b = n & 255
-  const L = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-  return L > 0.55 ? 'text-black' : 'text-white'
+  // Sin linealizar gamma, un #3b82f6 salia con `text-white` a 3.68:1 y estos chips
+  // van a 11px. Se usa la luminancia relativa de WCAG con su umbral real.
+  const lin = (c: number): number => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+  return L > 0.179 ? 'text-black' : 'text-white'
 }
 
 /** Inventario de las marcas de conteo: totales por categoría, dónde está cada una
@@ -105,30 +112,31 @@ Ctrl+Z lo deshace.`,
 
   if (total === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-6 text-center">
-        <Tally5 size={18} className="text-muted" />
-        <p className="text-mini text-muted">
-          Sin marcas de conteo.<br />Elegí la herramienta <b className="text-fg">Conteo</b> y hacé clic sobre cada elemento: se numeran solas.
-        </p>
-      </div>
+      <EmptyState icon={Tally5}>
+        Sin marcas de conteo.<br />Elegí la herramienta <b className="text-fg">Conteo</b> y hacé clic sobre cada elemento: se numeran solas.
+      </EmptyState>
     )
   }
 
   return (
-    <div className="flex-1 overflow-y-auto text-base">
-      <div className="sticky top-0 z-raised bg-panel/95 backdrop-blur-[2px] px-3 py-2 border-b border-border flex items-baseline justify-between">
+    <div className="flex-1 flex flex-col min-h-0 text-base">
+      {/* La barra de totales, hermana del scroll y no su primera fila: dentro, las
+          cabeceras de categoría tenían que esquivarla con un `top-[37px]` medido a
+          mano, y cualquier cambio de padding las solapaba. */}
+      <div className="flex items-baseline justify-between px-3 py-2 border-b border-border shrink-0">
         <span className="text-micro font-semibold uppercase tracking-wider text-muted">
           {groups.size} categoría(s)
         </span>
         <span className="text-mini font-semibold text-fg tabular">{total} marcas</span>
       </div>
+      <div className="flex-1 overflow-y-auto p-2">
       {[...groups.entries()].map(([cat, list]) => {
         const isOpen = open[cat] ?? true
         const color = list[0]?.color || '#fbbf24'
         return (
           <div key={cat} className="border-b border-border">
-            <div className={`group/cat sticky top-[37px] z-raised w-full flex items-center gap-2 px-2 py-1.5 backdrop-blur-[2px] transition-colors duration-fast ease-token ${
-              countCategory === cat ? 'bg-accent/10 hover:bg-accent/15' : 'bg-panel/95 hover:bg-hover'
+            <div className={`group/cat sticky top-0 z-raised w-full flex items-center gap-2 px-2 py-1.5 min-h-7 rounded-token-sm border backdrop-blur-[2px] transition-colors duration-fast ease-token ${
+              countCategory === cat ? rowSelected : `bg-panel/95 ${rowIdle}`
             }`}>
               <button onClick={() => setOpen((o) => ({ ...o, [cat]: !isOpen }))} className="text-muted shrink-0" aria-label={`${isOpen ? 'Contraer' : 'Desplegar'} la categoría ${cat}`}>
                 {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -155,18 +163,19 @@ Ctrl+Z lo deshace.`,
                       countCategory === cat ? 'text-fg font-medium' : 'text-fg'
                     }`}>
                     {cat}
+                    {/* Chip, no letra de acento: el accent es relleno de estado activo. */}
                     {countCategory === cat && (
-                      <span className="ml-1.5 text-micro font-normal text-accent">· contando</span>
+                      <span className="ml-1.5 bg-accent text-on-accent text-micro font-normal px-1.5 rounded-token-sm">contando</span>
                     )}
                   </button>
                   <button onClick={() => { setRenombrando(cat); setNombreNuevo(cat) }}
                     title="Renombrar la categoría" aria-label={`Renombrar la categoría ${cat}`}
-                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-hover">
-                    <Pencil size={12} />
+                    className={`${iconBtn} opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100`}>
+                    <Pencil size={14} />
                   </button>
-                  <label className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-within:opacity-100 hover:text-fg hover:bg-hover cursor-pointer"
+                  <label className={`${iconBtn} opacity-0 group-hover/cat:opacity-100 focus-within:opacity-100 cursor-pointer`}
                     title="Color de toda la categoría">
-                    <Palette size={12} />
+                    <Palette size={14} />
                     <input type="color" value={color}
                       onChange={(e) => recolorear(list, e.target.value)}
                       aria-label={`Color de la categoría ${cat}`}
@@ -174,15 +183,15 @@ Ctrl+Z lo deshace.`,
                   </label>
                   <button onClick={() => { void borrarCategoria(cat, list) }}
                     title="Eliminar toda la categoría" aria-label={`Eliminar la categoría ${cat}`}
-                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-hover">
-                    <Trash2 size={12} />
+                    className={`${iconBtnDanger} opacity-0 group-hover/cat:opacity-100 focus-visible:opacity-100`}>
+                    <Trash2 size={14} />
                   </button>
                 </>
               )}
               <span className="text-mini font-semibold text-fg tabular shrink-0">{list.length}</span>
             </div>
             {isOpen && list.map((a) => (
-              <div key={a.id} className="pl-8 pr-2 py-1 hover:bg-hover group">
+              <div key={a.id} className="pl-8 pr-2 py-1.5 min-h-7 rounded-token-sm hover:bg-hover group">
                 <div className="flex items-center gap-2">
                   <button onClick={() => goTo(a)} className="flex-1 flex items-center gap-2 text-left min-w-0">
                     <span className={`w-5 h-5 rounded-full text-micro flex items-center justify-center shrink-0 tabular ${inkOnTint(a.color || '#fbbf24')}`}
@@ -191,11 +200,11 @@ Ctrl+Z lo deshace.`,
                     <span className="text-micro text-fg truncate">{comment(a)}</span>
                   </button>
                   <button onClick={() => { setEditing(a.id); setDraft(comment(a)) }} title="Comentar" aria-label="Comentar esta marca"
-                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-fg hover:bg-hover">
+                    className={`${iconBtn} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}>
                     <MessageSquarePlus size={14} />
                   </button>
                   <button onClick={() => deleteAnnotation(activeDoc.doc_id, a.id)} title="Eliminar marca" aria-label="Eliminar esta marca de conteo"
-                    className="p-1 rounded-token-sm text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-danger hover:bg-hover">
+                    className={`${iconBtnDanger} opacity-0 group-hover:opacity-100 focus-visible:opacity-100`}>
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -213,6 +222,7 @@ Ctrl+Z lo deshace.`,
           </div>
         )
       })}
+      </div>
     </div>
   )
 }

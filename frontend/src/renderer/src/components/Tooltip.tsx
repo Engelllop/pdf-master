@@ -8,7 +8,14 @@ interface TooltipProps {
 }
 
 const RETARDO_MS = 200
+const GRACIA_MS = 300
 const MARGEN_PANTALLA = 8
+
+// Recorrer la cinta cobraba los 200 ms de retardo en CADA boton. Una vez que ya hay
+// un tooltip abierto el usuario esta leyendo etiquetas: los siguientes salen
+// instantaneos y sin fade, y el retardo solo vuelve tras un rato sin ninguno.
+let enRafaga = false
+let finRafaga: ReturnType<typeof setTimeout> | null = null
 
 export default function Tooltip({ content, children, position = 'bottom', shortcut }: TooltipProps) {
   const [visible, setVisible] = useState(false)
@@ -16,13 +23,24 @@ export default function Tooltip({ content, children, position = 'bottom', shortc
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const globoRef = useRef<HTMLDivElement>(null)
 
+  const [instantaneo, setInstantaneo] = useState(false)
+
+  const abrir = () => {
+    if (finRafaga) { clearTimeout(finRafaga); finRafaga = null }
+    enRafaga = true
+    setVisible(true)
+  }
   const show = () => {
-    timerRef.current = setTimeout(() => setVisible(true), RETARDO_MS)
+    if (enRafaga) { setInstantaneo(true); abrir(); return }
+    setInstantaneo(false)
+    timerRef.current = setTimeout(abrir, RETARDO_MS)
   }
   const hide = () => {
     if (timerRef.current) clearTimeout(timerRef.current)
     setVisible(false)
     setDesvio(0)
+    if (finRafaga) clearTimeout(finRafaga)
+    finRafaga = setTimeout(() => { enRafaga = false; finRafaga = null }, GRACIA_MS)
   }
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
@@ -74,7 +92,7 @@ export default function Tooltip({ content, children, position = 'bottom', shortc
       {visible && (
         <div ref={globoRef} role="tooltip"
           style={centrado ? { transform: `translateX(calc(-50% + ${desvio}px))` } : undefined}
-          className={`absolute z-tooltip px-2 py-1 bg-fg text-toolbar text-mini rounded-token-sm shadow-token-md border border-border pointer-events-none max-w-[260px] w-max text-left leading-snug ${posClasses[position]}`}>
+          className={`${instantaneo ? '' : 'tooltip-in '}absolute z-tooltip px-2 py-1 bg-fg text-toolbar text-mini rounded-token-sm shadow-token-md border border-border pointer-events-none max-w-[260px] w-max text-left leading-snug ${posClasses[position]}`}>
           {content}
           {shortcut && (
             <kbd className="ml-1.5 px-1 py-px rounded-token-sm bg-toolbar/15 border border-toolbar/30 text-toolbar text-micro font-sans tabular">

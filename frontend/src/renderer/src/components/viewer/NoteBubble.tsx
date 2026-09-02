@@ -106,7 +106,7 @@ export default function NoteBubble({ ann, docId, pageData, toScreen, scale, wrap
         ...(below
           ? { borderBottom: `${TAIL}px solid ${tint}` }
           : { borderTop: `${TAIL}px solid ${tint}` }),
-        filter: 'drop-shadow(0 1px 1px rgba(0,0,0,0.15))',
+        filter: 'drop-shadow(var(--shadow-drop))',
       } as React.CSSProperties} />
       <div className="rounded-token-lg shadow-token-lg overflow-hidden bg-panel border"
         style={{ borderColor: tint }}>

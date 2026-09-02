@@ -44,13 +44,22 @@ class RenderMixin:
             # Sin cambios y sin cifrado, el documento en memoria es el archivo: leerlo
             # de disco evita re-comprimir decenas de MB (con el lock y el único worker
             # tomados) cada vez que PDF.js pide el PDF de un plano recién abierto.
-            if not self._dirty.get(doc_id) and not doc.is_encrypted:
-                try:
-                    with open(self._doc_path(doc_id), "rb") as fh:
-                        return fh.read()
-                except OSError:
-                    pass
-            return doc.tobytes(garbage=0, deflate=True)
+            ruta = self._doc_path(doc_id) if (not self._dirty.get(doc_id) and not doc.is_encrypted) else None
+            if not ruta:
+                return doc.tobytes(garbage=0, deflate=True)
+
+        # El read() va FUERA del lock: son decenas o cientos de MB de disco y mientras
+        # tanto ninguna otra petición (medir, buscar, guardar otro plano) podía entrar.
+        # Es seguro porque el guardado es atómico (temp + os.replace): se lee el archivo
+        # entero de antes o el entero de después, nunca uno a medio escribir.
+        try:
+            with open(ruta, "rb") as fh:
+                return fh.read()
+        except OSError:
+            pass
+        with self._lock:
+            doc = self._acquire(doc_id)
+            return doc.tobytes(garbage=0, deflate=True) if doc else None
 
     def get_pdf_bytes_with_marks(self, doc_id: str) -> Optional[bytes]:
         """Como get_pdf_bytes pero con las marcas pendientes dibujadas encima, sobre una

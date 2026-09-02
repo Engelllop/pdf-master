@@ -621,6 +621,12 @@ function getPageCacheKey(page: number): string {
 // así que 80 cubre el ida y vuelta sin dejar crecer el Map con el documento entero.
 const MAX_THUMBS = 80
 
+// Presupuesto de la caché de bitmaps de página. 64 MPx ≈ 256 MB una vez decodificados
+// (4 bytes por píxel), que es lo que de verdad ocupa un plano grande en el compositor.
+const MAX_PAGE_CACHE_PX = 64_000_000
+const MAX_PAGE_CACHE_ENTRIES = 40
+const MIN_PAGE_CACHE = 4
+
 export const usePdfStore = create<PdfState>((set, get) => ({
   docs: [],
   activeDocId: null,
@@ -847,13 +853,22 @@ export const usePdfStore = create<PdfState>((set, get) => ({
         const replaced = cache.get(getPageCacheKey(page))
         if (replaced && replaced.image !== data.image) revokePageUrl(replaced.image)
         cache.set(getPageCacheKey(page), data)
-        if (cache.size > 100) {
+        // El desalojo va por PÍXELES, no por número de entradas. Con el tope viejo de
+        // 100 entradas y un plano rasterizado a 6000 px de lado (24 MPx ≈ 96 MB ya
+        // decodificado en el compositor), la caché de un solo documento podía pasarse
+        // del giga: el proceso se iba a swap y la app daba tirones al cambiar de
+        // herramienta o de página. Se conservan como mínimo 4 páginas (la actual y
+        // sus vecinas precargadas) pase lo que pase.
+        let px = 0
+        for (const v of cache.values()) px += v.width * v.height
+        while (cache.size > MIN_PAGE_CACHE && (px > MAX_PAGE_CACHE_PX || cache.size > MAX_PAGE_CACHE_ENTRIES)) {
           const first = cache.keys().next().value
-          if (first !== undefined) {
-            // Los bitmaps son blob URLs: borrar la entrada no libera los MB del blob.
-            revokePageUrl(cache.get(first)?.image)
-            cache.delete(first)
-          }
+          if (first === undefined) break
+          const viejo = cache.get(first)
+          if (viejo) px -= viejo.width * viejo.height
+          // Los bitmaps son blob URLs: borrar la entrada no libera los MB del blob.
+          revokePageUrl(viejo?.image)
+          cache.delete(first)
         }
         return { ...d, pageCache: cache }
       }),
@@ -1252,7 +1267,18 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   setSelectedImagePath: (path) => set({ selectedImagePath: path }),
   setSelectedImageData: (data) => set({ selectedImageData: data }),
 
-  setViewerScroll: (scroll) => set({ viewerScroll: scroll }),
+  setViewerScroll: (scroll) => {
+    // Sin comparar, cada evento de scroll publicaba un objeto nuevo y despertaba a
+    // todo suscriptor de `viewerScroll` aunque el encuadre no hubiera cambiado
+    // (rebotes, scroll horizontal a tope, resize que no mueve nada).
+    const p = get().viewerScroll
+    if (
+      p.left === scroll.left && p.top === scroll.top &&
+      p.clientWidth === scroll.clientWidth && p.clientHeight === scroll.clientHeight &&
+      p.scrollWidth === scroll.scrollWidth && p.scrollHeight === scroll.scrollHeight
+    ) return
+    set({ viewerScroll: scroll })
+  },
   setSelectedStamp: (stamp) => set({ selectedStamp: stamp }),
   setStampColor: (color) => set({ stampColor: color }),
   setStampSize: (size) => set({ stampSize: Math.max(6, Math.min(96, size)) }),
@@ -1596,8 +1622,10 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     })
   },
 
-  // El aviso se marca como saliente y se retira 120 ms después (lo que dura
-  // `toast-out`): antes entraba animado y desaparecía de golpe.
+  // El aviso se marca como saliente y se retira 180 ms después (`--dur`, lo que tarda
+  // su hueco en colapsar; el desvanecido es más corto y termina antes): antes entraba
+  // animado y desaparecía de golpe, y con solo desvanecerlo el hueco seguía ocupado
+  // hasta el final y los avisos de abajo daban un salto seco.
   showToast: (message, type = 'info') => {
     const id = crypto.randomUUID()
     set((state) => ({ toasts: [...state.toasts, { id, message, type }] }))
@@ -1608,7 +1636,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     set((state) => ({ toasts: state.toasts.map((t) => (t.id === id ? { ...t, leaving: true } : t)) }))
     setTimeout(() => {
       set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) }))
-    }, 120)
+    }, 180)
   },
 
   setCompareDoc: (docId) => set({ compareDocId: docId, compareZoom: 1 }),

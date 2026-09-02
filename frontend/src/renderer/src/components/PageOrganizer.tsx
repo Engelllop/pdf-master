@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  RotateCw, RotateCcw, Trash2, Copy, FilePlus2, Scissors, CheckSquare, Square, ArrowLeft, Check,
-} from 'lucide-react'
+import { CheckSquare, Square, ArrowLeft, Check } from 'lucide-react'
+import { PageActions } from './panelUi'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
@@ -248,12 +247,13 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
           <span className="text-micro text-fg tabular">{selected.size} seleccionada(s)</span>
         )}
         <div className="w-px h-5 bg-border mx-1" />
-        <button onClick={() => rotate(-90)} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><RotateCcw size={14} /> Izq.</button>
-        <button onClick={() => rotate(90)} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><RotateCw size={14} /> Der.</button>
-        <button onClick={duplicate} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><Copy size={14} /> Duplicar</button>
-        <button onClick={insertBlank} disabled={busy} className={`${action} text-fg hover:bg-hover`}><FilePlus2 size={14} /> En blanco</button>
-        <button onClick={extract} disabled={busy || selected.size === 0} className={`${action} text-fg hover:bg-hover`}><Scissors size={14} /> Extraer</button>
-        <button onClick={remove} disabled={busy || selected.size === 0} className={`${action} text-danger hover:bg-danger/10`}><Trash2 size={14} /> Eliminar</button>
+        {/* Las mismas seis acciones que la barra flotante de las miniaturas. */}
+        <PageActions noSelection={selected.size === 0} busy={busy}
+          onRotate={(g) => { void rotate(g) }}
+          onDuplicate={() => { void duplicate() }}
+          onInsertBlank={() => { void insertBlank() }}
+          onExtract={() => { void extract() }}
+          onDelete={() => { void remove() }} />
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4">
@@ -274,7 +274,7 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
                 title={`Página ${i + 1} — doble clic para ir`}
                 className={`group cursor-pointer ${dragIndex === i ? 'opacity-40' : ''}`}>
                 <div className={`relative aspect-[3/4] flex items-center justify-center overflow-hidden rounded-token-sm transition-shadow duration-fast ease-token ${
-                  thumb ? 'bg-white' : 'skeleton'
+                  thumb ? 'bg-paper' : 'skeleton'
                 } ${
                   isSel || dragOver === i
                     ? 'shadow-token-sm ring-2 ring-accent'

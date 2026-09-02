@@ -5,6 +5,7 @@ import { askForm } from '../lib/uiPrompt'
 
 import { apiFetch } from '../lib/api'
 import { getSpans, type SpanItem } from '../lib/spans'
+import { getSnapPoints } from '../lib/snapPoints'
 import { computeLineRects, type LineRect } from '../lib/textMarkup'
 import { addSignature } from '../lib/signatures'
 import { distance, formatDistance } from '../lib/measure'
@@ -76,14 +77,11 @@ export function useAnnotationDraw(
     snapPointsRef.current = []
     setSnapPoint(null)
     if (!isMeasureTool || !activeDoc) return
-    const ctrl = new AbortController()
-    apiFetch(`/pdf/snap-points/${activeDoc.doc_id}/${activeDoc.currentPage}`, { signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data) snapPointsRef.current = data.points
-      })
-      .catch(() => {})
-    return () => ctrl.abort()
+    let vivo = true
+    getSnapPoints(activeDoc.doc_id, activeDoc.currentPage, activeDoc.docVersion).then((points) => {
+      if (vivo) snapPointsRef.current = points
+    })
+    return () => { vivo = false }
     // `docVersion` también: los puntos de snap son los vértices del dibujo, así que
     // rotar la página, recortarla, editar un texto o mover una imagen los cambia. Sin
     // esta dep se seguía enganchando a los vértices de ANTES de la edición (el motor ya

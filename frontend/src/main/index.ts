@@ -15,7 +15,11 @@ import { debeBorrarse, esTempDeImpresion } from './tempSweep'
 app.commandLine.appendSwitch('enable-gpu-rasterization')
 app.commandLine.appendSwitch('enable-zero-copy')
 app.commandLine.appendSwitch('disable-software-rasterizer')
-app.commandLine.appendSwitch('max-old-space-size', '4096')
+// `max-old-space-size` NO es un switch de Chromium: appendSwitch lo dejaba como
+// `--max-old-space-size=4096` en la línea de comandos y V8 nunca lo leía, así que el
+// heap del renderer seguía en el default. Va por `js-flags`, que es lo que Electron
+// reenvía a V8.
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
 
 const API_BASE = 'http://localhost:8745'
 const API_TOKEN = randomBytes(24).toString('hex')
@@ -68,9 +72,17 @@ function rotarLogSiHaceFalta(bytesNuevos: number): void {
   }
 }
 
+// El directorio se crea una vez, no en cada línea: `existsSync` por línea es una
+// llamada al sistema por cada mensaje del motor (que escribe una por página al
+// rasterizar en lote).
+let logDirListo = false
+
 function safeLog(level: string, msg: string): void {
   try {
-    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+    if (!logDirListo) {
+      if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+      logDirListo = true
+    }
     const line = `[${new Date().toISOString()}] [${level}] ${msg}\n`
     rotarLogSiHaceFalta(Buffer.byteLength(line))
     appendFileSync(logFile, line)

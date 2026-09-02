@@ -7,6 +7,7 @@ import { type Annotation, type PdfDoc } from '../store/usePdfStore'
 import { annotationLabel } from '../lib/tools'
 import { askForm } from '../lib/uiPrompt'
 import { formatWhen, formatDateTime } from '../lib/format'
+import { EmptyState, SegmentedGroup, iconBtnDanger, rowSelected } from './panelUi'
 
 type StatusFilter = 'all' | 'open' | 'resolved'
 
@@ -97,10 +98,6 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
   const selectCls = 'flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg focus:outline-none focus:border-accent'
   const resolvedCount = anns.filter((a) => a.status === 'resolved').length
 
-  if (anns.length === 0) {
-    return <p className="text-mini text-center mt-4 text-muted">Sin anotaciones</p>
-  }
-
   // Las capas eran solo un filtro: nada en la app ponía una marca en otra capa (todo se
   // creaba en «Marcas»), así que el selector solo servía para lo que llegaba importado.
   // Acá se aprovecha el filtro: lo que estés viendo es lo que se mueve, en un paso.
@@ -151,16 +148,8 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-0.5 rounded-token border border-border bg-surface p-0.5">
-            {([['all', 'Todas'], ['open', 'Abiertas'], ['resolved', 'Resueltas']] as const).map(([id, label]) => (
-              <button key={id} onClick={() => setStatus(id)} aria-pressed={status === id}
-                className={`px-2 h-6 rounded-token-sm text-micro transition-colors duration-fast ease-token ${
-                  status === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
-                }`}>
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedGroup<StatusFilter> value={status} onChange={setStatus}
+            options={[['all', 'Todas'], ['open', 'Abiertas'], ['resolved', 'Resueltas']]} />
           <label className="flex items-center gap-1 text-micro text-muted cursor-pointer ml-auto" title="Solo la página actual">
             <input type="checkbox" checked={onlyThisPage} onChange={(e) => setOnlyThisPage(e.target.checked)}
               className="w-3 h-3" style={{ accentColor: 'rgb(var(--accent))' }} />
@@ -187,15 +176,14 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-2">
-        {byPage.length === 0 && (
-          <div className="flex flex-col items-center gap-2 px-3 py-8 text-center">
-            <MessageSquare size={18} className="text-muted" />
-            <p className="text-mini text-muted">
-              {anns.length === 0 ? 'Todavia no hay marcas en este documento' : 'Ninguna marca coincide con el filtro'}
-            </p>
-          </div>
-        )}
+      {/* El estado vacío SUSTITUYE al contenedor con scroll: dentro de él, un hijo
+          `flex-1` no se centra y el mensaje quedaba pegado arriba. */}
+      {byPage.length === 0 ? (
+        <EmptyState icon={MessageSquare}>
+          {anns.length === 0 ? 'Todavía no hay marcas en este documento' : 'Ninguna marca coincide con el filtro'}
+        </EmptyState>
+      ) : (
+      <div className="flex-1 overflow-y-auto p-2 space-y-2">
         {byPage.map(([page, list]) => (
           <div key={page}>
             {/* Pegajosa: en un plano con cincuenta marcas, al desplazarse se perdia
@@ -215,12 +203,12 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                   const isOpen = expanded === ann.id
                   return (
                     <div key={ann.id}
-                      className={`rounded-token border transition-colors ${
-                        isSel ? 'border-accent bg-active' : 'border-border hover:bg-hover'
+                      className={`rounded-token border transition-colors duration-fast ease-token ${
+                        isSel ? rowSelected : 'border-border hover:bg-hover'
                       }`}>
                       {/* `opacity-60` sobre la fila entera apagaba tambien Eliminar y
                           Responder, que siguen estando igual de disponibles. */}
-                      <div className={`flex items-start gap-1.5 p-1.5 ${isResolved ? '[&>button]:opacity-60 [&>span]:opacity-60' : ''}`}>
+                      <div className={`flex items-start gap-1.5 p-1.5 min-h-7 ${isResolved ? '[&>button]:opacity-60 [&>span]:opacity-60' : ''}`}>
                         {/* Todo el panel era text-micro: tipo, texto, autor y fecha
                             pesaban lo mismo y no habia por donde entrar. El titulo
                             sube un escalon y los metadatos se quedan abajo. */}
@@ -243,18 +231,18 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button onClick={() => setExpanded(isOpen ? null : ann.id)}
                             title={replies.length ? `${replies.length} respuesta(s)` : 'Responder'}
-                            className={`p-1 rounded-token-sm transition-colors ${replies.length ? 'text-fg' : 'text-muted'} hover:bg-hover`}>
-                            <MessageSquare size={12} />
+                            className={`flex items-center p-1.5 rounded-token-sm transition-colors duration-fast ease-token hover:bg-hover ${replies.length ? 'text-fg' : 'text-muted'}`}>
+                            <MessageSquare size={14} />
                             {replies.length > 0 && <span className="text-micro ml-0.5 tabular">{replies.length}</span>}
                           </button>
                           <button onClick={() => setAnnotationStatus(activeDoc.doc_id, ann.id, isResolved ? 'open' : 'resolved')}
                             title={isResolved ? 'Marcar como abierta' : 'Marcar como resuelta'}
-                            className={`p-1 rounded-token-sm transition-colors hover:bg-hover ${isResolved ? 'text-success' : 'text-muted'}`}>
-                            <Check size={12} />
+                            className={`p-1.5 rounded-token-sm transition-colors duration-fast ease-token hover:bg-hover ${isResolved ? 'text-success' : 'text-muted'}`}>
+                            <Check size={14} />
                           </button>
                           <button onClick={() => deleteAnnotation(activeDoc.doc_id, ann.id)} aria-label="Eliminar anotación"
-                            className="p-1 rounded-token-sm text-muted hover:text-danger hover:bg-hover transition-colors">
-                            <Trash2 size={12} />
+                            className={iconBtnDanger}>
+                            <Trash2 size={14} />
                           </button>
                         </div>
                       </div>
@@ -270,8 +258,8 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                                 <div className="text-fg whitespace-pre-wrap break-words">{r.text}</div>
                               </div>
                               <button onClick={() => deleteReply(activeDoc.doc_id, ann.id, r.id)} aria-label="Eliminar respuesta"
-                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded-token-sm text-muted hover:text-danger">
-                                <X size={12} />
+                                className={`${iconBtnDanger} opacity-0 group-hover:opacity-100`}>
+                                <X size={14} />
                               </button>
                             </div>
                           ))}
@@ -281,8 +269,8 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                               placeholder={annotationAuthor ? `Responder como ${annotationAuthor}…` : 'Responder…'}
                               className="flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
                             <button onClick={() => sendReply(ann.id)} disabled={!replyText.trim()} aria-label="Enviar respuesta"
-                              className="p-1 rounded-token-sm text-fg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-hover transition-colors">
-                              <Send size={12} />
+                              className="p-1.5 rounded-token-sm text-fg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-hover transition-colors duration-fast ease-token">
+                              <Send size={14} />
                             </button>
                           </div>
                         </div>
@@ -295,6 +283,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
           </div>
         ))}
       </div>
+      )}
 
       <div className="flex items-center gap-2 px-2 py-1.5 border-t border-border text-micro text-muted shrink-0">
         <span className="tabular">{filtered.length} de {anns.length} · {resolvedCount} resuelta(s)</span>

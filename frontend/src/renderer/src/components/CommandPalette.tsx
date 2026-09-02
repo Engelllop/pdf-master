@@ -22,15 +22,34 @@ const ICONO_GRUPO: Record<string, typeof FileText> = {
   IA: Sparkles,
 }
 
+/** Lo que dura `panel-out`/`overlay-out` en App.css (`--dur-fast`). */
+const SALIDA = 120
+const sinMovimiento = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
 /** Paleta de comandos (Ctrl+K): la app tiene ~60 acciones repartidas en 7 cintas y
  * sin esto casi ninguna se descubre. Filtra por palabras sobre nombre y grupo. */
 export default function CommandPalette({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [index, setIndex] = useState(0)
   const [, force] = useState(0)
+  const [saliendo, setSaliendo] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
+  const cerrando = useRef(false)
+  const salida = useRef<number | null>(null)
 
   useEffect(() => subscribeCommands(() => force((n) => n + 1)), [])
+  useEffect(() => () => { if (salida.current) clearTimeout(salida.current) }, [])
+
+  /** Único camino de cierre (Esc, clic en el fondo, ejecutar un comando): marca la
+   * salida y desmonta cuando acaba. El guardia impide dispararla dos veces y que
+   * una segunda pulsación se quede a medias con dos capas encima. */
+  const cerrar = () => {
+    if (cerrando.current) return
+    cerrando.current = true
+    if (sinMovimiento()) { onClose(); return }
+    setSaliendo(true)
+    salida.current = window.setTimeout(onClose, SALIDA)
+  }
 
   const results = useMemo(() => {
     const all = getCommands().filter((c) => !c.disabled)
@@ -63,23 +82,26 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
   }, [index])
 
   const run = (cmd: Command | undefined) => {
-    if (!cmd) return
-    onClose()
+    if (!cmd || cerrando.current) return
+    cerrar()
+    // La acción no espera a la salida: se ejecuta ya y la paleta se va por detrás.
     // Fuera del ciclo de teclado: algunos comandos abren modales que capturan foco.
     setTimeout(() => cmd.run(), 0)
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (cerrando.current) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setIndex((i) => Math.min(results.length - 1, i + 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setIndex((i) => Math.max(0, i - 1)) }
     else if (e.key === 'Enter') { e.preventDefault(); run(results[index]) }
-    else if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    else if (e.key === 'Escape') { e.preventDefault(); cerrar() }
   }
 
   return (
-    <div className="overlay-in fixed inset-0 z-palette flex items-start justify-center pt-[12vh] bg-black/40 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-palette flex items-start justify-center pt-[12vh] bg-[rgb(var(--scrim)/0.45)] backdrop-blur-[2px]"
+      data-closing={saliendo || undefined} onClick={cerrar}>
       <div role="dialog" aria-modal="true" aria-label="Paleta de comandos" onClick={(e) => e.stopPropagation()}
-        className="panel-in w-[560px] max-w-[92vw] rounded-token-lg border border-border shadow-token-lg bg-panel overflow-hidden">
+        className="w-[560px] max-w-[92vw] rounded-token-lg border border-border shadow-token-lg bg-panel overflow-hidden">
         <div className="flex items-center gap-2.5 px-3.5 py-3 border-b border-border">
           <Search size={16} className="text-muted shrink-0" />
           {/* Combobox: el foco se queda en el campo mientras las flechas mueven la
@@ -117,7 +139,7 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                     <button key={cmd.id} id={`paleta-cmd-${cmd.id}`} data-active={activa}
                       role="option" aria-selected={activa} tabIndex={-1}
                       onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
-                      className={`w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left transition-colors duration-fast ease-token ${
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left ${
                         activa ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
                       }`}>
                       <Icono size={14} className={`shrink-0 ${activa ? 'text-on-accent' : 'text-muted'}`} />

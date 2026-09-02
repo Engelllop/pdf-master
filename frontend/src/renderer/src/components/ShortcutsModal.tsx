@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
-import { X, Keyboard } from 'lucide-react'
+import { Keyboard } from 'lucide-react'
+import { DialogShell, DialogHeader, DialogFooter, btnGhost, kbdChip } from './panelUi'
 import { TOOL_KEYS, TOOL_LABELS } from '../lib/tools'
 
 interface ShortcutsModalProps {
@@ -84,54 +84,31 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
 ]
 
 export default function ShortcutsModal({ onClose }: ShortcutsModalProps) {
-  // Irónico pero cierto: el diálogo de ATAJOS no se cerraba con Esc — no había
-  // manejador ninguno, ni aquí ni global. Necesita el foco para recibirlo.
-  const dialogRef = useRef<HTMLDivElement>(null)
-  useEffect(() => { dialogRef.current?.focus() }, [])
-
   return (
-    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
-      <div
-        ref={dialogRef}
-        tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Atajos de teclado"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onClose() } }}
-        className="panel-in w-[560px] max-w-[92vw] max-h-[84vh] overflow-y-auto rounded-token border border-border shadow-token-lg bg-panel text-fg"
-      >
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-panel sticky top-0">
-          <Keyboard size={18} className="text-muted" />
-          <h2 className="text-base font-semibold flex-1">Atajos de teclado</h2>
-          <button onClick={onClose} aria-label="Cerrar"
-            className="p-1 rounded-token-sm transition-colors text-muted hover:bg-hover">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
-          {SECTIONS.map((section) => (
-            <div key={section.title}>
-              <h3 className="text-micro uppercase tracking-wider mb-1.5 text-muted">
-                {section.title}
-              </h3>
-              <ul className="space-y-1">
-                {section.items.map(([keys, label]) => (
-                  <li key={keys + label} className="flex items-center justify-between gap-3 text-mini">
-                    <span className="text-fg">{label}</span>
-                    <kbd className="shrink-0 px-1.5 py-0.5 rounded-token-sm border border-border font-sans text-micro bg-surface text-muted">
-                      {keys}
-                    </kbd>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        <div className="px-4 py-2 border-t border-border text-micro text-muted">
-          Pulsa F1 para abrir este panel en cualquier momento
-        </div>
+    // Irónico pero cierto: el diálogo de ATAJOS no se cerraba con Esc — no había
+    // manejador ninguno, ni aquí ni global. Lo trae el andamio compartido.
+    <DialogShell label="Atajos de teclado" panelClass="w-[560px] max-h-[84vh] flex flex-col" onClose={onClose}>
+      <DialogHeader icon={Keyboard} title="Atajos de teclado" onClose={onClose} />
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 content-start">
+        {SECTIONS.map((section) => (
+          <div key={section.title}>
+            <h3 className="text-micro font-semibold uppercase tracking-wider mb-1.5 text-muted">
+              {section.title}
+            </h3>
+            <ul className="space-y-1">
+              {section.items.map(([keys, label]) => (
+                <li key={keys + label} className="flex items-center justify-between gap-3 text-mini">
+                  <span className="text-fg">{label}</span>
+                  <kbd className={kbdChip}>{keys}</kbd>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </div>
-    </div>
+      <DialogFooter note="Pulsa F1 para abrir este panel en cualquier momento">
+        <button onClick={onClose} className={btnGhost}>Cerrar</button>
+      </DialogFooter>
+    </DialogShell>
   )
 }

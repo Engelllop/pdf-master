@@ -5,6 +5,7 @@ import {
   X, Bold, Italic, AlignLeft, AlignCenter, AlignRight,
 } from 'lucide-react'
 import { FONT_OPTIONS } from '../lib/fonts'
+import { ControlGroup as Group, FieldLabel as Label, SegmentedGroup as Segmented } from './panelUi'
 import { ERASER_SIZES, ERASER_MIN, ERASER_MAX, type EraserMode } from '../lib/eraser'
 import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
 
@@ -14,7 +15,7 @@ const WIDTH_PRESETS = [0.5, 1, 2, 4, 8]
 const WIDTH_MAX = 20
 const OPACITY_PRESETS = [25, 50, 75, 100]
 
-const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
+export const COLORS = ['#fbbf24', '#ef4444', '#3b82f6', '#22c55e', '#a855f7', '#1f2329', '#ffffff']
 // Un lector de pantalla leyendo «Color numeral efe be be dos cuatro» no dice nada.
 const COLOR_NAMES: Record<string, string> = {
   '#fbbf24': 'Ámbar', '#ef4444': 'Rojo', '#3b82f6': 'Azul', '#22c55e': 'Verde',
@@ -52,29 +53,6 @@ export default function PropertiesBar() {
   const showColor = isTextCtx || showStroke || activeTool === 'note' || (!!activeTool && COLOR_TOOLS.includes(activeTool))
   const isStamp = activeTool === 'stamp'
   const fillCapable = !!activeTool && FILLABLE.includes(activeTool)
-
-  const Label = ({ children }: { children: React.ReactNode }) => <span className="text-micro text-muted shrink-0">{children}</span>
-  const Group = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center gap-1.5 rounded-token border border-border bg-panel px-2 py-1 shrink-0">{children}</div>
-  )
-  /** Interruptor de dos estados con el motivo de cada opción en el título: en una
-   * barra de propiedades no cabe explicar, pero al pasar el ratón sí. */
-  const Segmented = <T extends string>({ value, options, onChange }: {
-    value: T
-    options: Array<[T, string, string?]>
-    onChange: (v: T) => void
-  }) => (
-    <div className="flex items-center gap-0.5">
-      {options.map(([id, etiqueta, porque]) => (
-        <button key={id} onClick={() => onChange(id)} title={porque} aria-pressed={value === id}
-          className={`px-2 h-6 rounded-token-sm text-micro transition-colors duration-fast ease-token ${
-            value === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
-          }`}>
-          {etiqueta}
-        </button>
-      ))}
-    </div>
-  )
 
   // El borrador no tiene color ni grosor: modo y tamaño de pincel.
   if (activeDoc && activeTool === 'eraser') {
@@ -159,13 +137,13 @@ export default function PropertiesBar() {
             <select value={store.textFontFamily}
               onChange={(e) => store.setTextFontFamily(e.target.value)}
               aria-label="Fuente"
-              className="border border-border rounded-token-sm px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
+              className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
               {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
             </select>
             <input type="number" min={4} max={72}
               value={store.textFontSize}
               onChange={(e) => store.setTextFontSize(parseInt(e.target.value) || 14)}
-              className="w-14 border border-border rounded-token-sm px-2 py-1 text-mini text-center bg-panel text-fg focus:outline-none focus:border-accent" title="Tamaño" aria-label="Tamaño de fuente" />
+              className="w-14 border border-border rounded-token-sm px-2 py-1 text-mini text-center bg-surface text-fg focus:outline-none focus:border-accent" title="Tamaño" aria-label="Tamaño de fuente" />
             <Label>px</Label>
             {(() => {
               const sv = store.textStyle
@@ -180,11 +158,11 @@ export default function PropertiesBar() {
                     return <button key={a} title={`Alinear ${alignLabel}`} aria-label={`Alinear ${alignLabel}`} aria-pressed={sv.align === a} className={tBtn(sv.align === a)} onClick={() => store.setTextStyle({ align: a })}><Icon size={14} /></button>
                   })}
                   <select title="Interlineado" aria-label="Interlineado" value={sv.lineHeight} onChange={(e) => store.setTextStyle({ lineHeight: parseFloat(e.target.value) })}
-                    className="border border-border rounded-token-sm px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
+                    className="border border-border rounded-token-sm px-1 py-1 text-mini bg-surface text-fg focus:outline-none">
                     {[1, 1.15, 1.3, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}
                   </select>
                   <select title="Lista" aria-label="Lista" value={sv.listStyle} onChange={(e) => store.setTextStyle({ listStyle: e.target.value as typeof sv.listStyle })}
-                    className="border border-border rounded-token-sm px-1 py-1 text-mini bg-panel text-fg focus:outline-none">
+                    className="border border-border rounded-token-sm px-1 py-1 text-mini bg-surface text-fg focus:outline-none">
                     <option value="none">Sin lista</option>
                     <option value="bullet">• Viñetas</option>
                     <option value="number">1. Numerada</option>
@@ -266,7 +244,7 @@ export default function PropertiesBar() {
           <Label>Sello</Label>
           <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
             aria-label="Sello"
-            className="border border-border rounded-token-sm px-2 py-1 text-mini bg-panel text-fg focus:outline-none focus:border-accent">
+            className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>

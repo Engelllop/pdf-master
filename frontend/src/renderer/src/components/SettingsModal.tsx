@@ -1,10 +1,31 @@
+import { useEffect, useRef, useState } from 'react'
 import { X, Settings } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { type ThemePreference, type WheelMode, type DefaultZoomMode } from '../store/usePdfStore'
 
+/** Lo que dura `panel-out`/`overlay-out` en App.css (`--dur-fast`). */
+const SALIDA = 120
+const sinMovimiento = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
 /** Ajustes mínimos: lo que antes solo se podía cambiar tocando localStorage o no
  * se podía cambiar en absoluto. */
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
+  const [saliendo, setSaliendo] = useState(false)
+  const cerrando = useRef(false)
+  const salida = useRef<number | null>(null)
+
+  useEffect(() => () => { if (salida.current) clearTimeout(salida.current) }, [])
+
+  /** Único camino de cierre (Esc, clic en el fondo, la X): marca la salida y desmonta
+   * cuando acaba. El guardia impide dispararla dos veces. */
+  const cerrar = () => {
+    if (cerrando.current) return
+    cerrando.current = true
+    if (sinMovimiento()) { onClose(); return }
+    setSaliendo(true)
+    salida.current = window.setTimeout(onClose, SALIDA)
+  }
+
   const {
     annotationAuthor, setAnnotationAuthor, stickyTools, setStickyTools,
     themePreference, setThemePreference, wheelMode, setWheelMode,
@@ -56,14 +77,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   )
 
   return (
-    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-black/45 backdrop-blur-[2px]" onClick={onClose}>
+    <div className="overlay-in fixed inset-0 z-dialog flex items-center justify-center bg-[rgb(var(--scrim)/0.45)] backdrop-blur-[2px]"
+      data-closing={saliendo || undefined} onClick={cerrar}>
       <div role="dialog" aria-modal="true" aria-label="Ajustes" onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
+        onKeyDown={(e) => { if (e.key === 'Escape') cerrar() }}
         className="panel-in w-[500px] max-w-[92vw] max-h-[86vh] overflow-y-auto rounded-token-lg border border-border shadow-token-lg bg-panel text-fg">
         <div className="sticky top-0 z-raised flex items-center gap-2 px-4 py-3 border-b border-border bg-panel">
           <Settings size={16} className="text-muted" />
           <h2 className="text-base font-semibold flex-1">Ajustes</h2>
-          <button onClick={onClose} aria-label="Cerrar"
+          <button onClick={cerrar} aria-label="Cerrar"
             className="p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors"><X size={16} /></button>
         </div>
 

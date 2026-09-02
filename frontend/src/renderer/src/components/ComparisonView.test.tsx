@@ -55,7 +55,9 @@ describe('identificar cada revisión', () => {
       .filter(Boolean)
     // En superposición cada revisión ya iba teñida y con leyenda; en lado a lado no
     // había ninguna pista de cuál era cuál sobre dos planos casi idénticos.
-    expect(puntos).toContain('rgb(255, 34, 34)')
-    expect(puntos).toContain('rgb(34, 68, 255)')
+    // Los tintes son tokens: en jsdom no hay hoja de estilos, así que `var()` llega
+    // literal. Lo que se comprueba es que el punto lleve EL MISMO token que el canvas.
+    expect(puntos).toContain('rgb(var(--diff-a))')
+    expect(puntos).toContain('rgb(var(--diff-b))')
   })
 })

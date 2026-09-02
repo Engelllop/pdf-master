@@ -42,10 +42,10 @@ export default function StatusBar() {
     setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight), false)
   }
 
-  const iconBtn = 'p-1 rounded-token-sm hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  const iconBtn = 'w-7 h-7 inline-flex items-center justify-center rounded-token-sm hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
 
   return (
-    <div className="h-8 border-t border-border-strong bg-toolbar text-muted flex items-center px-3 text-mini select-none gap-3">
+    <div className="h-8 border-t border-border-strong bg-toolbar text-muted flex items-center px-2 text-mini select-none gap-3">
       {activeDoc ? (
         <span className="flex items-center gap-1">
           Pág.
@@ -61,7 +61,7 @@ export default function StatusBar() {
       {dims && <span className="text-muted">{dims}</span>}
 
       {activeDoc && scale && (
-        <span className="flex items-center gap-1 text-success"
+        <span className="flex items-center gap-1 text-muted"
           title={escalaPropia
             ? `Escala propia de la página ${pagina + 1} (el documento usa otra)`
             : 'Escala de medición del documento'}>
@@ -121,7 +121,7 @@ export default function StatusBar() {
           </button>
           <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho" aria-label="Ajustar al ancho"><MoveVertical size={14} /></button>
           <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página" aria-label="Ajustar página"><Maximize2 size={14} /></button>
-          <div className="w-px h-4 bg-border" />
+          <div className="w-px h-4 mx-1 bg-border" />
           <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar" aria-label="Alejar"><ZoomOut size={14} /></button>
           <div className="relative">
             <button onClick={() => setZoomMenuOpen((o) => !o)}

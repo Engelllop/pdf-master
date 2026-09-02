@@ -387,14 +387,14 @@ export default function Toolbar() {
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
         className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed ${
-          active ? 'bg-accent text-on-accent font-medium shadow-token-sm' : 'text-fg hover:bg-hover active:bg-active'
+          active ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover active:bg-active'
         }`}>
         <Icon size={16} strokeWidth={1.75} />
         <span>{label}</span>
       </button>
     </Tooltip>
   )
-  const Sep = () => <div className="w-px h-5 mx-1 bg-border shrink-0" />
+  const Sep = () => <div className="w-px h-4 mx-1 bg-border shrink-0" />
   const closeCommentMenu = () => { setCommentMenu(null); setDrawFormasOpen(false) }
   const MenuItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
     <button role="menuitem" onClick={() => {
@@ -889,12 +889,11 @@ export default function Toolbar() {
 
       {/* Barra contextual del modo activo */}
       {activeDoc && (
-        <div className="min-h-11 border-t border-border bg-toolbar grid items-center px-3 py-1 gap-2" style={{ gridTemplateColumns: '1fr auto 1fr' }}>
-          <div />
-          <div className={`flex items-center justify-center gap-1 min-w-0 ${activeRibbon === 'comment' ? 'flex-nowrap' : 'flex-wrap'}`}>
+        <div className="min-h-11 bg-toolbar flex items-center justify-between px-2 py-1 gap-2">
+          <div className={`flex items-center justify-start gap-1 min-w-0 ${activeRibbon === 'comment' ? 'flex-nowrap' : 'flex-wrap'}`}>
             {renderRibbon()}
           </div>
-          <div className="flex items-center gap-2 justify-end">
+          <div className="flex items-center gap-2 justify-end shrink-0">
             {showSearch ? (
               <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token-md">
                 <div className="flex items-center gap-1">

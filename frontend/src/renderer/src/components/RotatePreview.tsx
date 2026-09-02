@@ -49,7 +49,7 @@ export default function RotatePreview({ degrees, all = false, children }: {
         <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-overlay-menu p-2 rounded-token border border-border bg-panel shadow-token-lg pointer-events-none">
           <div className="w-24 h-24 flex items-center justify-center overflow-hidden">
             <img src={src} alt="" draggable={false}
-              className="max-w-full max-h-full shadow transition-transform duration-200"
+              className="max-w-full max-h-full shadow-token-sm transition-transform duration-200"
               style={{ transform: `rotate(${degrees}deg)` }} />
           </div>
           <div className="text-micro text-center text-muted mt-1">

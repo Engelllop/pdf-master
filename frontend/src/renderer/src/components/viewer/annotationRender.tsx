@@ -183,12 +183,12 @@ export function renderAnnotation(
     const lbl = `${Math.hypot(ann.width || 0, ann.height || 0).toFixed(1)} px`
     return (
       <g key={key} pointerEvents="none">
-        <line x1={s.x} y1={s.y} x2={cx2} y2={cy2} stroke="#f59e0b" strokeWidth={2} strokeDasharray="6 3" />
-        <circle cx={s.x} cy={s.y} r={4} fill="#f59e0b" />
-        <circle cx={cx2} cy={cy2} r={4} fill="#f59e0b" />
+        <line x1={s.x} y1={s.y} x2={cx2} y2={cy2} stroke="rgb(var(--paper-guide))" strokeWidth={2} strokeDasharray="6 3" />
+        <circle cx={s.x} cy={s.y} r={4} fill="rgb(var(--paper-guide))" />
+        <circle cx={cx2} cy={cy2} r={4} fill="rgb(var(--paper-guide))" />
         <rect x={(s.x + cx2) / 2 - lbl.length * 4 - 6} y={(s.y + cy2) / 2 - 26} width={lbl.length * 8 + 12} height={20} rx={4}
-          fill="rgba(15,23,42,0.9)" stroke="#f59e0b" strokeWidth={1} />
-        <text x={(s.x + cx2) / 2} y={(s.y + cy2) / 2 - 11} textAnchor="middle" fill="#fff" fontSize="13" fontFamily="sans-serif">{lbl}</text>
+          fill="rgb(var(--panel) / 0.92)" stroke="rgb(var(--paper-guide))" strokeWidth={1} />
+        <text x={(s.x + cx2) / 2} y={(s.y + cy2) / 2 - 11} textAnchor="middle" fill="rgb(var(--fg))" fontSize="13" fontFamily="sans-serif">{lbl}</text>
       </g>
     )
   }
@@ -486,8 +486,8 @@ export function renderAnnotation(
           {label && (
             <>
               <rect x={mid.x - label.length * 4.5 - 6} y={mid.y - 26} width={label.length * 9 + 12} height={22} rx={4}
-                fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-              <text x={mid.x} y={mid.y - 9} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
+                fill="rgb(var(--panel) / 0.92)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+              <text x={mid.x} y={mid.y - 9} textAnchor="middle" fill="rgb(var(--fg))" fontSize="14" fontFamily="sans-serif">{label}</text>
             </>
           )}
         </g>
@@ -506,8 +506,8 @@ export function renderAnnotation(
           <circle cx={s.x} cy={s.y} r={3} fill={ann.color || '#22d3ee'} />
           <circle cx={x2} cy={y2} r={3} fill={ann.color || '#22d3ee'} />
           <g transform={`translate(${midX}, ${midY}) rotate(${(angle * 180) / Math.PI})`}>
-            <rect x={-label.length * 4.5 - 6} y={-12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-            <text x={0} y={5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
+            <rect x={-label.length * 4.5 - 6} y={-12} width={label.length * 9 + 12} height={22} rx={4} fill="rgb(var(--panel) / 0.92)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+            <text x={0} y={5} textAnchor="middle" fill="rgb(var(--fg))" fontSize="14" fontFamily="sans-serif">{label}</text>
           </g>
         </g>
       )
@@ -541,8 +541,8 @@ export function renderAnnotation(
           {pts.map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r={3} fill={ann.color || '#22d3ee'} />
           ))}
-          <rect x={cx - label.length * 4.5 - 6} y={cy - 12} width={label.length * 9 + 12} height={22} rx={4} fill="rgba(15,23,42,0.9)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
-          <text x={cx} y={cy + 5} textAnchor="middle" fill="#fff" fontSize="14" fontFamily="sans-serif">{label}</text>
+          <rect x={cx - label.length * 4.5 - 6} y={cy - 12} width={label.length * 9 + 12} height={22} rx={4} fill="rgb(var(--panel) / 0.92)" stroke={ann.color || '#22d3ee'} strokeWidth={1} />
+          <text x={cx} y={cy + 5} textAnchor="middle" fill="rgb(var(--fg))" fontSize="14" fontFamily="sans-serif">{label}</text>
         </g>
       )
     }

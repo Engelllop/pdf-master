@@ -12,8 +12,15 @@ import { apiFetch } from '../lib/api'
 /** Tinte de cada revision al superponerlas. Sale del canvas, pero tambien identifica
  * los paneles en el modo lado a lado y la leyenda: es el mismo par de colores en los
  * dos modos, o comparar dejaba de significar lo mismo al cambiar de vista. */
-export const TINTE_A = '#ff2222'
-export const TINTE_B = '#2244ff'
+export const TINTE_A = 'rgb(var(--diff-a))'
+export const TINTE_B = 'rgb(var(--diff-b))'
+
+/** El canvas 2D no entiende `var()`: hay que resolver el token a un color literal
+ * antes de pintar, o `fillStyle` se queda con el valor anterior. */
+function resolverTinte(nombre: string): string {
+  const canales = getComputedStyle(document.documentElement).getPropertyValue(nombre).trim()
+  return canales ? `rgb(${canales})` : '#000'
+}
 
 function ComparePagePanel({
   docId,
@@ -84,7 +91,7 @@ function ComparePagePanel({
   return (
     <div className={`flex-1 flex flex-col min-w-0 bg-surface`}>
       <div className={`px-3 py-1.5 border-b text-mini flex items-center gap-2 shrink-0 bg-panel border-border text-muted`}>
-        {tinte && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: tinte }} aria-hidden />}
+        {tinte && <span className="w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-border-control" style={{ background: tinte }} aria-hidden />}
         <span className="truncate flex-1 text-fg" title={label}>{label}</span>
         <span className="shrink-0 tabular">Pág. {page + 1}</span>
         {loading && <span className="text-muted animate-pulse shrink-0 ml-2">Cargando…</span>}
@@ -94,7 +101,7 @@ function ComparePagePanel({
           {error ? (
             <div className={`self-center text-base text-muted`}>Error al cargar página</div>
           ) : (
-            <div className="rounded-token-sm page-sheet bg-white" style={{ width: dispW, height: dispH }}>
+            <div className="rounded-token-sm page-sheet bg-paper" style={{ width: dispW, height: dispH }}>
               {url && (
                 <img
                   src={url}
@@ -187,8 +194,8 @@ function CompareOverlayPanel({
         canvas.width = w
         canvas.height = h
         const ctx = canvas.getContext('2d')!
-        const tintedA = tintPage(imgA, w, Math.round(imgA.height * (w / imgA.width)), TINTE_A)
-        const tintedB = tintPage(imgB, w, Math.round(imgB.height * (w / imgB.width)), TINTE_B)
+        const tintedA = tintPage(imgA, w, Math.round(imgA.height * (w / imgA.width)), resolverTinte('--diff-a'))
+        const tintedB = tintPage(imgB, w, Math.round(imgB.height * (w / imgB.width)), resolverTinte('--diff-b'))
         ctx.fillStyle = '#ffffff'
         ctx.fillRect(0, 0, w, h)
         ctx.drawImage(tintedA, 0, 0)
@@ -226,7 +233,7 @@ function CompareOverlayPanel({
             {loading && (
               <div className={`absolute inset-0 flex items-center justify-center text-mini text-muted`}>Componiendo…</div>
             )}
-            <canvas ref={canvasRef} className="rounded-token-sm page-sheet bg-white"
+            <canvas ref={canvasRef} className="rounded-token-sm page-sheet bg-paper"
               style={basePts && fit > 0
                 ? { width: basePts.w * fit * zoom, height: altoPts * fit * zoom }
                 : undefined} />
@@ -430,8 +437,8 @@ export default function ComparisonView() {
 
         {overlayMode && (
           <span className={`text-mini flex items-center gap-2 ml-1 text-muted`}>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: TINTE_A }} />{activeDoc.file_name}</span>
-            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: TINTE_B }} />{compareDoc.file_name}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block ring-1 ring-border-control" style={{ background: TINTE_A }} />{activeDoc.file_name}</span>
+            <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block ring-1 ring-border-control" style={{ background: TINTE_B }} />{compareDoc.file_name}</span>
             <label className="flex items-center gap-1" title="Opacidad del overlay">
               Mezcla
               <input type="range" min={0} max={100} value={Math.round(overlayMix * 100)}

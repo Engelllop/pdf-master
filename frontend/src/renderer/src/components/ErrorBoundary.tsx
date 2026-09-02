@@ -26,7 +26,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       return (
         this.props.fallback || (
           <div className="h-screen w-screen flex flex-col items-center justify-center bg-surface text-fg p-8">
-            <h1 className="text-2xl font-bold mb-2">Algo salió mal</h1>
+            <h1 className="text-display font-bold mb-2">Algo salió mal</h1>
             <p className="text-base text-muted mb-4 max-w-md text-center">
               PDF Master encontró un error inesperado. Guarda tu trabajo y reinicia la aplicación.
             </p>

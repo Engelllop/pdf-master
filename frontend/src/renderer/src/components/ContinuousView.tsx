@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { esCapaOculta, usePdfStore, type Annotation, type PdfDoc } from '../store/usePdfStore'
 import { renderPdfPage, revokePageUrl, isDeadDocError } from '../lib/pdfjs'
@@ -114,12 +114,42 @@ function ContinuousPageOverlay({
     return () => { vivo = false }
   }, [herramientaDeMarcado, doc.doc_id, page, doc.docVersion])
 
-  const pd = { width, height, originalWidth: pw, originalHeight: ph }
-  const toScreen = (x: number, y: number) => ({ x: (x / pw) * width, y: (y / ph) * height })
+  const pd = useMemo(() => ({ width, height, originalWidth: pw, originalHeight: ph }), [width, height, pw, ph])
+  const toScreen = useCallback(
+    (x: number, y: number) => ({ x: (x / pw) * width, y: (y / ph) * height }),
+    [pw, ph, width, height],
+  )
   // Mismo criterio que el visor de página única: las capas apagadas no se dibujan.
-  const anns = doc.annotations.filter((a) => a.page === page && !esCapaOculta(doc, a))
+  const anns = useMemo(
+    () => doc.annotations.filter((a) => a.page === page && !esCapaOculta(doc, a)),
+    [doc.annotations, doc.hiddenLayers, page],
+  )
   const countNums = useMemo(() => countNumbers(doc.annotations), [doc.annotations])
-  const selected = new Set(store.selectedAnnotationIds)
+  const selected = useMemo(() => new Set(store.selectedAnnotationIds), [store.selectedAnnotationIds])
+
+  // En continuo hay un overlay por página visible: sin memo, cualquier cambio del
+  // store (elegir herramienta, mover el color, seleccionar otra marca) reconstruía las
+  // marcas de TODAS las páginas de la ventana a la vez.
+  const annEls = useMemo(() => anns.map((ann) => (
+    <g key={ann.id} style={{ pointerEvents: 'auto' }}>
+      {renderAnnotation(ann, pd, toScreen, {
+        onSelect: (ev) => {
+          ev.stopPropagation()
+          if (ev.shiftKey) store.selectAnnotations(doc.doc_id, [...selected, ann.id])
+          else store.selectAnnotation(doc.doc_id, ann.id)
+        },
+        countNumbers: countNums,
+      })}
+      {selected.has(ann.id) && (() => {
+        const b = getAnnotationBounds(ann, pd, toScreen)
+        if (!b) return null
+        return (
+          <rect x={b.x - 2} y={b.y - 2} width={b.w + 4} height={b.h + 4}
+            fill="none" stroke={SEL} strokeWidth={1.5} strokeDasharray="4 2" />
+        )
+      })()}
+    </g>
+  )), [anns, pd, toScreen, selected, countNums, doc.doc_id, store.selectAnnotations, store.selectAnnotation])
   const selectedAnn = anns.find((a) => a.id === store.selectedAnnotationId)
   const zoom = width / pw
 
@@ -512,26 +542,7 @@ function ContinuousPageOverlay({
         {/* Debajo de las marcas, como cualquier resaltado. */}
         <SearchHits results={doc.searchResults} index={doc.searchIndex} page={page}
           escalaX={width / pw} escalaY={height / ph} />
-        {anns.map((ann) => (
-          <g key={ann.id} style={{ pointerEvents: 'auto' }}>
-            {renderAnnotation(ann, pd, toScreen, {
-              onSelect: (ev) => {
-                ev.stopPropagation()
-                if (ev.shiftKey) store.selectAnnotations(doc.doc_id, [...selected, ann.id])
-                else store.selectAnnotation(doc.doc_id, ann.id)
-              },
-              countNumbers: countNums,
-            })}
-            {selected.has(ann.id) && (() => {
-              const b = getAnnotationBounds(ann, pd, toScreen)
-              if (!b) return null
-              return (
-                <rect x={b.x - 2} y={b.y - 2} width={b.w + 4} height={b.h + 4}
-                  fill="none" stroke={SEL} strokeWidth={1.5} strokeDasharray="4 2" />
-              )
-            })()}
-          </g>
-        ))}
+        {annEls}
         {/* Tiradores de la seleccionada (una sola: con varias basta el contorno). */}
         {selectedAnn && store.selectedAnnotationIds.length <= 1 && (
           <g style={{ pointerEvents: 'auto' }}>
@@ -560,10 +571,10 @@ function ContinuousPageOverlay({
         {store.activeTool === 'eraser' && eraserPos && (
           <g pointerEvents="none">
             <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
-              fill="rgba(255,255,255,0.18)" stroke="rgba(0,0,0,0.55)" strokeWidth={2.5}
+              fill="rgb(var(--on-scrim) / 0.18)" stroke="rgb(var(--scrim) / 0.55)" strokeWidth={2.5}
               strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
             <circle cx={eraserPos.x} cy={eraserPos.y} r={store.eraserRadius}
-              fill="none" stroke="rgba(255,255,255,0.9)" strokeWidth={1}
+              fill="none" stroke="rgb(var(--on-scrim) / 0.9)" strokeWidth={1}
               strokeDasharray={store.eraserMode === 'whole' ? '5 4' : undefined} />
           </g>
         )}
@@ -709,7 +720,10 @@ export default function ContinuousView() {
     while (start < pageCount - 1 && offsets[start + 1] <= top) start++
     let end = start
     while (end < pageCount && offsets[end] <= bottom) end++
-    setRange({ start, end: Math.max(end, start + 1) })
+    const nextEnd = Math.max(end, start + 1)
+    // Objeto nuevo en cada evento de scroll = re-render de TODAS las páginas de la
+    // ventana (cada una con su overlay de marcas) aunque la ventana no se moviera.
+    setRange((prev) => (prev.start === start && prev.end === nextEnd ? prev : { start, end: nextEnd }))
 
     const center = el.scrollTop + el.clientHeight / 2
     let cur = 0
@@ -849,7 +863,7 @@ export default function ContinuousView() {
               key={i}
               data-page={i}
               onClick={() => { internalPageRef.current = i; store.setPage(activeDoc.doc_id, i) }}
-              className="relative page-sheet bg-white"
+              className="relative page-sheet bg-paper"
               style={{ width: widths[i], height: heights[i] }}
             >
               {loaded[i] ? (
@@ -867,7 +881,10 @@ export default function ContinuousView() {
                 pw={pw}
                 ph={ph}
               />
-              <div className="absolute bottom-1 right-2 text-micro px-1 rounded-token-sm bg-black/40 text-white/80 pointer-events-none">{i + 1}</div>
+              {/* El scrim va a 0.72 y no a 0.45 como en los modales: este chip se apoya
+                  en la hoja blanca, y sobre blanco un scrim de 0.45 deja el número a
+                  2.94:1. A 0.72 sube a 7.13:1. */}
+              <div className="absolute bottom-1 right-2 text-micro px-1 rounded-token-sm bg-[rgb(var(--scrim)/0.72)] text-on-scrim pointer-events-none">{i + 1}</div>
             </div>
           )
         })}

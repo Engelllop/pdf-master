@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { renderPdfTile, revokePageUrl } from '../lib/pdfjs'
+import { usePdfStore } from '../store/usePdfStore'
 
 interface PageGeom {
   width: number
@@ -15,7 +16,7 @@ interface PageGeom {
 // it over the base image (in the same scaled coordinate space), so the part the user
 // is actually looking at stays sharp without rasterizing the whole page at huge size.
 export default function DetailTile({
-  docId, page, pageData, zoom, version, containerRef, scrollKey,
+  docId, page, pageData, zoom, version, containerRef,
 }: {
   docId: string
   page: number
@@ -23,8 +24,12 @@ export default function DetailTile({
   zoom: number
   version: number
   containerRef: React.RefObject<HTMLDivElement | null>
-  scrollKey: string
 }) {
+  // La posición de scroll se lee AQUÍ y no se recibe por prop: el visor entero
+  // (con todas sus marcas en SVG) se re-renderizaba en cada evento de scroll solo
+  // para recalcular esta cadena. Este componente no pinta nada que dependa de ella
+  // —solo reprograma su efecto—, así que la suscripción se queda en la hoja.
+  const scrollKey = usePdfStore((s) => `${s.viewerScroll.left}x${s.viewerScroll.top}`)
   const [tile, setTile] = useState<{ url: string; left: number; top: number; w: number; h: number } | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const urlRef = useRef<string | null>(null)
