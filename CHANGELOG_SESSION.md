@@ -4,6 +4,34 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-09-04 — v1.20.0
+
+Dos frentes: el arranque y el CI por un lado, el sistema visual por el otro.
+
+### Sistema visual v2 (traducción a lenguaje Apple)
+- **Tokens**: neutros de sistema, oscuro en grafito neutro (el azul marino le discutía el color al documento), acento `#0a66d6` — el `#007AFF` de Apple da 4.06:1 con blanco encima y aquí hay etiquetas de 11–13px sobre relleno. Cinco radios por rol, elevación que empieza por un contorno de medio píxel, y `--faint` para lo que **no** es texto.
+- **Material**: el chrome pasa de franja opaca a vidrio (`.material`, `.material-edge`, `.scroll-edge`), con `prefers-reduced-transparency` resuelto en el token.
+- **Tipografía**: el tracking vive en la escala y es específico por tamaño (−0.02em a 20px, +0.006em a 11px); peldaño `head` de 15px que faltaba.
+- **Movimiento**: resorte crítico en `linear()` nativo como curva por defecto, rebote solo para lo que traía inercia, y respuesta en el press (scale 0.97 en 90 ms).
+- **Una sola fila de cinta**: los modos —ya segmentados, no subrayados— comparten fila con las herramientas del modo. Eran 136px de chrome antes de ver el documento; quedan 88.
+- **Desbordamiento en dos escalones** (`RibbonOverflow`): primero se van las etiquetas (el nombre sigue en el tooltip), y solo si ni así entran, el resto va a «Más herramientas» con la cuenta. Se mide sobre copias fuera de pantalla: midiendo la fila real, esconder un botón cambia el ancho y la cuenta oscila en cada frame.
+- La pestaña de documento pasa a píldora y la caja de búsqueda flota bajo su botón (con «Reemplazar» abierta estiraba la fila y empujaba el documento).
+- Galería viva del sistema en `frontend/design/gallery.html`, con el contraste de cada par medido en la propia página.
+
+### Arranque, seguridad y CI
+- El motor deja su PID en `logs\engine.pid` y solo se mata **ese**: `taskkill /F /IM pdf-engine.exe` barría el motor de otra instalación o de otro usuario. Al salir se mata el árbol (PyInstaller onefile deja un hijo con el puerto tomado).
+- **Un 401 que mentía**: con otro motor en el 8745 el token no coincide y el visor —donde 401 significa «este PDF pide contraseña»— abría el diálogo de contraseña para un PDF que no está protegido. Ahora es 403 y el mensaje dice que hay otro PDF Master en el puerto.
+- **E2E** (`npm run e2e`, Playwright + Electron): arranca la app construida con un PDF por línea de comandos y comprueba que el motor levanta y rasteriza. No entra al CI (necesita build + venv).
+- **Diagnóstico**: id de operación de 8 hex en la miga de pan, en el log si tarda ≥2 s y en la respuesta (`X-Request-Id`); `/pdf/health` dice versión y pid; y Ajustes → Diagnóstico → Exportar deja un `.txt` con todo eso más la cola de los logs.
+- **Dependencias**: `security.yml` (npm audit, pip-audit, CodeQL) y Dependabot. `npm audit fix` se llevó tres CVE high de undici.
+- Antes de empaquetar se verifica que `pdf-engine.exe` esté en `resources/backend` y no sea un binario truncado.
+- Rutas de salida absolutas y sin bytes nulos; `shell.openPath`, `showItemInFolder` y `file:readBase64` validan lo que reciben.
+- La versión es una sola cadena atada por tests: tag → `package.json` → spec y changelog → `ENGINE_VERSION`.
+
+**Pendiente:** la pasada a ojo en la app instalada, la fusión del resto de superficies (paneles, diálogos, visor) al sistema v2, y los 49 avisos de lint.
+
+---
+
 ## Sesión 2026-09-02 — v1.19.0
 
 Tres pasadas de diseño sobre el chrome, más el imán de snap.

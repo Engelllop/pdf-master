@@ -1,6 +1,6 @@
 # PDF Master — Documentación técnica
 
-> Versión: **1.19.0** · Actualizado: 2026-09-04  
+> Versión: **1.20.0** · Actualizado: 2026-09-04  
 > Changelog de sesión: `CHANGELOG_SESSION.md`  
 > Repo canónico: `C:\dev\pdf-master` (`C:\Users\Engelllop\pdf-master` es junction).
 
@@ -49,7 +49,7 @@ Renderer       →  HTTP 127.0.0.1:8745  (header X-Pdfmaster-Token)
 
 ---
 
-## 4. Features (estado 1.19)
+## 4. Features (estado 1.20)
 
 ### Visor
 Vista simple / doble, continua (dibuja, marca texto, deja seleccionar texto y **mueve/redimensiona** marcas, con las mismas reglas que la vista de página), lectura, presentación, comparar lado a lado + overlay con mezcla, zoom fit, tiles de zoom profundo, paleta Ctrl+K, cinta por modos. La capa de texto (`TextLayer`, spans cacheados en `lib/spans`), el anclaje de resaltado/subrayado/tachado al texto real (`computeLineRects`: una marca por renglón, un paso de deshacer, y aviso en vez de marca suelta si no hay texto debajo) los tiradores de selección (`SelectionOverlay` + `geometriaRedimensionada`, un gesto = un paso de deshacer) y las coincidencias de la búsqueda (`SearchHits`) van en **las dos vistas** — en continuo `highlight` caía al rect libre y `underline`/`strikethrough` no estaban en ninguna lista de herramientas, así que no hacían nada; en continuo no existían, así que pasarse a continuo para leer era perder el copiar y buscar dejaba de señalar dónde está el resultado (amarillo las de la página, naranja y latiendo la actual).
