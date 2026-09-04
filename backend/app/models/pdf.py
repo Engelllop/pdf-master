@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 
 class PageSize(BaseModel):
@@ -18,7 +18,7 @@ class PdfInfo(BaseModel):
     author: Optional[str] = None
     subject: Optional[str] = None
     current_page: int = 0
-    page_sizes: List[PageSize] = []
+    page_sizes: List[PageSize] = Field(default_factory=list)
     # Anotaciones VISIBLES que la app no gestiona (hoy: los sellos ajenos). Siguen en el
     # archivo y no se tocan, pero el visor no las dibuja —el bitmap se rasteriza sin
     # anotaciones y la capa de marcas solo pinta las de la lista—, así que hay que
@@ -239,7 +239,7 @@ class FormFieldCreate(BaseModel):
     y: float
     width: float
     height: float
-    options: List[str] = []
+    options: List[str] = Field(default_factory=list)
     radio_value: Optional[str] = None
     stash: bool = True
 

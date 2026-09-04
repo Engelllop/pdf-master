@@ -1,6 +1,6 @@
 # PDF Master — Documentación técnica
 
-> Versión: **1.14.0** · Actualizado: 2026-08-15  
+> Versión: **1.19.0** · Actualizado: 2026-09-04  
 > Changelog de sesión: `CHANGELOG_SESSION.md`  
 > Repo canónico: `C:\dev\pdf-master` (`C:\Users\Engelllop\pdf-master` es junction).
 
@@ -23,7 +23,7 @@ Editor de PDFs para Windows (Electron + React + FastAPI + PyMuPDF), pensado para
 | Render cliente | pdfjs-dist 6 (página / continua / comparar / tiles) |
 | Motor | Python 3.13 (CI), FastAPI, PyMuPDF 1.28, Pillow |
 | Export | python-docx, openpyxl (`find_tables`), python-pptx, pytesseract |
-| Tests | Vitest (frontend), pytest (backend) |
+| Tests | Vitest (frontend), pytest (backend), Playwright+Electron (e2e local) |
 
 ---
 
@@ -41,13 +41,15 @@ Renderer       →  HTTP 127.0.0.1:8745  (header X-Pdfmaster-Token)
 - Caps de render: 3000 / 6000 px. Miniaturas 300 px.
 - Bitmaps de página = blob URLs, y `cachePage` **revoca el que reemplaza**: dos rasterizaciones de la misma página compitiendo por la misma entrada dejan revocado el blob que se está mostrando (página en blanco). El bitmap se sube de resolución al cambiar el zoom (`useZoomUpgrade`, 250 ms) en **los dos paneles** de la vista doble — el efecto de carga no vuelve a correr al hacer zoom, así que el derecho se quedaba borroso hasta cambiar de página. En scroll continuo el zoom vivo manda la geometría y el rasterizado espera 250 ms a que se quede quieto: los bitmaps **no se vacían** al hacer zoom (se estiran y se reemplazan al llegar el nuevo), que vaciarlos dejaba la ventana entera en blanco en cada paso de la rueda. El preload no pisa una entrada existente —descarta y libera su propio bitmap— y en vista doble no precarga `page + 1`, que es el panel derecho.
 - Instancia única: la perdedora hace `app.exit(0)` inmediato.
+- El motor deja su PID en `logs\engine.pid` y al arrancar solo se mata **ese** (y solo si sigue siendo un `pdf-engine.exe`: Windows recicla PIDs). Antes era `taskkill /F /IM pdf-engine.exe`, que barría el motor de otra instalación o de otro usuario. Al salir se mata el árbol (`/T`): PyInstaller onefile deja un hijo que se quedaba con el puerto.
+- Cada petición que no es `/health` lleva un id de 8 hex: va en la miga de pan, en la línea del log si tarda ≥ 2 s y en la respuesta (`X-Request-Id`).
 - `doc_id` muerto (404) → `reopenDeadDoc` + remap conservando marcas.
 
-**Sandbox Electron:** `sandbox: false` porque el renderer habla HTTP al motor local y usa `webUtils.getPathForFile`. No activar sin revalidar open/print/AI.
+**Sandbox Electron:** `sandbox: false` porque el renderer habla HTTP al motor local y usa `webUtils.getPathForFile`. No activar sin revalidar open/print/AI. La superficie IPC que abre rutas del sistema valida rutas locales absolutas existentes antes de llamar a `shell.openPath`, `shell.showItemInFolder` o leer imágenes para base64.
 
 ---
 
-## 4. Features (estado 1.14)
+## 4. Features (estado 1.19)
 
 ### Visor
 Vista simple / doble, continua (dibuja, marca texto, deja seleccionar texto y **mueve/redimensiona** marcas, con las mismas reglas que la vista de página), lectura, presentación, comparar lado a lado + overlay con mezcla, zoom fit, tiles de zoom profundo, paleta Ctrl+K, cinta por modos. La capa de texto (`TextLayer`, spans cacheados en `lib/spans`), el anclaje de resaltado/subrayado/tachado al texto real (`computeLineRects`: una marca por renglón, un paso de deshacer, y aviso en vez de marca suelta si no hay texto debajo) los tiradores de selección (`SelectionOverlay` + `geometriaRedimensionada`, un gesto = un paso de deshacer) y las coincidencias de la búsqueda (`SearchHits`) van en **las dos vistas** — en continuo `highlight` caía al rect libre y `underline`/`strikethrough` no estaban en ninguna lista de herramientas, así que no hacían nada; en continuo no existían, así que pasarse a continuo para leer era perder el copiar y buscar dejaba de señalar dónde está el resultado (amarillo las de la página, naranja y latiendo la actual).
@@ -76,10 +78,15 @@ Word, Excel (tablas con `find_tables`, si no hay tabla → líneas), PPT, TXT, H
 ### IA
 Anthropic vía main process (`safeStorage`). Presets: resumir marcas, pendientes, extraer tablas.
 
+### Diagnóstico
+Ajustes → Diagnóstico → Exportar deja un `.txt` con versiones (app, Electron, motor vía `/pdf/health`), si el motor responde, la operación en vuelo y la cola de `backend.log` / `backend.1.log`. Los logs viven en `%APPDATA%\pdf-master\logs` y nadie sabía que existían.
+
 ### Seguridad local
-- Token Electron→motor cuando la app spawnea el backend. pytest / `python main.py` sin token siguen abiertos (loopback).
+- Token Electron→motor cuando la app spawnea el backend. pytest / `python main.py` sin token siguen abiertos (loopback). Token equivocado = **403**, no 401: el 401 es «este PDF pide contraseña» y el visor lo trata como tal, así que hablarle a otro motor (otra instalación tomando el 8745) se veía en pantalla como «PDF protegido». El 403 dice que hay otro PDF Master en el puerto.
 - Open exige `.pdf` y respeta `MAX_FILE_SIZE_MB` (500).
-- `file:readBase64` solo imágenes.
+- `file:readBase64` solo imágenes locales absolutas existentes, con extensión permitida y tope de 50 MB.
+- `shell.openPath` solo abre carpetas locales absolutas existentes; `showItemInFolder` exige una ruta local existente.
+- Rutas de salida: absolutas, sin bytes nulos, extensión esperada y directorio existente (`_shared.py`).
 - Firmas = polyline, no PAdES. Sin firma de código (SmartScreen).
 
 ---
@@ -119,7 +126,13 @@ $env:CSC_IDENTITY_AUTO_DISCOVERY='false'
 npm run build:win    # → dist\PDF-Master-Setup-<version>.exe
 ```
 
-CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest; tag `v*` publica release. Sin Authenticode.
+CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest + lint (tope de avisos); antes de empaquetar se verifica que `pdf-engine.exe` esté en `resources/backend` y no sea un binario truncado; tag `v*` publica release. Sin Authenticode.
+
+`.github/workflows/security.yml` (PR + semanal): `npm audit`, `pip-audit` y CodeQL (TS + Python). Dependabot semanal para npm, pip y actions, con Electron y PyMuPDF fuera del salto mayor automático.
+
+**Versiones:** `frontend/package.json` es la fuente. `versionSync.test.ts` ata la cabecera de este archivo y el changelog; `backend/tests/test_version.py` ata `ENGINE_VERSION` (el `version` que declara la API); el job de release ata el tag.
+
+**E2E:** `npm run e2e` (Playwright + Electron, `frontend/e2e/`) arranca la app construida con un PDF por línea de comandos y comprueba que el motor levanta y rasteriza. Necesita `npm run build` y `backend/venv`, así que **no** corre en CI; si el 8745 ya está tomado por otro motor, se salta diciéndolo.
 
 Puerto de desarrollo del motor instalado vs. repo: **8746** si 8745 está ocupado.
 
@@ -132,8 +145,8 @@ Puerto de desarrollo del motor instalado vs. repo: **8746** si 8745 está ocupad
 | OCR | Tesseract externo; no va en el instalador |
 | Escáner | No implementado (WIA) |
 | Firmas digitales | Solo dibujo |
-| Vista continua | Solo lectura |
-| Undo | Solo marcas, no páginas |
+| Vista continua | Lee, selecciona texto, busca y permite dibujar/mover/redimensionar marcas |
+| Undo | Marcas y operaciones de página soportadas por stash del motor |
 | OneDrive / colaboración | No |
 | i18n | Español hardcodeado |
 | macOS/Linux | Scripts existen; CI es Windows |

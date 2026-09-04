@@ -74,6 +74,21 @@ class TestPathValidation:
         resp = client.post(f"/pdf/save/{info['doc_id']}?output_path=C:/directorio/inexistente/x.pdf")
         assert resp.status_code == 422
 
+    def test_save_to_relative_path_is_422(self, client, open_doc):
+        """El motor empaquetado corre con el cwd que le deje Windows: una ruta
+        relativa no escribe al lado del PDF, escribe donde nadie la encuentra."""
+        info = open_doc()
+        resp = client.post(f"/pdf/save/{info['doc_id']}?output_path=salida.pdf")
+        assert resp.status_code == 422
+
+    def test_null_byte_in_path_is_422(self, client, open_doc, tmp_path):
+        """Con un nulo, `open()` levanta ValueError (500 sin explicacion) y las APIs
+        de C cortan la cadena despues de la extension ya validada."""
+        info = open_doc()
+        destino = f"{tmp_path / 'x.pdf'}{chr(0)}.exe"
+        resp = client.post(f"/pdf/save/{info['doc_id']}", params={"output_path": destino})
+        assert resp.status_code == 422
+
     def test_zoom_out_of_bounds_is_422(self, client, open_doc):
         info = open_doc()
         assert client.get(f"/pdf/page-image/{info['doc_id']}/0?zoom=1000").status_code == 422

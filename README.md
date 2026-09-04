@@ -4,7 +4,7 @@ Editor profesional de PDFs inspirado en Bluebeam Revu, UPDF y PDFelement.
 
 ## Documentación
 
-- **`DOCUMENTATION.md`** — spec actual (v1.14.0): arquitectura, API, contratos.
+- **`DOCUMENTATION.md`** — spec actual: arquitectura, API, contratos. La versión que declara la cabecera se valida contra `frontend/package.json` en los tests (`versionSync.test.ts`), que es la fuente única.
 - **`CHANGELOG_SESSION.md`** — registro por sesión.
 - Tests del backend: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q` (obligatorio tras tocar Python).
 

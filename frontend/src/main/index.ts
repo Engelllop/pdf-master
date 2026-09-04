@@ -1,15 +1,18 @@
 import { app, shell, BrowserWindow, ipcMain, dialog, safeStorage } from 'electron'
-import { join, extname } from 'path'
+import { join } from 'path'
 import { randomBytes } from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, execSync, ChildProcess } from 'child_process'
 import { autoUpdater } from 'electron-updater'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, unlink, unlinkSync } from 'fs'
-import { tmpdir, userInfo } from 'os'
+import { release, tmpdir, userInfo } from 'os'
 import { dirtyWindowCount, forgetWindow, isWindowDirty, setWindowDirty } from './dirtyWindows'
 import { createAiStreamParser } from './aiStream'
 import { avisoActualizacionLista, respuestaEsReiniciar } from './updatePrompt'
 import { debeBorrarse, esTempDeImpresion } from './tempSweep'
+import { rutaCarpetaAbrible, rutaImagenLegible, rutaParaMostrarEnCarpeta } from './safePaths'
+import { comandoMatarArbol, comandoTasklist, esNuestroMotor, pidGuardado } from './enginePid'
+import { colaDeTexto, construirDiagnostico, nombreArchivoDiagnostico } from './diagnostics'
 
 // GPU & performance flags
 app.commandLine.appendSwitch('enable-gpu-rasterization')
@@ -26,7 +29,7 @@ const API_TOKEN = randomBytes(24).toString('hex')
 const backendEnv = { ...process.env, PDFMASTER_API_TOKEN: API_TOKEN }
 
 /** El motor exige el token en todo lo que no sea /health. El renderer lo pone en
- * `apiFetch`; el main tiene que ponerlo igual o recibe 401 (empaquetado siempre,
+ * `apiFetch`; el main tiene que ponerlo igual o recibe 403 (empaquetado siempre,
  * porque `dev.ps1` arranca el motor sin token y ahí el middleware no aplica). */
 function engineFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_BASE}${path}`, {
@@ -91,13 +94,42 @@ function safeLog(level: string, msg: string): void {
   }
 }
 
-function killExistingBackend(): void {
+// El PID del motor que lanzó ESTA app, para no volver a matar por nombre de imagen
+// (ver enginePid.ts). Vive junto a los logs porque es el directorio por usuario que
+// la app ya crea.
+const pidFile = join(logDir, 'engine.pid')
+
+function recordarPidMotor(pid: number | undefined): void {
+  if (!pid) return
   try {
-    // Kill any existing pdf-engine.exe processes to free port 8745
-    execSync('taskkill /F /IM pdf-engine.exe 2>nul', { windowsHide: true })
+    if (!existsSync(logDir)) mkdirSync(logDir, { recursive: true })
+    writeFileSync(pidFile, String(pid), 'utf-8')
+  } catch { /* sin pidfile solo se pierde la limpieza del arranque siguiente */ }
+}
+
+function olvidarPidMotor(): void {
+  try { if (existsSync(pidFile)) unlinkSync(pidFile) } catch { /* ignore */ }
+}
+
+/** Mata el motor huérfano del arranque anterior — solo el nuestro, y solo si el PID
+ * sigue siendo un pdf-engine.exe. Si el 8745 lo tiene otro proceso, el motor nuevo
+ * fallará al bindear y eso se ve en el log: preferible a matar algo ajeno. */
+function killExistingBackend(): void {
+  let pid: number | null = null
+  try {
+    pid = pidGuardado(existsSync(pidFile) ? readFileSync(pidFile, 'utf-8') : null)
+  } catch { pid = null }
+  if (!pid) return
+  try {
+    const salida = execSync(comandoTasklist(pid), { windowsHide: true }).toString()
+    if (esNuestroMotor(salida, pid)) {
+      execSync(comandoMatarArbol(pid), { windowsHide: true, stdio: 'ignore' })
+      safeLog('INFO', `[Main] Motor huerfano ${pid} terminado`)
+    }
   } catch {
-    // Ignore errors — no existing process is fine
+    // tasklist/taskkill fallan si el PID ya no existe: es el caso normal
   }
+  olvidarPidMotor()
 }
 
 function startBackend(): Promise<void> {
@@ -135,6 +167,7 @@ function startBackend(): Promise<void> {
       })
     }
     backendProcess = child
+    recordarPidMotor(child.pid)
 
     let resolved = false
     const maybeResolve = () => {
@@ -171,7 +204,10 @@ function startBackend(): Promise<void> {
       safeLog('INFO', `Backend exited with code ${code}`)
       // Solo si sigue siendo el proceso vigente: el 'exit' de uno ya reemplazado no
       // puede borrar la referencia al que está corriendo.
-      if (backendProcess === child) backendProcess = null
+      if (backendProcess === child) {
+        backendProcess = null
+        olvidarPidMotor()
+      }
       if (!resolved) {
         resolved = true
         reject(new Error(`Backend exited with code ${code}`))
@@ -181,10 +217,17 @@ function startBackend(): Promise<void> {
 }
 
 function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill()
-    backendProcess = null
+  if (!backendProcess) return
+  const pid = backendProcess.pid
+  backendProcess.kill()
+  backendProcess = null
+  // pdf-engine.exe es PyInstaller onefile: el bootloader lanza un hijo, y matar solo
+  // al padre dejaba ese hijo con el puerto tomado (era lo que el taskkill por nombre
+  // acababa barriendo en el arranque siguiente).
+  if (pid && !is.dev) {
+    try { execSync(comandoMatarArbol(pid), { windowsHide: true, stdio: 'ignore' }) } catch { /* ya murió */ }
   }
+  olvidarPidMotor()
 }
 
 function createWindow(): void {
@@ -489,14 +532,84 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('shell:showInFolder', (_event, filePath: string) => {
-    try { shell.showItemInFolder(filePath) } catch { /* ignore */ }
+    const ruta = rutaParaMostrarEnCarpeta(filePath)
+    if (!ruta) return false
+    try {
+      shell.showItemInFolder(ruta)
+      return true
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('shell:openPath', (_event, dirPath: string) => {
-    try { shell.openPath(dirPath) } catch { /* ignore */ }
+    const ruta = rutaCarpetaAbrible(dirPath)
+    if (!ruta) return false
+    try {
+      shell.openPath(ruta)
+      return true
+    } catch {
+      return false
+    }
   })
 
   ipcMain.handle('api:token', () => API_TOKEN)
+
+  /** Un archivo de texto con versiones, estado del motor y la cola de los logs, para
+   * adjuntar cuando algo falla en una máquina ajena. Todo lo que arma ya estaba en
+   * disco; lo que faltaba era poder pedirlo sin explicar dónde vive %APPDATA%. */
+  ipcMain.handle('diag:export', async () => {
+    let motorRespondio = false
+    let motorVersion: string | null = null
+    try {
+      const res = await engineFetch('/pdf/health', { signal: AbortSignal.timeout(2000) })
+      motorRespondio = res.ok
+      const body = await res.json().catch(() => null)
+      motorVersion = body?.version ?? null
+    } catch { /* el motor caído es justo lo que se quiere reportar */ }
+
+    const leer = (ruta: string, maxCaracteres: number): string => {
+      try {
+        return existsSync(ruta) ? colaDeTexto(readFileSync(ruta, 'utf-8'), maxCaracteres) : ''
+      } catch (err) {
+        return `(no se pudo leer: ${err})`
+      }
+    }
+
+    const informe = construirDiagnostico({
+      generadoEn: new Date().toISOString(),
+      appVersion: app.getVersion(),
+      motorVersion,
+      motorRespondio,
+      plataforma: `${process.platform} ${release()} ${process.arch}`,
+      versiones: {
+        electron: process.versions.electron,
+        chrome: process.versions.chrome,
+        node: process.versions.node,
+      },
+      rutas: { logs: logDir, motor: pidFile, datos: app.getPath('userData') },
+      ventanasConCambios: dirtyWindowCount(),
+      enVuelo: leer(join(logDir, 'inflight.txt'), 2000).trim(),
+      logs: [
+        { nombre: 'backend.log (cola)', contenido: leer(logFile, 200000) },
+        { nombre: 'backend.1.log (cola)', contenido: leer(logFilePrevio, 50000) },
+      ],
+    })
+
+    const destino = await dialog.showSaveDialog({
+      title: 'Guardar diagnóstico',
+      defaultPath: join(app.getPath('documents'), nombreArchivoDiagnostico(new Date())),
+      filters: [{ name: 'Texto', extensions: ['txt'] }],
+    })
+    if (destino.canceled || !destino.filePath) return null
+    try {
+      writeFileSync(destino.filePath, informe, 'utf-8')
+      return destino.filePath
+    } catch (err) {
+      safeLog('ERROR', `[Main] No se pudo escribir el diagnóstico: ${err}`)
+      return null
+    }
+  })
 
   ipcMain.handle('log:error', (_event, message: string) => {
     safeLog('RENDERER', String(message).slice(0, 2000))
@@ -738,9 +851,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('file:readBase64', async (_event, filePath: string) => {
     const allowed = new Set(['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tif', '.tiff'])
-    if (!allowed.has(extname(filePath).toLowerCase())) return null
+    const ruta = rutaImagenLegible(filePath, allowed)
+    if (!ruta) return null
     try {
-      const buffer = readFileSync(filePath)
+      const buffer = readFileSync(ruta)
       return buffer.toString('base64')
     } catch (err) {
       safeLog('ERROR', `[Main] Failed to read file: ${err}`)

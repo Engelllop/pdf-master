@@ -43,6 +43,12 @@ describe('el motivo del fallo', () => {
     expect(motivoDeApertura('a.pdf', 413, 'El PDF supera el tope de 500 MB')).toContain('supera el tope')
   })
 
+  it('el token rechazado señala al otro motor, no al PDF', () => {
+    // El 403 del middleware del token significa que hay otro pdf-engine en el 8745:
+    // con el genérico, el usuario buscaba el problema en el archivo.
+    expect(motivoDeApertura('a.pdf', 403, 'unauthorized')).toContain('otro PDF Master')
+  })
+
   it('un fallo sin explicación cae al mensaje genérico', () => {
     expect(motivoDeApertura('a.pdf', 500, '')).toBe('No se pudo abrir «a.pdf»')
   })

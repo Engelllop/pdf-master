@@ -1,6 +1,8 @@
 import logging
 import os
 import tempfile
+import time
+import uuid
 import uvicorn
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from anyio import to_thread
+from app.core.config import ENGINE_VERSION
 from app.routers import pdf
 from app.services.pdf_service import DocumentNotFoundError, PasswordRequiredError
 
@@ -77,7 +80,7 @@ async def lifespan(app: FastAPI):
     _write_breadcrumb("")
 
 
-app = FastAPI(title="PDF Master Engine", version="1.14.2", lifespan=lifespan)
+app = FastAPI(title="PDF Master Engine", version=ENGINE_VERSION, lifespan=lifespan)
 
 # Electron genera un token al spawnear el motor. Si no hay token (pytest / python
 # main.py a mano) la API sigue abierta en loopback — no romper tests ni el script
@@ -90,7 +93,11 @@ async def require_local_token(request: Request, call_next):
     if not _API_TOKEN or request.url.path.endswith("/health"):
         return await call_next(request)
     if request.headers.get("x-pdfmaster-token") != _API_TOKEN:
-        return JSONResponse(status_code=401, content={"detail": "unauthorized"})
+        # 403 y no 401: el 401 ya significa "este PDF pide contrasena" (lo levanta
+        # PasswordRequiredError) y el visor lo trata como tal. Con los dos en 401,
+        # hablarle al motor equivocado —otra instalacion tomando el 8745— se veia en
+        # pantalla como "PDF protegido: escriba la contrasena", que no existe.
+        return JSONResponse(status_code=403, content={"detail": "unauthorized"})
     return await call_next(request)
 
 # Solo el renderer de Electron: file:// manda Origin "null" en producción y
@@ -101,7 +108,17 @@ app.add_middleware(
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
+    # Sin exponerlo, el renderer no puede leer el X-Request-Id de una respuesta
+    # cross-origin: el id quedaría solo en el log, que es la mitad que hace falta.
+    expose_headers=["X-Request-Id"],
 )
+
+
+# Una operación lenta no dejaba rastro: el usuario dice "se congeló al guardar" y en
+# el log solo estaba la línea de uvicorn, sin cuánto tardó ni cuál de las tres
+# pestañas era. `rid` va en la miga de pan, en la línea del log y en la respuesta
+# (`X-Request-Id`), así que un aviso en pantalla se puede casar con el log.
+SLOW_REQUEST_S = 2.0
 
 
 @app.middleware("http")
@@ -110,9 +127,23 @@ async def track_inflight_request(request: Request, call_next):
     # pisaría la miga de pan de la petición que sí está tocando MuPDF.
     if request.url.path.endswith("/health"):
         return await call_next(request)
-    _write_breadcrumb(f"{request.method} {request.url.path}?{request.url.query}")
+    rid = uuid.uuid4().hex[:8]
+    etiqueta = f"{request.method} {request.url.path}?{request.url.query}"
+    _write_breadcrumb(f"[{rid}] {etiqueta}")
+    inicio = time.perf_counter()
     try:
-        return await call_next(request)
+        response = await call_next(request)
+    except Exception:
+        log.exception("[%s] %s reventó tras %.2fs", rid, etiqueta, time.perf_counter() - inicio)
+        raise
+    else:
+        duracion = time.perf_counter() - inicio
+        # Solo lo lento: una línea por render (una por página al hojear) haría el log
+        # inservible, que es como estaba antes de que se rotara.
+        if duracion >= SLOW_REQUEST_S:
+            log.warning("[%s] %s tardó %.2fs (status %s)", rid, etiqueta, duracion, response.status_code)
+        response.headers["X-Request-Id"] = rid
+        return response
     finally:
         _write_breadcrumb("")
 

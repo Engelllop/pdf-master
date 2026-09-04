@@ -17,6 +17,8 @@ const api = {
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
   getApiToken: (): Promise<string> => ipcRenderer.invoke('api:token'),
+  /** Devuelve la ruta del informe guardado, o null si se canceló. */
+  exportDiagnostics: (): Promise<string | null> => ipcRenderer.invoke('diag:export'),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number; landscape?: boolean }) => ipcRenderer.invoke('pdf:print', docId, opts),
   aiChat: (payload: { requestId: string; docId: string | null; messages: { role: 'user' | 'assistant'; text: string }[]; scope?: 'doc' | 'page'; page?: number }) => ipcRenderer.send('ai:chat', payload),
   aiAbort: (requestId: string) => ipcRenderer.send('ai:abort', requestId),

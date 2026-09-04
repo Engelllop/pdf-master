@@ -1,0 +1,49 @@
+version: 2
+
+# Las tres cadenas que entran al instalador (npm del frontend, pip del motor y las
+# actions del propio CI) estaban clavadas a mano: una version con CVE se quedaba
+# meses sin que nadie mirara. Semanal y agrupado, para que sea un PR que se revisa
+# y no veinte que se ignoran.
+updates:
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime-patches:
+        dependency-type: production
+        update-types: [patch]
+    # Electron y electron-builder van a mano: cada salto mayor obliga a revalidar
+    # sandbox, preload y el empaquetado del motor.
+    ignore:
+      - dependency-name: electron
+        update-types: [version-update:semver-major]
+      - dependency-name: electron-builder
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      motor:
+        patterns: ['*']
+        update-types: [minor, patch]
+    # PyMuPDF es el corazon delicado: un mayor cambia comportamiento de anotaciones
+    # y hay que pasar los 204 tests a mano antes de aceptarlo.
+    ignore:
+      - dependency-name: pymupdf
+        update-types: [version-update:semver-major]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday

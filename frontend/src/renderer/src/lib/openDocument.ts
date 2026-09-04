@@ -58,6 +58,13 @@ export function motivoDeApertura(nombre: string, status: number, detalle: string
     return `«${nombre}» ya no está en esa carpeta: ¿la moviste o la borraste?`
   }
   if (status === 422 || status === 413) return detalle || `No se pudo abrir «${nombre}»`
+  // El motor rechaza el token: casi siempre es otro pdf-engine (otra instalación, o
+  // uno que quedó vivo) ocupando el 8745, así que la app le está hablando a un motor
+  // que no es el suyo. Sin este caso salía "No se pudo abrir" a secas y no había por
+  // dónde empezar.
+  if (status === 403) {
+    return `El motor rechazó la app: hay otro PDF Master usando el puerto 8745. Cerrá el otro y reintentá.`
+  }
   return `No se pudo abrir «${nombre}»`
 }
 

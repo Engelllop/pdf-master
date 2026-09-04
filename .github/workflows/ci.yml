@@ -1,5 +1,11 @@
 name: CI
 
+# `playwright` es dependencia de desarrollo solo por el e2e local (`npm run e2e`),
+# que no corre en CI: sin esto, cada `npm ci` de cada job se baja tres navegadores
+# que nadie va a abrir.
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
 on:
   push:
     branches: [main]
@@ -49,10 +55,10 @@ jobs:
         working-directory: frontend
       # Bloquea de verdad: `continue-on-error` lo hacia decorativo y ademas fallaba
       # entero (ESLint 9 sin eslint.config.js), asi que el lint no corrio nunca.
-      # El tope de avisos evita que los 56 que quedan (casi todos exhaustive-deps)
+      # El tope de avisos evita que los 49 que quedan (casi todos exhaustive-deps)
       # se conviertan en 500 sin que nadie lo note.
       - name: Lint
-        run: npm run lint -- --max-warnings 60
+        run: npm run lint -- --max-warnings 49
         working-directory: frontend
 
   release:
@@ -94,6 +100,19 @@ jobs:
           cd backend
           pyinstaller pdf-engine.spec --noconfirm --clean
           Copy-Item dist/pdf-engine.exe ../frontend/resources/backend/pdf-engine.exe -Force
+      # Sin motor la app instala y arranca, y muere al abrir el primer PDF: el
+      # renderer se queda esperando un 127.0.0.1:8745 que no existe. electron-builder
+      # empaqueta resources/ tal cual, asi que un PyInstaller a medias (o un copy que
+      # no paso) sale como release valido. Se mira antes de empaquetar, no despues.
+      - name: El motor entra al paquete
+        run: |
+          $exe = Get-Item frontend/resources/backend/pdf-engine.exe -ErrorAction SilentlyContinue
+          if (-not $exe) { throw "Falta frontend/resources/backend/pdf-engine.exe: PyInstaller no dejo el binario." }
+          $mb = [math]::Round($exe.Length / 1MB, 1)
+          Write-Host "pdf-engine.exe: $mb MB"
+          # El onefile con PyMuPDF+Pillow ronda los 60 MB; por debajo de 20 es un
+          # binario truncado o un stub, no un motor.
+          if ($exe.Length -lt 20MB) { throw "pdf-engine.exe pesa $mb MB: parece truncado." }
       # El release se crea ACA y no lo crea electron-builder. electron-builder
       # publica cada artefacto por su cuenta (.exe, .blockmap, latest.yml) y
       # cada uno crea el release si no lo encuentra: son varios POST al mismo

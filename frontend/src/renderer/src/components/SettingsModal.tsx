@@ -31,14 +31,32 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
     themePreference, setThemePreference, wheelMode, setWheelMode,
     uiScale, setUiScale, defaultZoomMode, setDefaultZoomMode,
     defaultUnit, setDefaultUnit, restoreSession, setRestoreSession,
-    backupOnSave, setBackupOnSave,
+    backupOnSave, setBackupOnSave, showToast,
   } = useStoreSlice(
     'annotationAuthor', 'setAnnotationAuthor', 'stickyTools', 'setStickyTools',
     'themePreference', 'setThemePreference', 'wheelMode', 'setWheelMode',
     'uiScale', 'setUiScale', 'defaultZoomMode', 'setDefaultZoomMode',
     'defaultUnit', 'setDefaultUnit', 'restoreSession', 'setRestoreSession',
-    'backupOnSave', 'setBackupOnSave',
+    'backupOnSave', 'setBackupOnSave', 'showToast',
   )
+
+  const [exportando, setExportando] = useState(false)
+
+  /** Los logs viven en %APPDATA%\pdf-master\logs y nadie sabe que existen: sin esto,
+   * reportar un fallo desde otra máquina es describirlo de memoria. */
+  const exportarDiagnostico = async () => {
+    setExportando(true)
+    try {
+      const ruta = await window.api.exportDiagnostics()
+      if (!ruta) return
+      showToast('Diagnóstico guardado', 'success')
+      window.api.showInFolder(ruta)
+    } catch {
+      showToast('No se pudo generar el diagnóstico', 'error')
+    } finally {
+      setExportando(false)
+    }
+  }
 
   const Row = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
     <div className="flex items-start gap-3 py-2.5">
@@ -152,6 +170,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <Segmented<'on' | 'off'> value={backupOnSave ? 'on' : 'off'}
               options={[['off', 'No'], ['on', 'Sí']]}
               onChange={(v) => setBackupOnSave(v === 'on')} />
+          </Row>
+          </Seccion>
+
+          <Seccion titulo="Diagnóstico">
+          <Row label="Exportar diagnóstico"
+            hint="Un .txt con versiones, si el motor responde y la cola de los registros. Para adjuntar cuando algo falla.">
+            <button onClick={exportarDiagnostico} disabled={exportando}
+              className="px-2.5 h-7 rounded-token-sm text-micro border border-border bg-surface text-fg hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-fast ease-token">
+              {exportando ? 'Generando…' : 'Exportar'}
+            </button>
           </Row>
           </Seccion>
         </div>

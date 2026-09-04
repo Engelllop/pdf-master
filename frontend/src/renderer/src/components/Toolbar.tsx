@@ -14,6 +14,7 @@ import {
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
   TextCursorInput, CircleDot, List, MoreHorizontal, Eraser,
+  type LucideIcon,
 } from 'lucide-react'
 import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
 import { correrCola } from '../lib/batchQueue'
@@ -34,6 +35,19 @@ import Tooltip from './Tooltip'
 import { apiFetch } from '../lib/api'
 import { leerEnVozAlta, detenerLectura } from '../lib/speech'
 import { redactMatchesUndoable, replaceTextUndoable } from '../lib/pageUndo'
+
+type ToolIcon = LucideIcon
+type ToolDescriptor = { id: string; icon: ToolIcon; label: string }
+type TextResponse = { text?: string; blocks?: Array<{ text?: string }> }
+type ToolButtonProps = {
+  icon: ToolIcon
+  label: string
+  tip?: string
+  shortcut?: string
+  onClick: () => void
+  active?: boolean
+  disabled?: boolean
+}
 
 export default function Toolbar() {
   const {
@@ -256,8 +270,8 @@ export default function Toolbar() {
     if (isSpeaking) { detenerLectura(); setIsSpeaking(false); return }
     try {
       const res = await apiFetch(`/pdf/text/${activeDoc.doc_id}/${activeDoc.currentPage}`)
-      const data = await res.json()
-      const text: string = (data.blocks ? data.blocks.map((b: any) => b.text).join(' ') : data.text) || ''
+      const data = await res.json() as TextResponse
+      const text = (data.blocks ? data.blocks.map((b) => b.text || '').join(' ') : data.text) || ''
       if (!text.trim()) { showToast('No hay texto en esta página', 'info'); return }
       leerEnVozAlta(text, () => setIsSpeaking(false))
       setIsSpeaking(true)
@@ -383,7 +397,7 @@ export default function Toolbar() {
   // `active` sin valor por defecto a propósito: solo los botones que SON un
   // interruptor (herramienta, lectura, presentación, comparar) lo pasan, y solo esos
   // llevan aria-pressed — en los de acción suelta anunciaría un estado que no existe.
-  const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active, disabled = false }: any) => (
+  const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active, disabled = false }: ToolButtonProps) => (
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
         className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed ${
@@ -396,7 +410,7 @@ export default function Toolbar() {
   )
   const Sep = () => <div className="w-px h-4 mx-1 bg-border shrink-0" />
   const closeCommentMenu = () => { setCommentMenu(null); setDrawFormasOpen(false) }
-  const MenuItem = ({ id, icon: Icon, label }: { id: string; icon: any; label: string }) => (
+  const MenuItem = ({ id, icon: Icon, label }: ToolDescriptor) => (
     <button role="menuitem" onClick={() => {
       if (isDrawFamily(id)) setLastDrawTool(id)
       if (isMeasureFamily(id)) setLastMeasureTool(id)
@@ -417,7 +431,7 @@ export default function Toolbar() {
     family, icon: Icon, label, tip, shortcut, active, onActivate, children,
   }: {
     family: 'draw' | 'measure'
-    icon: any
+    icon: ToolIcon
     label: string
     tip: string
     shortcut?: string
@@ -461,7 +475,7 @@ export default function Toolbar() {
     id, icon: Icon, label, active, children,
   }: {
     id: string
-    icon: any
+    icon: ToolIcon
     label: string
     active?: boolean
     children: ReactNode
@@ -493,7 +507,7 @@ export default function Toolbar() {
   // `label` es el rótulo corto del botón; el nombre completo y el atajo van en el
   // tooltip (TOOL_LABELS/TOOL_SHORTCUTS son la fuente única, compartida con los
   // atajos globales y la barra de estado).
-  const COUNT_SYMBOL_ICONS: Array<{ id: CountSymbol; icon: any }> = [
+  const COUNT_SYMBOL_ICONS: Array<{ id: CountSymbol; icon: ToolIcon }> = [
     { id: 'circle', icon: Circle },
     { id: 'square', icon: Square },
     { id: 'triangle', icon: Triangle },
@@ -502,7 +516,7 @@ export default function Toolbar() {
     { id: 'star', icon: Star },
   ]
 
-  const COMMENT_TOOLS: Array<{ id: string; icon: any; label: string }> = [
+  const COMMENT_TOOLS: ToolDescriptor[] = [
     { id: 'select', icon: MousePointer2, label: 'Seleccionar' },
     { id: 'eraser', icon: Eraser, label: 'Borrador' },
     { id: 'textselect', icon: TextSelect, label: 'Copiar texto' },
@@ -522,7 +536,7 @@ export default function Toolbar() {
   ]
 
   // Galería de formas (estilo Acrobat): las básicas + las nuevas configurables.
-  const SHAPE_TOOLS: Array<{ id: string; icon: any; label: string }> = [
+  const SHAPE_TOOLS: ToolDescriptor[] = [
     { id: 'rect', icon: Square, label: 'Rectángulo' },
     { id: 'circle', icon: Circle, label: 'Círculo' },
     { id: 'line', icon: Minus, label: 'Línea' },

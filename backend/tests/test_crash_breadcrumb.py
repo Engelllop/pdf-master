@@ -4,6 +4,7 @@ Un segfault de MuPDF se lleva el proceso sin traza y uvicorn solo escribe la lin
 de acceso AL TERMINAR, asi que la peticion culpable no dejaba rastro. Se guarda
 antes de ejecutarla y se reporta en el arranque siguiente.
 """
+import re
 import main as engine
 
 
@@ -21,7 +22,7 @@ class TestBreadcrumb:
 
     def test_guarda_metodo_ruta_y_query(self, client, open_doc, monkeypatch):
         """Lo que queda escrito mientras la peticion corre es lo que se veria tras
-        un crash: metodo, ruta y query."""
+        un crash: el id de la operacion, metodo, ruta y query."""
         seen = {}
 
         original = engine._write_breadcrumb
@@ -34,7 +35,7 @@ class TestBreadcrumb:
         monkeypatch.setattr(engine, "_write_breadcrumb", spy)
         info = open_doc(pages=1)
         client.get(f"/pdf/page-info/{info['doc_id']}/0?zoom=1.5")
-        assert seen["text"].startswith("GET /pdf/page-info/")
+        assert re.match(r"^\[[0-9a-f]{8}\] GET /pdf/page-info/", seen["text"]), seen["text"]
         assert seen["text"].endswith("?zoom=1.5")
 
     def test_al_arrancar_reporta_y_limpia_la_miga_pendiente(self, caplog):

@@ -1,0 +1,58 @@
+name: Seguridad
+
+env:
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+# El CI probaba que la app funciona, no que sea segura de instalar: nadie miraba las
+# dependencias ni el codigo con analisis estatico. Corre en cada PR a main y una vez
+# por semana (una CVE nueva no espera a que alguien toque el repo).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  dependencias:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # El arbol entero, no solo lo que viaja en el instalador: el toolchain de
+      # build tambien firma y empaqueta. Se limpio a cero antes de poner esto, asi
+      # que un fallo aqui es una CVE nueva, no deuda heredada que se acaba ignorando.
+      - name: npm audit
+        run: npm audit --audit-level=high
+        working-directory: frontend
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: pip-audit del motor
+        run: |
+          pip install pip-audit
+          pip-audit -r backend/requirements.txt --strict
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}

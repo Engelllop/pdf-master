@@ -5,7 +5,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from app.core.config import settings
+from app.core.config import ENGINE_VERSION, settings
 from app.models.pdf import (
     CreateBlankRequest, DirtyStatus, MergeRequest, OpenPdfRequest, PdfInfo,
     SavePasswordRequest, SaveResult, SplitRequest, TempFileResult,
@@ -134,7 +134,10 @@ def images_to_pdf(req: ImagesToPdfRequest):
 async def health_check():
     # Stays on the event loop (not the threadpool) so it answers instantly even while
     # CPU-bound render handlers saturate the threadpool.
-    return {"status": "ok"}
+    # La version y el pid van aqui porque es lo unico que se puede preguntar sin
+    # token: el diagnostico necesita saber QUE motor esta contestando (el instalado
+    # o uno de desarrollo que se quedo tomado el puerto).
+    return {"status": "ok", "version": ENGINE_VERSION, "pid": os.getpid()}
 
 @router.post("/close/{doc_id}")
 def close_pdf(doc_id: str):

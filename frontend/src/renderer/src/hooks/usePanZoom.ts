@@ -36,7 +36,7 @@ export function usePanZoom(
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [isPanning])
+  }, [isPanning, containerRef])
 
   const startPan = useCallback((clientX: number, clientY: number) => {
     if (!containerRef.current) return
@@ -46,7 +46,7 @@ export function usePanZoom(
       left: containerRef.current.scrollLeft,
       top: containerRef.current.scrollTop,
     }
-  }, [])
+  }, [containerRef])
 
   const stopPan = useCallback(() => {
     setIsPanning(false)
@@ -118,7 +118,7 @@ export function usePanZoom(
       }, 50)
     }
     lastScrollDir.current = e.deltaY > 0 ? 'down' : 'up'
-  }, [activeDoc, pageData, setZoom, nextPage, prevPage, activeTool, wheelMode])
+  }, [activeDoc, pageData, setZoom, nextPage, prevPage, activeTool, wheelMode, containerRef])
 
   return {
     isPanning,

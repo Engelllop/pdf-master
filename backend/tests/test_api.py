@@ -4,6 +4,7 @@ import os
 
 import pytest
 
+from app.core.config import ENGINE_VERSION
 from app.services.pdf_service import pdf_service
 
 
@@ -103,7 +104,12 @@ class TestConcurrency:
         assert all(code == 200 for code in results)
 
     def test_health_responds(self, client):
-        assert client.get("/pdf/health").json() == {"status": "ok"}
+        cuerpo = client.get("/pdf/health").json()
+        # Version y pid van en el health porque es lo unico que se puede preguntar
+        # sin token: el diagnostico necesita saber QUE motor esta contestando.
+        assert cuerpo["status"] == "ok"
+        assert cuerpo["version"] == ENGINE_VERSION
+        assert isinstance(cuerpo["pid"], int)
 
 
 class TestLru:
