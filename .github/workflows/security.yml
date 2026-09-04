@@ -30,7 +30,7 @@ jobs:
       - name: npm audit
         run: npm audit --audit-level=high
         working-directory: frontend
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
       - name: pip-audit del motor
