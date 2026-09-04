@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PDF Master — sistema visual</title>
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   PROPUESTA: traducción a lenguaje Apple.
+   Los tokens de este bloque son los que van a App.css tal cual. Se declaran en
+   .pm / .pm.dark (y no en :root) para poder ver los dos temas en la misma
+   página, lado a lado. En la app siguen siendo :root y html.dark.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.pm {
+  /* ── Neutros ────────────────────────────────────────────────────────────── */
+  --surface: 242 242 245;      /* la mesa: donde se apoya la lámina */
+  --panel: 255 255 255;        /* paneles y hojas opacas */
+  --panel-raised: 255 255 255; /* menús y popovers (van sobre material) */
+  --fg: 24 24 27;
+  --muted: 99 99 105;          /* etiqueta secundaria */
+  /* Terciaria. NO es texto: separadores, glifos deshabilitados, marcas de agua de
+     un icono. Un placeholder o una etiqueta van en --muted, que sí cumple AA. */
+  --faint: 142 142 150;
+  /* Un solo hairline. La separación estructural ahora la hace el TONO, no la
+     línea: en la app había border, border-strong y border-control marcando lo
+     mismo en sitios distintos. Queda para el contorno de control (WCAG 1.4.11
+     pide 3:1) y para el filo de un material. */
+  --hairline: 0 0 0;           /* se usa siempre con alfa */
+  --border-control: 118 118 128;
+  --hover: 0 0 0;              /* alfa 0.05 */
+  --active: 0 0 0;             /* alfa 0.09 */
+
+  /* ── Acento ─────────────────────────────────────────────────────────────── */
+  /* Azul de sistema, un paso más profundo que el #007AFF de Apple: ese da 4.06:1
+     con blanco encima y las etiquetas de herramienta van a 11–13px. Este da
+     5.41:1 y sigue leyéndose como el azul de sistema. */
+  --accent: 10 102 214;
+  --on-accent: 255 255 255;
+  --accent-soft: 10 102 214;   /* con alfa: relleno suave de selección */
+
+  /* ── Semánticos (apagados: el color saturado es del usuario) ────────────── */
+  --danger: 175 58 48;   --on-danger: 255 255 255;
+  --success: 32 116 79;
+  --warning: 150 98 15;
+  --info: 42 92 150;
+
+  /* ── Scrim y lámina ─────────────────────────────────────────────────────── */
+  --scrim: 0 0 0;
+  --on-scrim: 255 255 255;
+  --paper: 255 255 255;
+  --paper-ink: 24 24 27;
+  --paper-muted: 99 99 105;
+  --paper-guide: 150 98 15;
+  --paper-ok: 32 116 79;
+  --hit: 192 124 172;
+  --hit-active: 112 38 110;
+
+  /* ── Material: chrome translúcido ───────────────────────────────────────── */
+  --material: 255 255 255;
+  --material-alpha: 0.68;
+  --material-blur: 30px;
+  --material-edge: 255 255 255; /* filo superior: la luz pegando en el vidrio */
+  --material-edge-alpha: 0.65;
+
+  /* ── Radios ─────────────────────────────────────────────────────────────── */
+  --radius-xs: 6px;    /* chip, kbd, badge */
+  --radius-sm: 8px;    /* botón de icono, campo pequeño */
+  --radius: 10px;      /* botón, fila, campo */
+  --radius-lg: 14px;   /* panel, menú, popover */
+  --radius-xl: 20px;   /* modal, hoja */
+
+  /* ── Ritmo ──────────────────────────────────────────────────────────────── */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px;
+  --space-4: 16px; --space-5: 20px; --space-6: 24px; --space-8: 32px;
+  --row: 40px;         /* fila de lista / botón de barra */
+  --chrome-row: 44px;  /* barra de título y cinta */
+  --status-row: 32px;
+
+  /* ── Elevación: 0.5px de contorno + difusión larga ──────────────────────── */
+  --shadow-sm: 0 0 0 0.5px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.10), 0 1px 3px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 0 0 0.5px rgb(0 0 0 / 0.07), 0 24px 64px rgb(0 0 0 / 0.20), 0 2px 8px rgb(0 0 0 / 0.07);
+  --shadow-page: 0 1px 3px rgb(0 0 0 / 0.10), 0 12px 32px rgb(0 0 0 / 0.10);
+
+  /* ── Tipografía ─────────────────────────────────────────────────────────── */
+  --font: -apple-system, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+          system-ui, Roboto, Helvetica, Arial, sans-serif;
+  /* El tracking es específico por tamaño: uno solo está mal en algún sitio.
+     Grande se aprieta, pequeño se abre. */
+  --title-size: 20px;   --title-lh: 1.2;  --title-track: -0.02em;  --title-weight: 600;
+  --head-size: 15px;    --head-lh: 1.3;   --head-track: -0.011em;  --head-weight: 600;
+  --body-size: 14px;    --body-lh: 1.45;  --body-track: -0.006em;
+  --ui-size: 13px;      --ui-lh: 1.38;    --ui-track: -0.003em;
+  --mini-size: 12px;    --mini-lh: 1.35;  --mini-track: 0em;
+  --micro-size: 11px;   --micro-lh: 1.3;  --micro-track: 0.006em;
+  --section-track: 0.06em;
+
+  /* ── Movimiento ─────────────────────────────────────────────────────────── */
+  /* Resorte crítico (damping 1.0, response 0.35s) muestreado en linear(): sin
+     rebote, sale rápido y se posa. Chromium 140 lo soporta nativo, así que no
+     hace falta librería de animación para la mayoría del chrome. */
+  --ease-spring: linear(0, 0.075 5%, 0.227 10%, 0.389 15%, 0.536 20%, 0.656 25%,
+                        0.75 30%, 0.821 35%, 0.873 40%, 0.911 45%, 0.938 50%,
+                        0.957 55%, 0.971 60%, 0.986 70%, 0.994 80%, 0.997 90%, 1);
+  /* Rebote de 1.5% (damping 0.8): SOLO cuando el gesto traía inercia. */
+  --ease-bounce: linear(0, 0.248 10%, 0.608 20%, 0.851 30%, 0.968 40%, 1.009 50%,
+                        1.015 60%, 1.011 70%, 1.005 80%, 1.001 90%, 1);
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);  /* la curva de las hojas de iOS */
+  --dur-instant: 90ms;   /* respuesta al press: se siente, no se ve */
+  --dur-fast: 160ms;
+  --dur: 260ms;
+  --dur-slow: 380ms;
+}
+
+.pm.dark {
+  /* Grafito neutro, no azul marino: el chrome no debe tener temperatura propia. */
+  --surface: 22 22 24;
+  --panel: 32 32 35;
+  --panel-raised: 44 44 48;
+  --fg: 237 237 240;
+  --muted: 154 154 162;
+  --faint: 118 118 126;
+  --hairline: 255 255 255;
+  --border-control: 128 128 138;
+  --hover: 255 255 255;
+  --active: 255 255 255;
+  --accent: 92 162 255;        /* invierte polaridad: azul claro + tinta oscura */
+  --on-accent: 12 14 18;
+  --accent-soft: 92 162 255;
+  --danger: 226 138 130;  --on-danger: 26 26 29;
+  --success: 122 200 160;
+  --warning: 224 176 100;
+  --info: 150 186 226;
+  --material: 34 34 38;
+  --material-alpha: 0.72;
+  --material-edge: 255 255 255;
+  --material-edge-alpha: 0.10;
+  --shadow-sm: 0 0 0 0.5px rgb(255 255 255 / 0.07), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 0 0 0.5px rgb(255 255 255 / 0.09), 0 24px 64px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
+  --shadow-page: 0 1px 3px rgb(0 0 0 / 0.5), 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+/* Accesibilidad del sistema, no del componente. */
+@media (prefers-reduced-transparency: reduce) {
+  .pm { --material-alpha: 1; --material-blur: 0px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pm * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+}
+
+/* ═══ Piezas del sistema (esto es lo que se traduce a los componentes) ═══ */
+.pm { font-family: var(--font); color: rgb(var(--fg)); background: rgb(var(--surface)); }
+.pm *, .pm *::before, .pm *::after { box-sizing: border-box; }
+
+.pm .t-title   { font-size: var(--title-size); line-height: var(--title-lh); letter-spacing: var(--title-track); font-weight: var(--title-weight); }
+.pm .t-head    { font-size: var(--head-size);  line-height: var(--head-lh);  letter-spacing: var(--head-track);  font-weight: var(--head-weight); }
+.pm .t-body    { font-size: var(--body-size);  line-height: var(--body-lh);  letter-spacing: var(--body-track); }
+.pm .t-ui      { font-size: var(--ui-size);    line-height: var(--ui-lh);    letter-spacing: var(--ui-track); }
+.pm .t-mini    { font-size: var(--mini-size);  line-height: var(--mini-lh);  letter-spacing: var(--mini-track); }
+.pm .t-micro   { font-size: var(--micro-size); line-height: var(--micro-lh); letter-spacing: var(--micro-track); font-weight: 500; }
+.pm .t-section { font-size: var(--micro-size); line-height: 1; letter-spacing: var(--section-track); font-weight: 600; text-transform: uppercase; color: rgb(var(--muted)); }
+
+/* Material: la barra flota sobre el contenido, no lo empuja. */
+.pm .material {
+  background: rgb(var(--material) / var(--material-alpha));
+  backdrop-filter: blur(var(--material-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--material-blur)) saturate(180%);
+}
+/* Filo de luz arriba del vidrio (no un borde: el borde separa, el filo da grosor). */
+.pm .material-edge { box-shadow: inset 0 0.5px 0 rgb(var(--material-edge) / var(--material-edge-alpha)); }
+/* Donde el contenido pasa por debajo del chrome, degradado en vez de línea. */
+.pm .scroll-edge { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 12px); mask-image: linear-gradient(to bottom, transparent, #000 12px); }
+
+.pm .btn {
+  height: 32px; padding: 0 var(--space-3); border: 0; cursor: pointer;
+  border-radius: var(--radius); background: transparent; color: rgb(var(--fg));
+  font: inherit; font-size: var(--ui-size); letter-spacing: var(--ui-track); font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-instant) var(--ease-out);
+}
+.pm .btn:hover { background: rgb(var(--hover) / 0.05); }
+/* La respuesta va en el press, no en el release. 0.97 es lo que se siente sin verse. */
+.pm .btn:active { background: rgb(var(--active) / 0.09); transform: scale(0.97); }
+.pm .btn:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 2px; }
+.pm .btn[disabled] { opacity: 0.35; pointer-events: none; }
+.pm .btn-primary { background: rgb(var(--accent)); color: rgb(var(--on-accent)); box-shadow: var(--shadow-sm); }
+.pm .btn-primary:hover { background: rgb(var(--accent) / 0.9); }
+.pm .btn-primary:active { background: rgb(var(--accent) / 0.82); }
+.pm .btn-danger { background: rgb(var(--danger)); color: rgb(var(--on-danger)); }
+.pm .btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; border-radius: var(--radius-sm); color: rgb(var(--muted)); }
+.pm .btn-icon:hover { color: rgb(var(--fg)); }
+.pm .btn-icon[aria-pressed="true"] { background: rgb(var(--accent)); color: rgb(var(--on-accent)); }
+
+/* Segmentado: la pastilla se mueve, no se enciende y apaga. */
+.pm .segmented { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: rgb(var(--hairline) / 0.06); }
+.pm .segmented button {
+  height: 28px; padding: 0 12px; border: 0; cursor: pointer; border-radius: 8px;
+  background: transparent; color: rgb(var(--muted)); font: inherit; font-size: var(--ui-size);
+  font-weight: 500; letter-spacing: var(--ui-track);
+  transition: color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+.pm .segmented button[aria-selected="true"] { background: rgb(var(--panel)); color: rgb(var(--fg)); box-shadow: var(--shadow-sm); }
+.pm .segmented button:not([aria-selected="true"]):hover { color: rgb(var(--fg)); }
+
+.pm .field {
+  height: 32px; padding: 0 10px; border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--hairline) / 0.14); background: rgb(var(--panel));
+  color: rgb(var(--fg)); font: inherit; font-size: var(--ui-size); width: 100%;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+.pm.dark .field { border-color: rgb(var(--hairline) / 0.16); background: rgb(var(--hairline) / 0.06); }
+.pm .field:focus { outline: none; border-color: rgb(var(--accent)); box-shadow: 0 0 0 3.5px rgb(var(--accent) / 0.25); }
+
+.pm .switch { width: 42px; height: 25px; border-radius: 999px; border: 0; padding: 2px; cursor: pointer;
+  background: rgb(var(--hairline) / 0.14); transition: background-color var(--dur) var(--ease-out); position: relative; }
+.pm .switch[aria-checked="true"] { background: rgb(var(--accent)); }
+.pm .switch span { display: block; width: 21px; height: 21px; border-radius: 999px; background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25); transition: transform var(--dur) var(--ease-spring); }
+.pm .switch[aria-checked="true"] span { transform: translateX(17px); }
+
+.pm .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; white-space: nowrap;
+  border-radius: var(--radius-xs); background: rgb(var(--hairline) / 0.06); color: rgb(var(--muted)); }
+.pm kbd { font: inherit; font-size: var(--micro-size); font-weight: 500; padding: 2px 6px; border-radius: var(--radius-xs);
+  background: rgb(var(--hairline) / 0.07); color: rgb(var(--muted)); }
+
+.pm .row { display: flex; align-items: center; gap: var(--space-3); height: var(--row); padding: 0 var(--space-3);
+  border-radius: var(--radius); transition: background-color var(--dur-fast) var(--ease-out); }
+.pm .row:hover { background: rgb(var(--hover) / 0.05); }
+.pm .row[aria-selected="true"] { background: rgb(var(--accent) / 0.12); }
+.pm.dark .row[aria-selected="true"] { background: rgb(var(--accent) / 0.18); }
+
+.pm .panel { background: rgb(var(--panel)); border-radius: var(--radius-lg); box-shadow: var(--shadow-md); }
+.pm .menu { background: rgb(var(--material) / 0.86); backdrop-filter: blur(40px) saturate(180%);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); padding: 6px; min-width: 220px; }
+.pm .menu-item { display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 10px; border-radius: 7px;
+  font-size: var(--ui-size); letter-spacing: var(--ui-track); color: rgb(var(--fg)); }
+.pm .menu-item:hover { background: rgb(var(--accent)); color: rgb(var(--on-accent)); }
+.pm .menu-sep { height: 1px; margin: 5px 8px; background: rgb(var(--hairline) / 0.10); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cromo de la galería (no forma parte del sistema)
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root { color-scheme: light; }
+body { margin: 0; background: #fafafa; color: #18181b;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px 96px; }
+header.g { position: sticky; top: 0; z-index: 20; background: rgb(250 250 250 / 0.8);
+  backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid rgb(0 0 0 / 0.07); }
+header.g .inner { max-width: 1240px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+header.g h1 { font-size: 16px; font-weight: 650; letter-spacing: -0.015em; margin: 0; flex: 1; }
+header.g .sub { font-size: 12px; color: #71717a; font-weight: 400; letter-spacing: 0; }
+.gtoggle { display: inline-flex; gap: 2px; padding: 2px; background: rgb(0 0 0 / 0.05); border-radius: 9px; }
+.gtoggle button { border: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 500;
+  padding: 5px 11px; border-radius: 7px; cursor: pointer; color: #52525b; }
+.gtoggle button[aria-selected="true"] { background: #fff; color: #18181b; box-shadow: 0 1px 2px rgb(0 0 0 / 0.1); }
+h2.g { font-size: 22px; letter-spacing: -0.02em; margin: 56px 0 6px; font-weight: 650; }
+p.g { font-size: 13.5px; line-height: 1.55; color: #52525b; max-width: 72ch; margin: 0 0 18px; }
+.note { font-size: 12px; line-height: 1.5; color: #71717a; margin: 8px 0 0; max-width: 76ch; }
+.demo { display: grid; gap: 16px; }
+body[data-theme="both"] .demo { grid-template-columns: 1fr 1fr; }
+body[data-theme="light"] .demo .pane.dark, body[data-theme="dark"] .demo .pane:not(.dark) { display: none; }
+body[data-theme="light"] .demo, body[data-theme="dark"] .demo { grid-template-columns: 1fr; }
+.pane { border-radius: 16px; overflow: hidden; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.07), 0 10px 30px rgb(0 0 0 / 0.06); }
+.pane .inner-pad { padding: 20px; }
+.grid3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.swatch { border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px rgb(0 0 0 / 0.07); }
+.swatch .cap { height: 52px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; }
+.swatch { box-shadow: 0 0 0 1px rgb(var(--hairline) / 0.10); }
+.swatch .meta { padding: 7px 9px; font-size: 11px; line-height: 1.45; background: rgb(var(--panel)); color: rgb(var(--muted)); }
+.swatch .meta b { color: rgb(var(--fg)); font-weight: 600; display: block; letter-spacing: -0.01em; }
+.pm.dark .ratio.ok { background: #14532d; color: #bbf7d0; }
+.pm.dark .ratio.bad { background: #7f1d1d; color: #fecaca; }
+.ratio { display: inline-block; padding: 1px 5px; border-radius: 5px; font-size: 10px; font-weight: 700; margin-top: 3px; }
+.ratio.ok { background: #dcfce7; color: #14532d; } .ratio.bad { background: #fee2e2; color: #7f1d1d; }
+.stack { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+</style>
+</head>
+<body data-theme="both">
+
+<header class="g">
+  <div class="inner">
+    <h1>PDF Master — sistema visual <span class="sub">propuesta · traducción a lenguaje Apple</span></h1>
+    <div class="gtoggle" role="tablist" aria-label="Tema">
+      <button role="tab" data-theme-btn="light">Claro</button>
+      <button role="tab" data-theme-btn="dark">Oscuro</button>
+      <button role="tab" data-theme-btn="both" aria-selected="true">Ambos</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<h2 class="g">1 · Color</h2>
+<p class="g">Mismo principio de siempre —el chrome no pone color, lo ponen las marcas— pero con neutros de sistema en vez de grises fríos, y el oscuro en grafito neutro en lugar de azul marino. El acento es el azul de sistema bajado hasta cumplir AA con texto de 11&nbsp;px encima: el <code>#007AFF</code> de Apple da 4.06:1 con blanco y aquí hay etiquetas pequeñas sobre relleno.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div class="inner-pad">
+    <div class="grid3" data-swatches></div>
+  </div></div>
+</div>
+
+<h2 class="g">2 · Tipografía</h2>
+<p class="g">El tracking deja de ser uno solo para todo: negativo al crecer, positivo al encogerse. El interlineado va al revés que el tamaño. La jerarquía se hace con peso + tamaño + interlineado como conjunto, no subiendo píxeles.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div class="inner-pad" style="background: rgb(var(--panel));">
+    <div class="t-title">Comparar revisiones</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 2px 0 18px;">título · 20px / 600 / −0.02em / 1.2</div>
+    <div class="t-head">Marcas sin guardar</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 2px 0 18px;">encabezado · 15px / 600 / −0.011em / 1.3</div>
+    <div class="t-body" style="max-width: 62ch;">La app nunca escribe a disco sin una acción explícita. Las marcas viven dentro del PDF y viajan con él.</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 2px 0 18px;">cuerpo · 14px / 400 / −0.006em / 1.45</div>
+    <div class="t-ui">Herramienta fija · Resaltar · Medir perímetro</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 2px 0 18px;">interfaz · 13px / 400–500 / −0.003em / 1.38</div>
+    <div class="t-micro" style="color: rgb(var(--muted));">3 de 128 · escala 1:50 · 4 marcas en esta página</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 2px 0 18px;">micro · 11px / 500 / +0.006em — sube a 500 porque a 11px el 400 se deshilacha</div>
+    <div class="t-section">Marcado</div>
+    <div class="t-mini" style="color: rgb(var(--faint)); margin: 6px 0 0;">sección · 11px / 600 / +0.06em / versalita</div>
+  </div></div>
+</div>
+
+<h2 class="g">3 · Forma, elevación y material</h2>
+<p class="g">Cinco radios por rol en vez de tres, y una elevación que empieza por un contorno de medio píxel (lo que separa de verdad en claro) y sigue con difusión larga y suave. El chrome deja de ser una franja opaca: es vidrio con el documento pasando por debajo.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div class="inner-pad" style="background: rgb(var(--panel));">
+    <div class="stack" style="margin-bottom: 22px;">
+      <div style="width:96px;height:60px;border-radius:var(--radius-xs);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">6 · chip</div>
+      <div style="width:96px;height:60px;border-radius:var(--radius-sm);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">8 · icono</div>
+      <div style="width:96px;height:60px;border-radius:var(--radius);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">10 · control</div>
+      <div style="width:96px;height:60px;border-radius:var(--radius-lg);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">14 · panel</div>
+      <div style="width:96px;height:60px;border-radius:var(--radius-xl);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">20 · modal</div>
+    </div>
+    <div class="stack" style="margin-bottom: 22px;">
+      <div style="width:150px;height:64px;border-radius:var(--radius);background:rgb(var(--panel));box-shadow:var(--shadow-sm);display:grid;place-items:center;" class="t-micro">sm · campo</div>
+      <div style="width:150px;height:64px;border-radius:var(--radius-lg);background:rgb(var(--panel));box-shadow:var(--shadow-md);display:grid;place-items:center;" class="t-micro">md · menú</div>
+      <div style="width:150px;height:64px;border-radius:var(--radius-xl);background:rgb(var(--panel));box-shadow:var(--shadow-lg);display:grid;place-items:center;" class="t-micro">lg · modal</div>
+    </div>
+    <!-- Material sobre contenido real: sin algo debajo, el vidrio no se ve. -->
+    <div style="position:relative;height:120px;border-radius:var(--radius-lg);overflow:hidden;background:
+        repeating-linear-gradient(115deg, rgb(var(--accent)/0.16) 0 22px, rgb(var(--danger)/0.14) 22px 44px, rgb(var(--success)/0.16) 44px 66px);">
+      <div class="material material-edge" style="position:absolute;inset:auto 0 0 0;height:52px;display:flex;align-items:center;padding:0 16px;gap:10px;">
+        <span class="t-ui" style="font-weight:600;">Material del chrome</span>
+        <span class="t-micro" style="color:rgb(var(--muted));">blur 30 · saturate 180% · filo de luz arriba</span>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<h2 class="g">4 · Movimiento</h2>
+<p class="g">Un resorte crítico como curva por defecto (<code>linear()</code> nativo, sin librería), rebote solo cuando el gesto trajo inercia, y respuesta al <em>press</em> —no al release— en cada control. Pasá el ratón y mantené pulsado.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div class="inner-pad" style="background: rgb(var(--panel));">
+    <div class="stack">
+      <button class="btn btn-primary" data-anim="spring">Resorte crítico</button>
+      <button class="btn" style="background:rgb(var(--hairline)/0.06)" data-anim="bounce">Con inercia</button>
+      <button class="switch" role="switch" aria-checked="true"><span></span></button>
+      <span class="t-micro" style="color:rgb(var(--muted));">damping 1.0 · response 0.35s &nbsp;·&nbsp; press: scale 0.97 en 90 ms</span>
+    </div>
+    <div style="height:64px;margin-top:16px;position:relative;">
+      <div data-ball style="position:absolute;left:0;top:16px;width:32px;height:32px;border-radius:999px;background:rgb(var(--accent));"></div>
+    </div>
+  </div></div>
+</div>
+
+<h2 class="g">5 · Chrome</h2>
+<p class="note" style="margin:0 0 14px;"><b>Estado:</b> la disposición de abajo (tres filas) es la que ya está en la app con el sistema v2 — material, píldoras de documento, modos segmentados y respuesta al press. La <b>variante B</b> —dos filas, con los modos y las herramientas compartiendo fila— es la que está implementada: el reparto lo hace <code>RibbonOverflow</code>.</p>
+<p class="g">Barra de título con las pestañas de documento, cinta con los modos como segmentado y la fila de herramientas agrupada por familias con desbordamiento explícito, y barra de estado compacta. Todo el chrome comparte un eje izquierdo y el mismo alto de fila.</p>
+<div class="demo" data-demo>
+  <div class="pane pm">
+    <!-- Barra de título -->
+    <div class="material material-edge" style="height:var(--chrome-row);display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;">
+      <div style="width:20px;height:20px;border-radius:6px;background:rgb(var(--accent));display:grid;place-items:center;color:rgb(var(--on-accent));font-size:11px;font-weight:700;">P</div>
+      <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;margin-left:6px;">
+        <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:9px;background:rgb(var(--panel));box-shadow:var(--shadow-sm);max-width:210px;">
+          <span class="t-ui" style="font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">A-102 Planta baja.pdf</span>
+          <span style="width:6px;height:6px;border-radius:999px;background:rgb(var(--warning));flex:none;"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:9px;max-width:190px;">
+          <span class="t-ui" style="color:rgb(var(--muted));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Especificaciones.pdf</span>
+        </div>
+        <button class="btn btn-icon" style="width:26px;height:26px;" aria-label="Abrir">＋</button>
+      </div>
+      <button class="btn btn-icon" aria-label="Tema">◐</button>
+      <button class="btn btn-icon" aria-label="Ajustes">⚙</button>
+      <button class="btn btn-icon" aria-pressed="true" aria-label="Páginas">▤</button>
+    </div>
+    <!-- Cinta: modos -->
+    <div class="material" style="height:var(--chrome-row);display:flex;align-items:center;gap:10px;padding:0 12px;">
+      <button class="btn" style="font-weight:600;">Archivo</button>
+      <div class="segmented" role="tablist" aria-label="Modos">
+        <button role="tab">Leer</button>
+        <button role="tab" aria-selected="true">Comentar</button>
+        <button role="tab">Editar</button>
+        <button role="tab">Página</button>
+        <button role="tab">Proteger</button>
+        <button role="tab">Convertir</button>
+        <button role="tab">IA</button>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn btn-icon" aria-label="Deshacer">↶</button>
+      <button class="btn btn-icon" aria-label="Rehacer">↷</button>
+      <button class="btn btn-primary" style="height:30px;">Guardar</button>
+    </div>
+    <!-- Cinta: herramientas agrupadas -->
+    <div class="material" style="height:48px;display:flex;align-items:center;gap:6px;padding:0 12px;">
+      <button class="btn btn-icon" aria-pressed="true" aria-label="Seleccionar">▲</button>
+      <button class="btn btn-icon" aria-label="Copiar texto">T</button>
+      <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);margin:0 4px;"></span>
+      <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+        <button class="btn btn-icon" aria-label="Resaltar">▬</button>
+        <button class="btn btn-icon" style="width:20px;" aria-label="Más de resaltar">⌄</button>
+      </span>
+      <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+        <button class="btn btn-icon" aria-label="Formas">◻</button>
+        <button class="btn btn-icon" style="width:20px;" aria-label="Más formas">⌄</button>
+      </span>
+      <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+        <button class="btn btn-icon" aria-label="Medir">⟺</button>
+        <button class="btn btn-icon" style="width:20px;" aria-label="Más de medir">⌄</button>
+      </span>
+      <button class="btn btn-icon" aria-label="Nota">✎</button>
+      <button class="btn btn-icon" aria-label="Sello">✱</button>
+      <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);margin:0 4px;"></span>
+      <button class="btn"><span class="t-ui">Más herramientas</span><span style="color:rgb(var(--muted));">⌄</span></button>
+      <div style="flex:1"></div>
+      <span class="chip t-micro">4 marcas en esta página</span>
+    </div>
+    <!-- Mesa + lámina -->
+    <div style="height:170px;background:rgb(var(--surface));display:grid;place-items:center;padding:18px;">
+      <div style="width:230px;height:100%;background:rgb(var(--paper));border-radius:3px;box-shadow:var(--shadow-page);"></div>
+    </div>
+    <!-- Barra de estado -->
+    <div class="material" style="height:var(--status-row);display:flex;align-items:center;gap:12px;padding:0 12px;">
+      <span class="t-micro" style="color:rgb(var(--muted));">Página</span>
+      <span style="height:22px;min-width:34px;padding:0 6px;border-radius:var(--radius-xs);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">3</span>
+      <span class="t-micro" style="color:rgb(var(--muted));">de 128</span>
+      <div style="flex:1"></div>
+      <span class="t-micro" style="color:rgb(var(--muted));">Escala 1:50</span>
+      <span style="width:1px;height:14px;background:rgb(var(--hairline)/0.10);"></span>
+      <button class="btn btn-icon" style="width:26px;height:26px;" aria-label="Alejar">−</button>
+      <span class="t-micro" style="min-width:38px;text-align:center;">125%</span>
+      <button class="btn btn-icon" style="width:26px;height:26px;" aria-label="Acercar">＋</button>
+    </div>
+  </div>
+</div>
+<p class="note" style="margin-bottom:18px;"><b>Variante B — dos filas.</b> La de arriba son tres filas de chrome (136&nbsp;px antes de ver el documento). Acá los modos y las herramientas del modo comparten fila, y el documento pasa POR DEBAJO del vidrio con un degradado donde se cruzan: es lo que hace que el material se note y lo que devuelve 44&nbsp;px de alto útil.</p>
+<div class="demo" data-demo>
+  <div class="pane pm">
+    <div style="position:relative;height:330px;background:rgb(var(--surface));overflow:hidden;">
+      <!-- Documento: empieza ARRIBA del todo y se mete debajo del chrome -->
+      <div style="position:absolute;left:50%;top:-26px;transform:translateX(-50%);width:280px;height:400px;background:rgb(var(--paper));border-radius:3px;box-shadow:var(--shadow-page);">
+        <div style="position:absolute;left:22px;top:60px;right:22px;height:7px;border-radius:2px;background:rgb(var(--paper-ink)/0.12);"></div>
+        <div style="position:absolute;left:22px;top:76px;width:65%;height:7px;border-radius:2px;background:rgb(var(--paper-ink)/0.10);"></div>
+        <div style="position:absolute;left:22px;top:104px;width:110px;height:34px;border-radius:2px;background:rgb(251 191 36 / 0.42);"></div>
+      </div>
+      <!-- Chrome flotante -->
+      <div style="position:absolute;inset:0 0 auto 0;">
+        <div class="material material-edge" style="height:var(--chrome-row);display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;">
+          <div style="width:20px;height:20px;border-radius:6px;background:rgb(var(--accent));display:grid;place-items:center;color:rgb(var(--on-accent));font-size:11px;font-weight:700;">P</div>
+          <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:0;margin-left:6px;">
+            <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:9px;background:rgb(var(--panel));box-shadow:var(--shadow-sm);max-width:210px;">
+              <span class="t-ui" style="font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">A-102 Planta baja.pdf</span>
+              <span style="width:6px;height:6px;border-radius:999px;background:rgb(var(--warning));flex:none;"></span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:9px;max-width:190px;">
+              <span class="t-ui" style="color:rgb(var(--muted));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Especificaciones.pdf</span>
+            </div>
+          </div>
+          <button class="btn btn-icon" aria-label="Ajustes">⚙</button>
+          <button class="btn btn-icon" aria-pressed="true" aria-label="Páginas">▤</button>
+        </div>
+        <div class="material" style="height:48px;display:flex;align-items:center;gap:8px;padding:0 12px;">
+          <button class="btn" style="font-weight:600;">Archivo</button>
+          <div class="segmented" role="tablist" aria-label="Modos">
+            <button role="tab">Leer</button>
+            <button role="tab" aria-selected="true">Comentar</button>
+            <button role="tab">Editar</button>
+            <button role="tab">Página</button>
+          </div>
+          <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);margin:0 2px;"></span>
+          <button class="btn btn-icon" aria-pressed="true" aria-label="Seleccionar">▲</button>
+          <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+            <button class="btn btn-icon" aria-label="Resaltar">▬</button><button class="btn btn-icon" style="width:20px;" aria-label="Más">⌄</button>
+          </span>
+          <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+            <button class="btn btn-icon" aria-label="Formas">◻</button><button class="btn btn-icon" style="width:20px;" aria-label="Más">⌄</button>
+          </span>
+          <span style="display:inline-flex;align-items:center;border-radius:var(--radius);background:rgb(var(--hairline)/0.05);">
+            <button class="btn btn-icon" aria-label="Medir">⟺</button><button class="btn btn-icon" style="width:20px;" aria-label="Más">⌄</button>
+          </span>
+          <button class="btn btn-icon" aria-label="Más herramientas">⋯</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-icon" aria-label="Deshacer">↶</button>
+          <button class="btn btn-primary" style="height:30px;">Guardar</button>
+        </div>
+        <!-- Donde el papel se cruza con el vidrio: degradado, no línea -->
+        <div style="height:14px;background:linear-gradient(rgb(var(--material)/0.34), transparent);"></div>
+      </div>
+      <!-- Barra de estado flotante -->
+      <div class="material material-edge" style="position:absolute;inset:auto 0 0 0;height:var(--status-row);display:flex;align-items:center;gap:12px;padding:0 12px;">
+        <span class="t-micro" style="color:rgb(var(--muted));">Página</span>
+        <span style="height:22px;min-width:34px;padding:0 6px;border-radius:var(--radius-xs);background:rgb(var(--hairline)/0.06);display:grid;place-items:center;" class="t-micro">3</span>
+        <span class="t-micro" style="color:rgb(var(--muted));">de 128</span>
+        <div style="flex:1"></div>
+        <span class="t-micro" style="color:rgb(var(--muted));">Escala 1:50</span>
+        <span style="width:1px;height:14px;background:rgb(var(--hairline)/0.10);"></span>
+        <span class="t-micro">125%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<p class="note" style="margin:22px 0 10px;"><b>Cómo se queda sin sitio.</b> La fila no envuelve ni se corta en seco: primero se van las <b>etiquetas</b> (el nombre sigue en el tooltip y en <code>aria-label</code>, así que no se pierde nada y entran el doble de herramientas), y solo cuando ni así entran, el resto se va a un menú que dice cuántas hay. El separador nunca queda colgando al final de la fila ni abre el menú.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div class="inner-pad" style="background:rgb(var(--panel));display:flex;flex-direction:column;gap:14px;">
+
+    <div>
+      <div class="t-micro" style="color:rgb(var(--muted));margin-bottom:6px;">1 · Ancho: herramientas con su nombre</div>
+      <div class="material material-edge" style="height:44px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--radius);overflow:hidden;">
+        <button class="btn" style="font-weight:600;">Archivo</button>
+        <span class="segmented"><button aria-selected="true">Comentar</button><button>Editar</button><button>Página</button></span>
+        <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);"></span>
+        <button class="btn" aria-pressed="true" style="background:rgb(var(--accent));color:rgb(var(--on-accent));">▲ Seleccionar</button>
+        <button class="btn">▬ Resaltar</button>
+        <button class="btn">◻ Formas</button>
+        <button class="btn">⟺ Medir</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="t-micro" style="color:rgb(var(--muted));margin-bottom:6px;">2 · Justo: se van las etiquetas, no las herramientas</div>
+      <div class="material material-edge" style="height:44px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--radius);overflow:hidden;max-width:620px;">
+        <button class="btn" style="font-weight:600;">Archivo</button>
+        <span class="segmented"><button aria-selected="true">Comentar</button><button>Editar</button><button>Página</button></span>
+        <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);"></span>
+        <button class="btn btn-icon" aria-pressed="true">▲</button>
+        <button class="btn btn-icon">▬</button>
+        <button class="btn btn-icon">◻</button>
+        <button class="btn btn-icon">⟺</button>
+        <button class="btn btn-icon">✎</button>
+        <button class="btn btn-icon">✱</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="t-micro" style="color:rgb(var(--muted));margin-bottom:6px;">3 · Estrecho: lo que no entra se va al menú, contado</div>
+      <div class="material material-edge" style="height:44px;display:flex;align-items:center;gap:6px;padding:0 10px;border-radius:var(--radius);overflow:hidden;max-width:430px;">
+        <button class="btn" style="font-weight:600;">Archivo</button>
+        <span class="segmented"><button aria-selected="true">Comentar</button><button>Editar</button></span>
+        <span style="width:1px;height:18px;background:rgb(var(--hairline)/0.10);"></span>
+        <button class="btn btn-icon" aria-pressed="true">▲</button>
+        <button class="btn btn-icon">▬</button>
+        <button class="btn btn-icon" style="background:rgb(var(--hairline)/0.06);">⋯</button>
+      </div>
+      <div class="menu" style="margin-top:8px;max-width:230px;">
+        <div class="menu-item">◻&nbsp;&nbsp;Formas</div>
+        <div class="menu-item">⟺&nbsp;&nbsp;Medir</div>
+        <div class="menu-item">✎&nbsp;&nbsp;Nota</div>
+        <div class="menu-item">✱&nbsp;&nbsp;Sello</div>
+      </div>
+      <div class="t-micro" style="color:rgb(var(--faint));margin-top:8px;">En el menú la etiqueta vuelve: ahí sobra el ancho y un icono suelto en una lista no dice nada.</div>
+    </div>
+
+  </div></div>
+</div>
+
+<p class="note">La cinta de 33 herramientas no cabe con este aire: aquí va agrupada por familia (un botón + su desplegable) y con un «Más herramientas» explícito al final, en vez de una fila que se corta sola. El contador de marcas de la página se gana el hueco de la derecha, que hoy está vacío.</p>
+
+<h2 class="g">6 · Paneles</h2>
+<p class="g">Cabecera con el mismo alto que el chrome, filas de 40&nbsp;px con radio, selección por tinte del acento (no por relleno sólido) y separación por tono. Los hairlines entre filas desaparecen: los sustituye el hueco.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div style="display:grid;grid-template-columns:1fr 1fr;gap:0;background:rgb(var(--surface));">
+    <!-- Revisión -->
+    <div style="background:rgb(var(--panel));">
+      <div style="height:var(--chrome-row);display:flex;align-items:center;padding:0 12px;gap:8px;">
+        <span class="t-head" style="flex:1;">Revisión</span>
+        <button class="btn btn-icon" style="width:26px;height:26px;" aria-label="Filtrar">⌄</button>
+      </div>
+      <div style="padding:0 8px 12px;">
+        <div class="row" aria-selected="true" style="height:auto;padding:10px 12px;align-items:flex-start;flex-direction:column;gap:3px;">
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <span style="width:9px;height:9px;border-radius:3px;background:rgb(var(--warning));"></span>
+            <span class="t-ui" style="font-weight:550;flex:1;">Revisar cota del eje C</span>
+            <span class="t-micro" style="color:rgb(var(--faint));">pág. 3</span>
+          </div>
+          <span class="t-mini" style="color:rgb(var(--muted));padding-left:17px;">Engell · hoy 14:02 · 2 respuestas</span>
+        </div>
+        <div class="row" style="height:auto;padding:10px 12px;align-items:flex-start;flex-direction:column;gap:3px;">
+          <div style="display:flex;align-items:center;gap:8px;width:100%;">
+            <span style="width:9px;height:9px;border-radius:3px;background:rgb(var(--success));"></span>
+            <span class="t-ui" style="flex:1;">Altura de antepecho confirmada</span>
+            <span class="t-micro" style="color:rgb(var(--faint));">pág. 7</span>
+          </div>
+          <span class="t-mini" style="color:rgb(var(--muted));padding-left:17px;">Resuelta · ayer</span>
+        </div>
+      </div>
+    </div>
+    <!-- Estado vacío -->
+    <div style="background:rgb(var(--panel));border-left:1px solid rgb(var(--hairline)/0.08);">
+      <div style="height:var(--chrome-row);display:flex;align-items:center;padding:0 12px;">
+        <span class="t-head">Conteo</span>
+      </div>
+      <div style="padding:34px 24px;text-align:center;">
+        <div style="width:44px;height:44px;border-radius:14px;background:rgb(var(--hairline)/0.06);display:grid;place-items:center;margin:0 auto 12px;font-size:19px;color:rgb(var(--faint));">◎</div>
+        <div class="t-ui" style="font-weight:550;margin-bottom:4px;">Todavía no contás nada</div>
+        <div class="t-mini" style="color:rgb(var(--muted));max-width:30ch;margin:0 auto 14px;">Elegí un símbolo y hacé clic sobre el plano: cada clic suma a su categoría.</div>
+        <button class="btn btn-primary" style="height:30px;">Empezar a contar</button>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<h2 class="g">7 · Diálogos, menús y avisos</h2>
+<p class="g">El modal se apoya en un scrim y llega materializándose (blur + escala), no apareciendo. El menú es vidrio sobre el chrome. El aviso es una píldora que no tapa nada y se va sola.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div style="position:relative;height:400px;background:
+      repeating-linear-gradient(115deg, rgb(var(--accent)/0.10) 0 26px, rgb(var(--muted)/0.10) 26px 52px);">
+    <div style="position:absolute;inset:0;background:rgb(var(--scrim)/0.32);backdrop-filter:blur(2px);"></div>
+    <!-- Modal -->
+    <div style="position:absolute;left:50%;top:34px;transform:translateX(-50%);width:420px;border-radius:var(--radius-xl);
+                background:rgb(var(--panel));box-shadow:var(--shadow-lg);overflow:hidden;">
+      <div style="padding:20px 22px 0;">
+        <div class="t-title">Ajustes</div>
+        <div class="t-mini" style="color:rgb(var(--muted));margin-top:2px;">Se guardan al instante en este equipo.</div>
+      </div>
+      <div style="padding:16px 22px 4px;">
+        <div class="t-section" style="margin-bottom:8px;">Marcado</div>
+        <div style="display:flex;align-items:center;gap:14px;padding:9px 0;">
+          <div style="flex:1;">
+            <div class="t-ui" style="font-weight:500;">Tu nombre</div>
+            <div class="t-mini" style="color:rgb(var(--muted));margin-top:1px;">Firma las marcas que crees.</div>
+          </div>
+          <input class="field" style="width:160px;" value="Engell" />
+        </div>
+        <div style="display:flex;align-items:center;gap:14px;padding:9px 0;">
+          <div style="flex:1;">
+            <div class="t-ui" style="font-weight:500;">Herramienta fija</div>
+            <div class="t-mini" style="color:rgb(var(--muted));margin-top:1px;">Se queda activa tras cada marca; Esc la suelta.</div>
+          </div>
+          <button class="switch" role="switch" aria-checked="true"><span></span></button>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:14px 22px 18px;">
+        <button class="btn" style="background:rgb(var(--hairline)/0.06);">Cancelar</button>
+        <button class="btn btn-primary">Listo</button>
+      </div>
+    </div>
+    <!-- Menú -->
+    <div class="menu" style="position:absolute;left:22px;bottom:74px;">
+      <div class="menu-item">Copiar<span style="flex:1"></span><kbd>Ctrl C</kbd></div>
+      <div class="menu-item">Duplicar la selección</div>
+      <div class="menu-item">Pegar acá<span style="flex:1"></span><kbd>Ctrl V</kbd></div>
+      <div class="menu-sep"></div>
+      <div class="menu-item" style="color:rgb(var(--danger));">Borrar las 4 marcas de la página</div>
+    </div>
+    <!-- Toast -->
+    <div style="position:absolute;right:22px;bottom:22px;display:flex;align-items:center;gap:10px;height:40px;padding:0 8px 0 14px;
+                border-radius:var(--radius-lg);background:rgb(var(--material)/0.9);backdrop-filter:blur(30px) saturate(180%);box-shadow:var(--shadow-md);">
+      <span style="width:8px;height:8px;border-radius:999px;background:rgb(var(--success));"></span>
+      <span class="t-ui">Diagnóstico guardado</span>
+      <button class="btn btn-icon" style="width:26px;height:26px;" aria-label="Cerrar">✕</button>
+    </div>
+  </div></div>
+</div>
+
+<h2 class="g">8 · El visor</h2>
+<p class="g">La lámina se apoya en la mesa con una sombra corta y una difusa; la selección son tiradores de 9&nbsp;px con contorno blanco (visibles sobre cualquier plano); el resaltado de búsqueda mantiene su ciruela, que no compite con el ámbar de las marcas del usuario.</p>
+<div class="demo" data-demo>
+  <div class="pane pm"><div style="height:320px;background:rgb(var(--surface));display:grid;place-items:center;">
+    <div style="position:relative;width:420px;height:270px;background:rgb(var(--paper));border-radius:3px;box-shadow:var(--shadow-page);">
+      <div style="position:absolute;left:34px;top:36px;right:34px;height:8px;border-radius:2px;background:rgb(var(--paper-ink)/0.13);"></div>
+      <div style="position:absolute;left:34px;top:54px;width:60%;height:8px;border-radius:2px;background:rgb(var(--paper-ink)/0.10);"></div>
+      <div style="position:absolute;left:34px;top:86px;width:120px;height:44px;border-radius:2px;background:rgb(251 191 36 / 0.42);"></div>
+      <div style="position:absolute;left:180px;top:96px;width:96px;height:20px;border-radius:2px;background:rgb(var(--hit)/0.55);"></div>
+      <div style="position:absolute;left:34px;top:160px;width:150px;height:70px;border:2px solid rgb(var(--accent));border-radius:2px;"></div>
+      <span style="position:absolute;left:29px;top:155px;width:9px;height:9px;border-radius:2px;background:rgb(var(--accent));box-shadow:0 0 0 1.5px #fff;"></span>
+      <span style="position:absolute;left:179px;top:155px;width:9px;height:9px;border-radius:2px;background:rgb(var(--accent));box-shadow:0 0 0 1.5px #fff;"></span>
+      <span style="position:absolute;left:29px;top:225px;width:9px;height:9px;border-radius:2px;background:rgb(var(--accent));box-shadow:0 0 0 1.5px #fff;"></span>
+      <span style="position:absolute;left:179px;top:225px;width:9px;height:9px;border-radius:2px;background:rgb(var(--accent));box-shadow:0 0 0 1.5px #fff;"></span>
+      <div style="position:absolute;left:230px;top:180px;display:flex;align-items:center;gap:6px;">
+        <span style="width:56px;height:2px;background:rgb(var(--paper-guide));"></span>
+        <span class="t-micro" style="color:rgb(var(--paper-guide));background:rgb(var(--paper));padding:1px 4px;border-radius:4px;">4,25 m</span>
+      </div>
+    </div>
+  </div></div>
+</div>
+
+<h2 class="g">9 · Qué cambia respecto de hoy</h2>
+<p class="g">Resumen para decidir antes de tocar componentes.</p>
+<div style="display:grid;gap:8px;max-width:900px;">
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Aire.</b> Filas de 32 → 40&nbsp;px, barras de 36/40 → 44&nbsp;px, padding de panel 12 → 16/20&nbsp;px. Entra menos herramienta por pantalla: la cinta se agrupa por familias y gana un «Más herramientas».
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Menos líneas.</b> De tres tokens de borde a uno con alfa. La separación la hace el tono y el hueco; donde el contenido pasa por debajo del chrome, un degradado en vez de una línea.
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Material.</b> Barras y menús pasan a vidrio con <code>backdrop-filter</code>, con su respeto a <code>prefers-reduced-transparency</code>. Es el cambio que más «se ve como Apple» y el único con coste de rendimiento: hay que medirlo con un plano grande.
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Oscuro neutro.</b> El azul marino actual (<code>#0b101b</code> / <code>#1a2232</code>) pasa a grafito (<code>#161618</code> / <code>#202023</code>): el chrome deja de tener temperatura propia y el PDF manda.
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Movimiento.</b> Curva de resorte nativa por defecto, rebote reservado a lo que traía inercia, y respuesta en el press. Lo que ya existía (salidas, toasts que colapsan, reduced-motion) se mantiene.
+  </div>
+  <div style="background:#fff;border-radius:12px;padding:14px 16px;box-shadow:0 0 0 1px rgb(0 0 0 /0.07);font-size:13px;line-height:1.55;">
+    <b>Lo que NO cambia.</b> El acento sigue siendo relleno con su <code>on-accent</code>, los semánticos siguen apagados, el plano de la lámina sigue sin invertir con el tema, y todos los pares de color siguen cumpliendo AA (arriba están medidos).
+  </div>
+</div>
+
+</div>
+
+<script>
+/* Tema: cada demo se escribe una vez en claro y se clona en oscuro. */
+for (const demo of document.querySelectorAll('[data-demo]')) {
+  const claro = demo.querySelector('.pane')
+  const oscuro = claro.cloneNode(true)
+  oscuro.classList.add('dark')
+  demo.appendChild(oscuro)
+}
+const botones = [...document.querySelectorAll('[data-theme-btn]')]
+for (const b of botones) {
+  b.addEventListener('click', () => {
+    document.body.dataset.theme = b.dataset.themeBtn
+    botones.forEach((o) => o.setAttribute('aria-selected', String(o === b)))
+  })
+}
+
+/* Contraste real de cada par, calculado acá para que nadie tenga que confiar. */
+const lum = ([r, g, b]) => {
+  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4) }
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
+}
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05) }
+/* [nombre, fondo, frente, uso, mínimo] — 4.5:1 para texto, 3:1 para lo que no lo es. */
+const PARES = [
+  ['Fondo de la mesa', '--surface', '--fg', 'texto sobre la mesa'],
+  ['Panel', '--panel', '--fg', 'texto sobre panel'],
+  ['Texto secundario', '--panel', '--muted', 'muted sobre panel'],
+  ['Terciario', '--panel', '--faint', 'NO texto: separadores e iconos apagados', 3],
+  ['Acento', '--accent', '--on-accent', 'etiqueta sobre relleno'],
+  ['Peligro', '--danger', '--on-danger', 'etiqueta sobre relleno'],
+  ['Éxito', '--panel', '--success', 'estado sobre panel'],
+  ['Aviso', '--panel', '--warning', 'estado sobre panel'],
+  ['Info', '--panel', '--info', 'estado sobre panel'],
+  ['Scrim', '--scrim', '--on-scrim', 'texto sobre el velo'],
+  ['Lámina', '--paper', '--paper-ink', 'control sobre la hoja'],
+  ['Guía de medida', '--paper', '--paper-guide', 'cota sobre la hoja'],
+]
+function pinta(cont, raiz) {
+  const cs = getComputedStyle(raiz)
+  const rgb = (t) => cs.getPropertyValue(t).trim().split(/\s+/).map(Number)
+  cont.innerHTML = ''
+  for (const [nombre, bg, fg, uso, min = 4.5] of PARES) {
+    const [a, b] = [rgb(bg), rgb(fg)]
+    const r = ratio(a, b)
+    const ok = r >= min
+    const el = document.createElement('div')
+    el.className = 'swatch'
+    el.innerHTML = `
+      <div class="cap" style="background: rgb(${a.join(' ')}); color: rgb(${b.join(' ')});">Aa 11px · Aa</div>
+      <div class="meta"><b>${nombre}</b>${uso}<br><span class="ratio ${ok ? 'ok' : 'bad'}">${r.toFixed(2)}:1 ${ok ? (min === 4.5 ? 'AA' : '3:1 no-texto') : 'revisar'}</span></div>`
+    cont.appendChild(el)
+  }
+}
+for (const cont of document.querySelectorAll('[data-swatches]')) pinta(cont, cont.closest('.pm'))
+
+/* Demos de movimiento: la pelota se lanza con la curva elegida. */
+let lejos = false
+for (const btn of document.querySelectorAll('[data-anim]')) {
+  btn.addEventListener('click', () => {
+    const pane = btn.closest('.pm')
+    const ball = pane.querySelector('[data-ball]')
+    const curva = btn.dataset.anim === 'bounce' ? 'var(--ease-bounce)' : 'var(--ease-spring)'
+    lejos = !lejos
+    ball.style.transition = `transform var(--dur-slow) ${curva}`
+    ball.style.transform = lejos ? `translateX(${pane.clientWidth - 120}px)` : 'translateX(0)'
+  })
+}
+</script>
+</body>
+</html>

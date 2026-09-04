@@ -42,10 +42,10 @@ export default function StatusBar() {
     setZoom(activeDoc.doc_id, computeFitZoom(activeDoc.doc_id, activeDoc.currentPage, mode, viewerWidth, viewerHeight), false)
   }
 
-  const iconBtn = 'w-7 h-7 inline-flex items-center justify-center rounded-token-sm hover:bg-hover text-muted hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed'
+  const iconBtn = 'w-7 h-7 inline-flex items-center justify-center rounded-token-sm hover:bg-hover text-muted hover:text-fg transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
 
   return (
-    <div className="h-8 border-t border-border-strong bg-toolbar text-muted flex items-center px-2 text-mini select-none gap-3">
+    <div className="h-status material material-edge text-muted flex items-center px-3 text-mini select-none gap-3">
       {activeDoc ? (
         <span className="flex items-center gap-1">
           Pág.

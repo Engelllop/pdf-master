@@ -65,7 +65,7 @@ export default function TabStrip() {
           </button>
         )}
         <div role="tablist" aria-label="Documentos abiertos"
-          className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar px-1 min-w-0" ref={tabStripRef} onWheel={onWheel}>
+          className="flex-1 flex items-center gap-1 overflow-x-auto no-scrollbar px-1 min-w-0" ref={tabStripRef} onWheel={onWheel}>
           {docs.map((doc, i) => (
             // La pestaña era un div con onClick: para un lector de pantalla no existía
             // ni se sabía cuál estaba activa. tabIndex rotativo, como en las miniaturas.
@@ -85,12 +85,12 @@ export default function TabStrip() {
               }}
               onContextMenu={(e) => { e.preventDefault(); setTabMenu({ docId: doc.doc_id, path: doc.file_path, x: e.clientX, y: e.clientY }) }}
               title={doc.file_path}
-              className={`app-no-drag group relative flex items-center gap-2 pl-3 pr-1.5 h-full rounded-t-token cursor-pointer text-ui shrink min-w-[92px] max-w-[220px] transition-colors duration-fast ease-token ${
+              className={`app-no-drag group relative flex items-center gap-2 pl-2.5 pr-1 h-[30px] rounded-token cursor-pointer text-ui shrink min-w-[92px] max-w-[220px] transition-[background-color,color,box-shadow] duration-fast ease-token ${
                 dragId === doc.doc_id ? 'opacity-50' : ''
               } ${
                 doc.doc_id === activeDocId
-                  ? 'bg-toolbar text-fg font-medium border-x border-t border-border -mb-px'
-                  : 'bg-surface text-muted hover:bg-hover hover:text-fg'
+                  ? 'bg-panel text-fg font-medium shadow-token-sm'
+                  : 'text-muted hover:bg-hover hover:text-fg'
               }`}>
               {loadingDocId === doc.doc_id
                 ? <Loader2 size={14} className="animate-spin text-accent shrink-0" />

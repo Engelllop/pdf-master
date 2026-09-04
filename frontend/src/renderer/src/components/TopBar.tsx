@@ -12,13 +12,15 @@ export default function TopBar() {
     'sidebarOpen', 'toggleSidebar', 'theme', 'setTheme',
   )
 
-  const rightBtn = 'w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-colors text-muted hover:text-fg hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed'
+  // La respuesta va en la pulsación, no en el release: sin el `active:scale` un
+  // control se siente muerto aunque responda rápido.
+  const rightBtn = 'w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant text-muted hover:text-fg hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed'
 
   return (
-    <div className="app-drag h-10 border-b border-border flex items-center bg-toolbar shrink-0 select-none pr-[140px]">
+    <div className="app-drag h-chrome material material-edge flex items-center shrink-0 select-none pr-[140px]">
       <Tooltip content="Menú de PDF Master">
         <button onClick={() => window.dispatchEvent(new CustomEvent('app:file-menu'))} aria-label="Menú de PDF Master"
-          className="app-no-drag flex items-center justify-center w-11 h-10 hover:bg-hover transition-colors shrink-0">
+          className="app-no-drag flex items-center justify-center w-8 h-8 ml-2 mr-1 rounded-token-sm hover:bg-hover transition-colors duration-fast ease-token shrink-0">
           <img src={appIcon} alt="" className="w-[22px] h-[22px] dark:invert" draggable={false} />
         </button>
       </Tooltip>
@@ -41,7 +43,7 @@ export default function TopBar() {
         <Tooltip content={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'} shortcut="Ctrl+Shift+L">
           <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
             aria-pressed={sidebarOpen}
-            className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-colors ${
+            className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${
               sidebarOpen ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
             }`}>
             <PanelLeft size={16} />

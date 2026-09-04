@@ -2,92 +2,123 @@
 name: PDF Master
 description: Chrome neutro de escritorio; el color lo ponen las marcas sobre el PDF.
 colors:
-  surface: "#e7eaef"
+  surface: "#f2f2f5"
   panel: "#ffffff"
   toolbar: "#ffffff"
-  border: "#dfe2e8"
-  border-strong: "#c8ced7"
-  border-control: "#7c8490"
-  fg: "#1b1f25"
-  muted: "#5c6570"
-  accent: "#1e5ca8"
+  border: "#e8e8ec"
+  border-strong: "#d6d6db"
+  border-control: "#767680"
+  fg: "#18181b"
+  muted: "#636369"
+  faint: "#8e8e96"
+  accent: "#0a66d6"
   on-accent: "#ffffff"
-  danger: "#9e3d36"
+  danger: "#af3a30"
   on-danger: "#ffffff"
-  success: "#2f694a"
-  warning: "#8c5e14"
-  info: "#33547a"
-  hover: "#eceef2"
-  active: "#e3e7ed"
-  scrim: "#0f172a"
+  success: "#20744f"
+  warning: "#96620f"
+  info: "#2a5c96"
+  hover: "#f0f0f3"
+  active: "#e9e9ed"
+  scrim: "#0c0c0e"
   on-scrim: "#ffffff"
+  material: "#ffffff"
   paper: "#ffffff"
-  paper-ink: "#1b1f25"
-  paper-muted: "#5c6570"
-  paper-guide: "#8c5e14"
-  paper-ok: "#2f694a"
+  paper-ink: "#18181b"
+  paper-muted: "#636369"
+  paper-guide: "#96620f"
+  paper-ok: "#20744f"
   hit: "#c07cac"
   hit-active: "#70266e"
   diff-a: "#be584e"
   diff-b: "#284a8a"
-  surface-dark: "#0b101b"
-  panel-dark: "#1a2232"
-  toolbar-dark: "#1a2232"
-  border-dark: "#303c4f"
-  border-strong-dark: "#425168"
-  border-control-dark: "#687486"
-  fg-dark: "#e2e8f0"
-  muted-dark: "#92a0b3"
-  accent-dark: "#7db0f5"
-  on-accent-dark: "#0b101b"
+  surface-dark: "#161618"
+  panel-dark: "#202023"
+  toolbar-dark: "#202023"
+  border-dark: "#37373b"
+  border-strong-dark: "#48484d"
+  border-control-dark: "#80808a"
+  fg-dark: "#ededf0"
+  muted-dark: "#9a9aa2"
+  faint-dark: "#76767e"
+  accent-dark: "#5ca2ff"
+  on-accent-dark: "#0c0e12"
   danger-dark: "#e28a82"
-  on-danger-dark: "#1a2232"
-  success-dark: "#86c4a2"
+  on-danger-dark: "#1a1a1d"
+  success-dark: "#7ac8a0"
   warning-dark: "#e0b064"
   info-dark: "#96bae2"
-  hover-dark: "#263042"
-  active-dark: "#2a3548"
-  scrim-dark: "#020610"
+  hover-dark: "#2d2d31"
+  active-dark: "#36363b"
+  scrim-dark: "#020203"
+  material-dark: "#222226"
 typography:
   display:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
     fontSize: "20px"
     fontWeight: 600
-    lineHeight: 1.25
+    lineHeight: 1.2
+    letterSpacing: "-0.02em"
+  head:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "15px"
+    fontWeight: 600
+    lineHeight: 1.3
+    letterSpacing: "-0.011em"
   base:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
     fontSize: "14px"
     fontWeight: 400
-    lineHeight: 1.5
+    lineHeight: 1.45
+    letterSpacing: "-0.006em"
   ui:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
     fontSize: "13px"
     fontWeight: 400
-    lineHeight: 1.45
+    lineHeight: 1.38
+    letterSpacing: "-0.003em"
   mini:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
     fontSize: "12px"
     fontWeight: 400
-    lineHeight: 1.4
-  micro:
-    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-    fontSize: "11px"
-    fontWeight: 400
     lineHeight: 1.35
+    letterSpacing: "0em"
+  micro:
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif"
+    fontSize: "11px"
+    fontWeight: 500
+    lineHeight: 1.3
+    letterSpacing: "0.006em"
 rounded:
-  sm: "5px"
-  md: "7px"
-  lg: "12px"
+  xs: "6px"
+  sm: "8px"
+  md: "10px"
+  lg: "14px"
+  xl: "20px"
 spacing:
   xs: "4px"
   sm: "8px"
   md: "12px"
   lg: "16px"
+  xl: "20px"
+rows:
+  row: "40px"
+  chrome: "44px"
+  status: "32px"
 motion:
-  ease: "cubic-bezier(0.22, 1, 0.36, 1)"
-  fast: "120ms"
-  base: "180ms"
-  slow: "260ms"
+  ease: "linear(0, 0.075 5%, 0.227 10%, 0.389 15%, 0.536 20%, 0.656 25%, 0.75 30%, 0.821 35%, 0.873 40%, 0.911 45%, 0.938 50%, 0.957 55%, 0.971 60%, 0.986 70%, 0.994 80%, 0.997 90%, 1)"
+  easeBounce: "linear(0, 0.248 10%, 0.608 20%, 0.851 30%, 0.968 40%, 1.009 50%, 1.015 60%, 1.011 70%, 1.005 80%, 1.001 90%, 1)"
+  easeOut: "cubic-bezier(0.32, 0.72, 0, 1)"
+  instant: "90ms"
+  fast: "150ms"
+  base: "260ms"
+  slow: "380ms"
+material:
+  alpha: 0.68
+  blur: "30px"
+  edgeAlpha: 0.65
+  alphaDark: 0.72
+  edgeAlphaDark: 0.10
 components:
   button-primary:
     backgroundColor: "{colors.accent}"
@@ -146,37 +177,45 @@ components:
 
 ## Overview
 
+> **Migración en curso (v2).** Los TOKENS de este documento ya están en `App.css` y
+> `tailwind.config.js`. Los COMPONENTES se están migrando superficie por superficie:
+> hasta que cada uno se toque, sigue usando las alturas y los bordes viejos con los
+> valores nuevos. La galería viva —con el contraste de cada par medido en la propia
+> página— está en `frontend/design/gallery.html`.
+
 **Creative North Star: "El instrumento callado"**
 
-La interfaz está muda a propósito. El color, el peso y el drama viven en las marcas que el usuario pone sobre el PDF, no en el chrome. Barras, riel y diálogos son un instrumento de escritorio Windows: denso, familiar, sin disfraz de producto web.
+La interfaz está muda a propósito. El color, el peso y el drama viven en las marcas que el usuario pone sobre el PDF, no en el chrome. Lo que cambió en v2 es el material, no la voz: el chrome pasa de franja opaca a vidrio con el documento pasando por debajo, y de tres tokens de línea a separación por tono y por hueco.
 
-La personalidad es de archivo, no de marketing. Una sola familia de sistema (Segoe / San Francisco), semánticos apagados, y un solo azul de trabajo reservado al estado activo.
+La personalidad es de archivo, no de marketing. Una sola familia de sistema (San Francisco / Segoe UI Variable), semánticos apagados, y un solo azul de sistema reservado al estado activo.
 
 Rechazos confirmados por el código: verdes y rojos saturados de Tailwind como estados; el acento como color de letra sobre el chrome; tipografía display de marca; motion que ignore «reducir movimiento».
 
 **Key Characteristics:**
 
 - Chrome neutro; el documento y las marcas cargan el color
-- Un azul de trabajo (`accent`) que solo existe como relleno, nunca como letra
-- Densidad de herramienta: filas de 32–40px, tipo 11–14px
-- Profundidad por tono (surface vs panel), no por teatro de sombras
-- Tres planos: chrome, lámina (`paper-*`) y marcas del usuario
-- Motion corto, una curva, se atenúa —no se apaga— con `prefers-reduced-motion`
+- Un azul de sistema (`accent`) que solo existe como relleno, nunca como letra
+- Filas de 40px y barras de 44px: densidad de herramienta con aire de app, no de planilla
+- Profundidad por tono y por material; la sombra empieza por un contorno de medio píxel
+- Cuatro planos: material (chrome), panel, lámina (`paper-*`) y marcas del usuario
+- Resorte crítico como curva por defecto; el rebote se reserva a lo que traía inercia
+- Motion y transparencia se atenúan —no se apagan— con las preferencias del sistema
 
 ## Colors
 
-Paleta de taller: grises fríos, un azul de trabajo y semánticos desaturados para no competir con el markup.
+Neutros de sistema (grises sin temperatura), un azul de sistema y semánticos desaturados para no competir con el markup. En oscuro el chrome es grafito, no azul marino: un chrome con temperatura propia le discute el color al documento.
 
 ### Primary
 
-- **Azul de trabajo** (`accent`): herramienta activa, toggle encendido, foco y selección. **Siempre relleno** con `on-accent` encima. Es un color propio y no la tinta del texto: un estado activo en negro sólido no se distingue de la tipografía. En oscuro invierte polaridad —azul claro (`accent-dark`) con tinta oscura (`on-accent-dark`) encima— porque el azul medio con blanco daba 4.20:1 y las etiquetas de herramienta van a 11–13px.
+- **Azul de sistema** (`accent`, `#0a66d6`): herramienta activa, toggle encendido, foco y selección. **Siempre relleno** con `on-accent` encima. Es un color propio y no la tinta del texto: un estado activo en negro sólido no se distingue de la tipografía. Es un paso más profundo que el `#007AFF` de Apple **a propósito**: ese da 4.06:1 con blanco encima y aquí hay etiquetas de 11–13px sobre relleno; este da 5.41:1. En oscuro invierte polaridad —azul claro (`accent-dark`) con tinta oscura (`on-accent-dark`) encima— porque el azul medio con blanco daba 4.20:1.
 
 ### Neutral
 
 - **Papel del chrome** (`panel` / `toolbar`): barras, paneles y diálogos.
 - **Mesa** (`surface`): área del documento, un paso más gris que el chrome, para que la lámina flote.
 - **Bordes**: `border` es hairline decorativo entre elementos del mismo plano; `border-strong` es separación estructural (chrome ↔ documento); `border-control` es el contorno de un control.
-- **Secundario** (`muted`): hints, iconos en reposo, atajos.
+- **Secundario** (`muted`): hints, iconos en reposo, atajos, placeholders. Cumple AA sobre panel (5.97:1).
+- **Terciario** (`faint`): **no es texto**. Separadores, glifos deshabilitados, iconos apagados. Se mide contra 3:1, no contra 4.5:1; una etiqueta que caiga aquí está mal puesta.
 - **Hover / Elevado** (`hover`, `active`): estado de control y superficie elevada (kbd, chips, filas). En oscuro `hover` pesa MENOS que `active`, igual que en claro.
 
 En oscuro el documento se hunde a `surface-dark` y el chrome sube a `panel-dark`.
@@ -199,6 +238,18 @@ Tercer plano, entre el chrome y las marcas: chrome que se dibuja **encima** del 
 
 **The Quiet Semantic Rule.** Peligro, éxito, aviso e info van apagados. No usar la paleta viva de Tailwind.
 
+**The Tertiary-Is-Not-Text Rule.** `faint` existe para lo que no se lee: separadores, iconos apagados, un glifo deshabilitado. Cualquier cosa que el usuario tenga que leer —placeholder incluido— va en `muted`.
+
+## Materials
+
+El chrome es vidrio, no una franja opaca: `.material` (fondo del token `material` a 0.68 / 0.72 de alfa + `blur(30px) saturate(180%)`) con el documento pasando por debajo.
+
+- **`.material-edge`** pone el filo de luz de arriba (`inset 0 0.5px 0`). No es un borde —el borde separa— sino el grosor del vidrio: es lo que lo hace leer como lámina y no como un color plano.
+- **`.scroll-edge`** es lo que va donde el contenido se mete bajo el chrome flotante: un degradado corto en vez de la línea de 1px. La raya corta el documento; el degradado lo deja pasar.
+- **Nunca vidrio sobre vidrio.** Un menú translúcido encima de una barra translúcida no se lee. El menú es material; la barra debajo, en ese caso, no.
+
+**The Reduced-Transparency Rule.** Con `prefers-reduced-transparency: reduce` el material se vuelve sólido y el blur cae a 0. La legibilidad manda sobre el efecto, y se resuelve en el token, no en cada componente.
+
 **The One Signal Rule.** Un canal de color = un significado. El relleno accent es «activo»; el estado sucio va en `warning` y como texto, no como relleno; y una barra no lleva un color permanente que le robe el canal al que sí necesita atención.
 
 ## Typography
@@ -207,21 +258,27 @@ Tercer plano, entre el chrome y las marcas: chrome que se dibuja **encima** del 
 **Body Font:** stack de sistema (Segoe UI / San Francisco, con Roboto / Helvetica / Arial)
 **Label/Mono Font:** la misma familia; números en `tabular-nums` (zoom, páginas, medidas, `kbd`)
 
-**Character:** una sola sans de UI, escala apretada de cinco tamaños. Jerarquía por peso y tamaño, no por familia.
+**Character:** una sola sans de UI, escala apretada de seis tamaños. Jerarquía por peso, tamaño e interlineado como conjunto, no subiendo píxeles.
 
 ### Hierarchy
 
-- **Display** (600, 20px, 1.25): título de pantalla vacía y de pantalla de error. Único tamaño por encima del cuerpo.
-- **Base** (400, 14px, 1.5): botones primarios, cuerpo de modal, campos.
-- **UI** (400, 13px, 1.45): pestañas de documento, items de menú.
-- **Mini** (400, 12px, 1.4): etiquetas de campo, tools de cinta compacta, status.
-- **Micro** (400, 11px, 1.35): piso de lectura diaria — captions, kbd, contadores, cabeceras de panel en mayúsculas.
+Cada tamaño trae su tracking y su interlineado: **el tracking es específico por tamaño**, negativo al crecer y positivo al encogerse.
+
+- **Display** (600, 20px, 1.2, −0.02em): título de modal, de pantalla vacía y de pantalla de error.
+- **Head** (600, 15px, 1.3, −0.011em): cabecera de panel y de diálogo. Sin este peldaño, un título de panel solo podía ser cuerpo en negrita o el display de 20px.
+- **Base** (400, 14px, 1.45, −0.006em): botones primarios, cuerpo de modal, campos.
+- **UI** (400, 13px, 1.38, −0.003em): pestañas de documento, items de menú, controles.
+- **Mini** (400, 12px, 1.35, 0): etiquetas de campo, hints, status.
+- **Micro** (500, 11px, 1.3, +0.006em): piso de lectura diaria — captions, kbd, contadores. Sube a peso 500 porque a 11px el 400 se deshilacha.
+- **Versalita de sección** (600, 11px, `tracking-section` = 0.06em): MARCADO, VISTA, ARCHIVOS. Es la única que abre el tracking de verdad: en mayúsculas apretadas no se lee.
 
 ### Named Rules
 
 **The One Face Rule.** No se agrega una display ni una mono «técnica» de adorno. Mono solo si el contenido es código; los números van con `tabular-nums` sobre la sans.
 
 **The Eleven-Pixel Floor.** Nada operativo baja de 11px. Y nada operativo sube fuera de la escala: `text-lg`, `text-xl` y `text-2xl` no existen en este sistema.
+
+**The Tracking-By-Size Rule.** Un solo `letter-spacing` para toda la app está mal en algún tamaño. El tracking vive en la escala (`fontSize`), no escrito a mano en el componente: lo grande se aprieta, lo pequeño se abre.
 
 ## Layout
 
@@ -235,7 +292,7 @@ Las cuatro filas del chrome comparten un solo eje izquierdo a 8px (`px-2`). La p
 
 ## Elevation & Depth
 
-Híbrido tonal. El documento (`surface`) está un paso más bajo que el chrome (`panel`). Las sombras son estructurales y raras. En reposo, el borde de 1px hace el trabajo.
+Híbrido tonal. El documento (`surface`) está un paso más bajo que el chrome (`panel`). Las sombras son estructurales y raras, y **empiezan por un contorno de medio píxel**: en claro es lo que separa de verdad una capa de la de abajo, y es lo que sustituye al borde de 1px en reposo. Después viene la difusión larga y suave.
 
 ### Shadow Vocabulary
 
@@ -261,13 +318,19 @@ Escala por rol, de abajo arriba: `raised` (10) · `canvas` (20) · `float` (30) 
 
 ## Shapes
 
-Esquinas de herramienta, no de marca. Tres radios y ninguna excepción: `rounded-token-sm` (5px) para chips, foco y controles menores; `rounded-token` (7px) para controles normales; `rounded-token-lg` (12px) para contenedores, modales y hojas.
+Esquinas de herramienta, no de marca. Cinco radios por ROL y ninguna excepción: `rounded-token-xs` (6px) chip, kbd y badge; `rounded-token-sm` (8px) botón de icono y campo pequeño; `rounded-token` (10px) botón, fila y campo; `rounded-token-lg` (14px) panel, menú y popover; `rounded-token-xl` (20px) modal y hoja.
 
-Bordes de 1px. Separadores verticales `w-px h-4`. Sin recortes diagonales, sin neobrutalismo.
+Tres no llegaban: el mismo valor servía para un `kbd` de 18px y para un modal de 500. Un radio a mano (`rounded-[9px]`) es un rol que falta, no un número que falta.
+
+Separadores verticales `w-px h-4`. Sin recortes diagonales, sin neobrutalismo.
 
 ## Motion
 
-Una curva (`--ease`) y tres duraciones: `fast` 120ms (color, hover, pulsación), `base` 180ms (entradas y colapsos), `slow` 260ms.
+La curva por defecto (`--ease`) es un **resorte crítico** (damping 1.0, response 0.35 s) muestreado en `linear()`: sale rápido, se posa y no rebota. Es nativo de Chromium, así que el sistema no arrastra ninguna librería de animación.
+
+Cuatro duraciones: `instant` 90ms (la respuesta al press: se siente, no se ve), `fast` 150ms (color, hover, salidas), `base` 260ms (entradas y colapsos), `slow` 380ms.
+
+`--ease-bounce` (damping 0.8, 1.5% de sobrepaso) es para lo que **traía inercia**: un panel que se arrastró, una marca que se soltó. En un menú que solo apareció, sobra. `--ease-out` es la curva de salida de las hojas.
 
 - **Entradas de capa:** `overlay-in` para el scrim, `panel-in` para el panel.
 - **Salidas de capa:** `overlay-out` / `panel-out` con `data-closing` y una guarda de reentrada. Una capa que desmonta en un frame se siente barata; una acción no espera a su salida.
@@ -281,6 +344,10 @@ Una curva (`--ease`) y tres duraciones: `fast` 120ms (color, hover, pulsación),
 **The Reduced-Motion Is Less, Not None Rule.** Con la preferencia activa se cortan los `transform` y se conservan los fades de color y opacidad a 120ms. Los indicadores de progreso **siguen girando**: un spinner congelado se lee como app colgada. Lo que anima por SMIL (`<animate>`) no lo alcanza la regla CSS y consulta la preferencia a mano.
 
 **The Keyboard Is Instant Rule.** Lo que el usuario dispara con el teclado y repite decenas de veces al día no se anima.
+
+**The Press Is The Feedback Rule.** La respuesta va en el `pointerdown`, no en el `click`: `active:scale-[0.97]` a 90ms. Esperar al release para acusar la pulsación es lo que hace que un control se sienta muerto.
+
+**The Bounce Needs Momentum Rule.** El sobrepaso solo se gana con inercia previa. Un rebote en algo que apareció sin que el usuario lo empujara se lee como adorno.
 
 ## Components
 
@@ -342,7 +409,8 @@ Texto, no un punto. Sucio: **Sin guardar · Ctrl+S** en `warning`. Guardando / G
 
 - **Do** tratar `accent` como relleno y solo como relleno, con su `on-accent`.
 - **Do** usar `paper-*` para lo que se dibuja encima de la lámina.
-- **Do** usar la escala `micro` → `mini` → `ui` → `base` → `display` (11 / 12 / 13 / 14 / 20).
+- **Do** usar la escala `micro` → `mini` → `ui` → `base` → `head` → `display` (11 / 12 / 13 / 14 / 15 / 20), con su tracking incluido.
+- **Do** usar `.material` + `.material-edge` para el chrome flotante, y `.scroll-edge` donde el contenido se le mete debajo.
 - **Do** poner `tabular-nums` en zoom, página, medidas y `kbd`.
 - **Do** dejar los indicadores de progreso girando con «reducir movimiento» activo.
 - **Do** reutilizar `panelUi.tsx` antes de escribir un header o un vacío nuevo.
@@ -356,6 +424,9 @@ Texto, no un punto. Sucio: **Sin guardar · Ctrl+S** en `warning`. Guardando / G
 - **Don't** usar `bg-panel` en un campo: es el color de la barra y lo vuelve invisible.
 - **Don't** agregar una fuente display o una mono «técnica» de adorno, ni tamaños fuera de la escala.
 - **Don't** poner sombra en un control que sigue en el flujo, ni sombra de halo a 0px de offset.
+- **Don't** apilar material sobre material: un menú translúcido sobre una barra translúcida no se lee.
+- **Don't** escribir `letter-spacing` a mano: vive en la escala tipográfica.
+- **Don't** usar `faint` para algo que haya que leer.
 - **Don't** cambiar el ancho de un control al activarse (`font-medium` en el estado activo recorre la fila entera).
 - **Don't** declarar un `hover:` después del estado activo: al pasar el ratón se pierde el activo.
 - **Don't** definir subcomponentes dentro del cuerpo de otro componente: se recrean por render y los campos pierden el foco al teclear.

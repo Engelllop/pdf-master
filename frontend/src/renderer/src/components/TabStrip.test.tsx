@@ -67,12 +67,15 @@ describe('jerarquía de la tira', () => {
     const tabs = screen.getAllByRole('tab')
     const activa = tabs.find((t) => t.getAttribute('aria-selected') === 'true')!
     const inactiva = tabs.find((t) => t.getAttribute('aria-selected') !== 'true')!
-    // Lógica tonal de navegador: la activa comparte plano con la barra y las
-    // inactivas se hunden a la mesa. El subrayado accent se retiró a propósito —
+    // v2: la pestaña es una píldora sobre el vidrio, no una solapa de navegador
+    // pegada al borde. La activa SUBE al plano del panel con su sombra de contacto
+    // y las inactivas no tienen fondo — sobre un chrome translúcido, una solapa con
+    // borde solo dibujaba una caja más. El subrayado accent se retiró a propósito:
     // marcaba el mismo eje que los modos de cinta, una fila más abajo.
-    expect(activa.className).toMatch(/bg-toolbar/)
-    expect(activa.className).not.toMatch(/bg-surface/)
-    expect(inactiva.className).toMatch(/bg-surface/)
+    expect(activa.className).toMatch(/bg-panel/)
+    expect(activa.className).toMatch(/shadow-token-sm/)
+    expect(activa.className).not.toMatch(/bg-hover/)
+    expect(inactiva.className).not.toMatch(/bg-panel/)
   })
 
   it('en la lista de pestañas, el activo no se marca con el color del hover', () => {

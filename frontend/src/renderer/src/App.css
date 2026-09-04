@@ -2,120 +2,192 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design tokens (claro por defecto). El tema oscuro los sobreescribe en .dark.
+/* ── Sistema visual v2 (traducción a lenguaje Apple) ──────────────────────────
+   Neutros de sistema, oscuro en grafito, material translúcido en el chrome,
+   tipografía con tracking por tamaño y resorte como curva por defecto. La galería
+   viva está en `frontend/design/gallery.html`, con el contraste de cada par medido
+   en la propia página. Los NOMBRES de token no cambian: cambian los valores, así
+   que los componentes siguen funcionando mientras se migran uno a uno a las piezas
+   nuevas (.material, --row, --radius-xl…).
    Los colores van como canales RGB "r g b" para que Tailwind pueda aplicar
    opacidad (bg-accent/10, bg-surface/80…) vía rgb(var(--x) / <alpha-value>). */
-/* La interfaz es deliberadamente neutra: el color lo ponen las marcas del usuario
-   sobre el plano. Los estados (peligro, éxito…) usan versiones apagadas, no los
-   rojos y verdes saturados de Tailwind, para no competir con el documento. */
 :root {
-  --surface: 231 234 239;   /* mesa de trabajo: MÁS oscura que la hoja, para que la
-                               página blanca flote en vez de fundirse con el fondo */
-  --panel: 255 255 255;     /* paneles laterales */
-  --toolbar: 255 255 255;   /* barras superior e inferior */
-  --border: 223 226 232;    /* hairline entre elementos del mismo plano */
-  --border-strong: 200 206 215; /* separación estructural (chrome ↔ documento) */
-  /* Borde de CONTROL (input, select, textarea, casilla). No es lo mismo que un
-     hairline decorativo: WCAG 1.4.11 pide 3:1 en el contorno de un control, y
-     --border da 1.30:1 contra el panel, así que el campo no tenía frontera. */
-  --border-control: 124 132 144;
-  --fg: 27 31 37;           /* texto / iconos (casi negro) */
-  --muted: 92 101 112;
-  --accent: 30 92 168;      /* azul de trabajo: herramienta activa, foco, selección.
-                               Va SIEMPRE con `text-on-accent` cuando es relleno. La
-                               interfaz sigue siendo neutra —el color lo ponen las
-                               marcas—, pero el estado activo necesita un color propio:
-                               en negro sólido no se distingue de la tipografía. */
+  --surface: 242 242 245;   /* la mesa: MÁS oscura que la hoja, para que la página
+                               blanca flote en vez de fundirse con el fondo */
+  --panel: 255 255 255;     /* paneles laterales y hojas opacas */
+  --toolbar: 255 255 255;   /* base de las barras; el vidrio lo pone .material */
+  /* Un solo peso de línea de verdad. La separación estructural la hace ahora el
+     TONO y el hueco: donde había border y border-strong marcando lo mismo, el
+     chrome se separa del documento por color de superficie, no por raya. */
+  --border: 232 232 236;
+  --border-strong: 214 214 219;
+  /* Borde de CONTROL (input, select, textarea, casilla). WCAG 1.4.11 pide 3:1 en
+     el contorno de un control y un hairline decorativo no llega. */
+  --border-control: 118 118 128;
+  --fg: 24 24 27;
+  --muted: 99 99 105;       /* etiqueta secundaria; cumple AA sobre panel */
+  /* Terciario. NO es texto: separadores, glifos deshabilitados, iconos apagados.
+     Un placeholder o una etiqueta van en --muted. */
+  --faint: 142 142 150;
+  /* Azul de sistema, un paso más profundo que el #007AFF de Apple: ese da 4.06:1
+     con blanco encima y las etiquetas de herramienta van a 11-13px. Este da 5.41:1
+     y se sigue leyendo como el azul del sistema. Va SIEMPRE con `text-on-accent`
+     cuando es relleno, nunca como color de letra sobre el chrome. */
+  --accent: 10 102 214;
   --on-accent: 255 255 255; /* texto/icono encima de --accent */
-  --on-danger: 255 255 255;  /* texto/icono encima de --danger */
-  --hover: 236 238 242;     /* hover de botones */
-  --active: 227 231 237;    /* superficie elevada (kbd, chips, filas) */
-  --danger: 158 61 54;
-  --success: 47 105 74;
-  --warning: 140 94 20;
-  --info: 51 84 122;
+  --on-danger: 255 255 255; /* texto/icono encima de --danger */
+  --hover: 240 240 243;     /* hover de botones */
+  --active: 233 233 237;    /* superficie elevada (kbd, chips, filas) */
+  --danger: 175 58 48;
+  --success: 32 116 79;
+  --warning: 150 98 15;
+  --info: 42 92 150;
   /* Fondo que atenúa la app detrás de un modal, un menú o una lupa. Una sola
-     opacidad para el rol (antes había /40, /45 y /50 para lo mismo). */
-  --scrim: 15 23 42;
+     opacidad para el rol. */
+  --scrim: 12 12 14;
   --on-scrim: 255 255 255; /* texto/icono encima del scrim: claro en los DOS temas,
-                              porque el scrim es oscuro en los dos. No sirve
-                              --on-accent, que invierte polaridad en oscuro. */
+                              porque el scrim es oscuro en los dos. */
 
   /* ── Plano de la hoja ────────────────────────────────────────────────────────
      Tercer plano, entre el chrome y las marcas del usuario: chrome que se dibuja
-     ENCIMA del papel. El papel es blanco en los dos temas, así que estos tokens
-     NO se redefinen en html.dark: si se invirtieran con el tema desaparecerían
-     sobre la lámina (con --warning oscuro la guía de calibración queda a 1.99:1). */
+     ENCIMA del papel. El papel es blanco en los dos temas, así que estos tokens NO
+     se redefinen en html.dark: si se invirtieran desaparecerían sobre la lámina
+     (con --warning oscuro la guía de calibración queda a 1.99:1). */
   --paper: 255 255 255;      /* la lámina: blanco a propósito, no un blanco olvidado */
-  --paper-ink: 27 31 37;     /* texto de un control apoyado en la lámina */
-  --paper-muted: 92 101 112; /* contornos punteados de bloque editable */
-  --paper-guide: 140 94 20;  /* guía de medida/calibración (warning sobre hoja) */
-  --paper-ok: 47 105 74;     /* imán de snap y selección de texto (success sobre hoja) */
-  /* Coincidencias de búsqueda: chrome, no marca. Ciruela porque el ámbar de antes
-     era exactamente el color por defecto de las marcas del usuario (#fbbf24). */
+  --paper-ink: 24 24 27;     /* texto de un control apoyado en la lámina */
+  --paper-muted: 99 99 105;  /* contornos punteados de bloque editable */
+  --paper-guide: 150 98 15;  /* guía de medida/calibración (warning sobre hoja) */
+  --paper-ok: 32 116 79;     /* imán de snap y selección de texto (success sobre hoja) */
+  /* Coincidencias de búsqueda: chrome, no marca. Ciruela porque el ámbar es
+     exactamente el color por defecto de las marcas del usuario (#fbbf24). */
   --hit: 192 124 172;
   --hit-active: 112 38 110;
   /* Tintes de comparar revisiones: apagados, en la línea de --danger/--info. */
   --diff-a: 190 88 78;
   --diff-b: 40 74 138;
-  /* Tres radios: control pequeño, control normal, contenedor. */
-  --radius-sm: 5px;
-  --radius: 7px;
-  --radius-lg: 12px;
-  /* Escala de elevación: cada nivel = una distancia real al plano de abajo.
+
+  /* ── Material: el chrome es vidrio, no una franja opaca ──────────────────────
+     El documento pasa por debajo y se ve difuminado. Se aplica con la clase
+     .material, y .material-edge le pone el filo de luz de arriba. */
+  --material: 255 255 255;
+  --material-alpha: 0.68;
+  --material-blur: 30px;
+  --material-edge: 255 255 255;
+  --material-edge-alpha: 0.65;
+
+  /* Cinco radios por rol: chip · icono · control · panel · modal. */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+
+  /* Ritmo vertical. Las filas dejan de ser 32 y pasan a 40: es el cambio que más
+     se nota y el que obliga a agrupar la cinta por familias. */
+  --row: 40px;
+  --chrome-row: 44px;
+  --status-row: 32px;
+
+  /* Elevación: empieza por un contorno de MEDIO píxel —que es lo que separa de
+     verdad en claro— y sigue con difusión larga y suave.
      sm chips y campos · md menús y popovers · lg modales y hojas. */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
-  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.10), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 18px 44px rgba(15, 23, 42, 0.18), 0 2px 8px rgba(15, 23, 42, 0.08);
-  /* La hoja de papel: sombra corta y difusa, como una lámina sobre la mesa. */
-  --shadow-page: 0 1px 3px rgba(15, 23, 42, 0.16), 0 10px 28px rgba(15, 23, 42, 0.12);
+  --shadow-sm: 0 0 0 0.5px rgb(0 0 0 / 0.05), 0 1px 2px rgb(0 0 0 / 0.05);
+  --shadow-md: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.10), 0 1px 3px rgb(0 0 0 / 0.05);
+  --shadow-lg: 0 0 0 0.5px rgb(0 0 0 / 0.07), 0 24px 64px rgb(0 0 0 / 0.20), 0 2px 8px rgb(0 0 0 / 0.07);
+  /* La hoja de papel: una sombra corta de contacto y una larga de mesa. */
+  --shadow-page: 0 1px 3px rgb(0 0 0 / 0.10), 0 12px 32px rgb(0 0 0 / 0.10);
   /* Para `filter: drop-shadow()`, que solo acepta UNA sombra y sin radio de
-     expansión: los --shadow-* de arriba son listas de dos y ahí no valen. */
-  --shadow-drop: 0 1px 1px rgba(15, 23, 42, 0.18);
-  --scroll-track: 224 227 233;
-  --scroll-thumb: 165 172 183;
-  --scroll-thumb-hover: 120 129 143;
-  /* Movimiento: una curva y tres duraciones para toda la app */
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-fast: 120ms;
-  --dur: 180ms;
-  --dur-slow: 260ms;
+     expansión: los --shadow-* de arriba son listas y ahí no valen. */
+  --shadow-drop: 0 1px 2px rgb(0 0 0 / 0.18);
+  --scroll-track: 236 236 239;
+  --scroll-thumb: 186 186 194;
+  --scroll-thumb-hover: 142 142 150;
+
+  /* ── Movimiento ──────────────────────────────────────────────────────────────
+     La curva por defecto es un resorte crítico (damping 1.0, response 0.35 s)
+     muestreado en linear(): sale rápido, se posa y no rebota. Chromium lo soporta
+     nativo, así que no entra ninguna librería de animación. */
+  --ease: linear(0, 0.075 5%, 0.227 10%, 0.389 15%, 0.536 20%, 0.656 25%,
+                 0.75 30%, 0.821 35%, 0.873 40%, 0.911 45%, 0.938 50%,
+                 0.957 55%, 0.971 60%, 0.986 70%, 0.994 80%, 0.997 90%, 1);
+  /* Rebote de 1.5% (damping 0.8). SOLO para lo que traía inercia: un panel que se
+     arrastró, una marca que se soltó. En un menú que solo apareció, sobra. */
+  --ease-bounce: linear(0, 0.248 10%, 0.608 20%, 0.851 30%, 0.968 40%, 1.009 50%,
+                        1.015 60%, 1.011 70%, 1.005 80%, 1.001 90%, 1);
+  --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-instant: 90ms;  /* respuesta al press: se siente, no se ve */
+  --dur-fast: 150ms;
+  --dur: 260ms;
+  --dur-slow: 380ms;
+
+  /* Familia única del sistema. SF en macOS, Segoe UI Variable en Windows 11: las
+     dos traen tracking óptico y ajuste de legibilidad ya hechos de fábrica. */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+          "Segoe UI", system-ui, Roboto, Helvetica, Arial, sans-serif;
 }
 
 html.dark {
-  --surface: 11 16 27;      /* la mesa baja, la hoja sigue siendo lo más claro */
-  --panel: 26 34 50;
-  --toolbar: 26 34 50;
-  --border: 48 60 79;
-  --border-strong: 66 81 104;
-  --border-control: 104 116 134;
-  --fg: 226 232 240;
-  --muted: 146 160 179;
+  /* Grafito neutro, no azul marino: el chrome no debe tener temperatura propia,
+     que el color lo pone el documento. */
+  --surface: 22 22 24;      /* la mesa baja, la hoja sigue siendo lo más claro */
+  --panel: 32 32 35;
+  --toolbar: 32 32 35;
+  --border: 55 55 59;
+  --border-strong: 72 72 77;
+  --border-control: 128 128 138;
+  --fg: 237 237 240;
+  --muted: 154 154 162;
+  --faint: 118 118 126;
   /* En oscuro el azul medio con blanco encima daba 4.20:1 y las etiquetas de
      herramienta activa van a 11-13px. Se invierte la polaridad: azul claro con
      tinta oscura encima. */
-  --accent: 125 176 245;
-  --on-accent: 11 16 27;
-  --on-danger: 26 34 50;
-  /* Estaban al revés: el hover pesaba más (dL* 11.0) que la superficie elevada
-     (6.5), justo lo contrario que en claro. */
-  --hover: 38 48 66;
-  --active: 42 53 72;
+  --accent: 92 162 255;
+  --on-accent: 12 14 18;
+  --on-danger: 26 26 29;
+  /* El hover pesa MENOS que la superficie elevada, igual que en claro. */
+  --hover: 45 45 49;
+  --active: 54 54 59;
   --danger: 226 138 130;
-  --success: 134 196 162;
+  --success: 122 200 160;
   --warning: 224 176 100;
   --info: 150 186 226;
   /* La mesa ya es casi negra: el scrim tiene que bajar todavía más para leerse
      como "esto está atenuado" y no como un cambio de gris. */
-  --scrim: 2 6 16;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.62), 0 2px 10px rgba(0, 0, 0, 0.5);
-  --shadow-page: 0 1px 3px rgba(0, 0, 0, 0.6), 0 12px 32px rgba(0, 0, 0, 0.45);
-  --shadow-drop: 0 1px 2px rgba(0, 0, 0, 0.55);
-  --scroll-track: 20 27 41;
-  --scroll-thumb: 62 76 98;
-  --scroll-thumb-hover: 92 108 133;
+  --scrim: 2 2 3;
+  --material: 34 34 38;
+  --material-alpha: 0.72;
+  --material-edge-alpha: 0.10;
+  --shadow-sm: 0 0 0 0.5px rgb(255 255 255 / 0.07), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 0 0 0.5px rgb(255 255 255 / 0.08), 0 8px 24px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.4);
+  --shadow-lg: 0 0 0 0.5px rgb(255 255 255 / 0.09), 0 24px 64px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
+  --shadow-page: 0 1px 3px rgb(0 0 0 / 0.5), 0 12px 32px rgb(0 0 0 / 0.45);
+  --shadow-drop: 0 1px 2px rgb(0 0 0 / 0.55);
+  --scroll-track: 30 30 33;
+  --scroll-thumb: 68 68 74;
+  --scroll-thumb-hover: 98 98 106;
+}
+
+/* El vidrio del chrome. Cuando el sistema pide menos transparencia se vuelve
+   sólido: la legibilidad manda sobre el efecto. */
+.material {
+  background: rgb(var(--material) / var(--material-alpha));
+  backdrop-filter: blur(var(--material-blur)) saturate(180%);
+}
+
+/* Filo de luz arriba del vidrio. No es un borde —el borde separa— sino el grosor
+   del material: es lo que lo hace leer como lámina y no como un color plano. */
+.material-edge {
+  box-shadow: inset 0 0.5px 0 rgb(var(--material-edge) / var(--material-edge-alpha));
+}
+
+/* Donde el contenido se mete debajo del chrome flotante: degradado en vez de la
+   línea de 1px. La raya corta el documento; el degradado lo deja pasar. */
+.scroll-edge {
+  background: linear-gradient(rgb(var(--material) / calc(var(--material-alpha) / 2)), transparent);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root { --material-alpha: 1; --material-blur: 0px; }
 }
 
 html, body, #root {
@@ -129,7 +201,7 @@ html, body, #root {
 .app-no-drag { -webkit-app-region: no-drag; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font);
   background-color: rgb(var(--surface));
   color: rgb(var(--fg));
 }
@@ -166,13 +238,13 @@ a:focus-visible,
   outline: 2px solid rgb(var(--accent));
   outline-offset: -2px;
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px rgb(var(--panel)), 0 0 0 4px rgb(var(--accent) / 0.28);
+  box-shadow: 0 0 0 1px rgb(var(--panel)), 0 0 0 4.5px rgb(var(--accent) / 0.25);
 }
 
 /* La lámina de PDF: sombra de mesa + un filo, porque una hoja blanca sobre un
    fondo claro sin borde no se lee como hoja. */
 .page-sheet {
-  box-shadow: var(--shadow-page), 0 0 0 1px rgb(var(--border-strong) / 0.7);
+  box-shadow: var(--shadow-page);
 }
 
 /* Oculta la barra de scroll horizontal en tiras de pestañas (ribbon / tabs) */
@@ -313,6 +385,13 @@ a:focus-visible,
   background-size: 200% 100%;
   animation: skeleton-sheen 1.6s linear infinite;
 }
+
+/* Antes de esconder herramientas en el menú, la cinta se queda sin etiquetas: el
+   nombre sigue en el tooltip y en aria-label, así que no se pierde información y
+   entran el doble de herramientas. El menú de desbordamiento las mantiene siempre
+   —ahí sobra el ancho, y un icono suelto en una lista no dice nada. */
+[data-ribbon-compacto] .rb-label { display: none; }
+[data-ribbon-menu] .rb-label { display: inline; }
 
 /* Grosor de trazo único para TODOS los iconos. Lucide viene a 2, que a 14 px se ve
    embarrado; la cinta ya pedía 1.75 a mano en once sitios y el resto de la app

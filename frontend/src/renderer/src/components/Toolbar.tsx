@@ -25,6 +25,7 @@ import {
 } from '../lib/commentRibbon'
 import { registerCommands } from '../lib/commands'
 import RibbonTabs from './ribbon/RibbonTabs'
+import { RibbonSep } from './ribbon/RibbonOverflow'
 import PrintDialog from './PrintDialog'
 import PropertiesBar from './PropertiesBar'
 import { useFormModal } from './FormModal'
@@ -404,11 +405,16 @@ export default function Toolbar() {
           active ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover active:bg-active'
         }`}>
         <Icon size={16} strokeWidth={1.75} />
-        <span>{label}</span>
+        {/* `rb-label` es lo que apaga la fila cuando se queda sin sitio: antes de
+            esconder herramientas en el menú, se quitan las etiquetas. El nombre
+            sigue en el tooltip y en aria-label, así que no se pierde nada. */}
+        <span className="rb-label">{label}</span>
       </button>
     </Tooltip>
   )
-  const Sep = () => <div className="w-px h-4 mx-1 bg-border shrink-0" />
+  // El separador vive en RibbonOverflow: el reparto necesita reconocerlo para no
+  // dejar una raya suelta al final de la fila ni al principio del menú.
+  const Sep = RibbonSep
   const closeCommentMenu = () => { setCommentMenu(null); setDrawFormasOpen(false) }
   const MenuItem = ({ id, icon: Icon, label }: ToolDescriptor) => (
     <button role="menuitem" onClick={() => {
@@ -897,77 +903,78 @@ export default function Toolbar() {
     }
   }
 
-  return (
-    <div className="flex flex-col shrink-0 select-none bg-toolbar text-fg border-b border-border-strong">
-      <RibbonTabs />
-
-      {/* Barra contextual del modo activo */}
-      {activeDoc && (
-        <div className="min-h-11 bg-toolbar flex items-center justify-between px-2 py-1 gap-2">
-          <div className={`flex items-center justify-start gap-1 min-w-0 ${activeRibbon === 'comment' ? 'flex-nowrap' : 'flex-wrap'}`}>
-            {renderRibbon()}
-          </div>
-          <div className="flex items-center gap-2 justify-end shrink-0">
-            {showSearch ? (
-              <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token-md">
-                <div className="flex items-center gap-1">
-                  <Search size={14} className="text-muted" />
-                  <input ref={searchRef} type="text" placeholder="Buscar…" value={searchInput}
-                    onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
-                    aria-label="Buscar en el documento"
-                    className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
-                  {/* Con cero resultados no se mostraba NADA: ni contador ni aviso, así
-                      que no se sabía si la búsqueda había llegado a ejecutarse. El
-                      aria-live hace que un lector de pantalla cante el resultado. */}
-                  <span className="text-mini text-muted tabular" aria-live="polite">
-                    {activeDoc.searchResults.length > 0
-                      ? `${activeDoc.searchIndex + 1}/${activeDoc.searchResults.length}${activeDoc.searchResults.length >= 500 ? '+' : ''}`
-                      : activeDoc.searchQuery ? 'Sin resultados' : ''}
-                  </span>
-                  <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
-                  <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
-                  <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
-                    className={`text-micro px-2 py-0.5 rounded-token-sm border ${showReplace ? 'bg-accent text-on-accent border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
-                    Reemplazar
-                  </button>
-                  <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
-                </div>
-                {showReplace && (
-                  <div className="flex items-center gap-2">
-                    <input ref={replaceRef} type="text" placeholder="Reemplazar…" value={replaceInput}
-                      onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
-                      aria-label="Reemplazar por"
-                      className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
-                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
-                      <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
-                        aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                      Aa
-                    </label>
-                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
-                      <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
-                        aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                      Todos los docs
-                    </label>
-                    <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
-                      <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
-                        aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
-                      Todo el doc
-                    </label>
-                    <button onClick={handleReplace} disabled={!searchInput.trim()}
-                      className={`text-micro px-2 py-0.5 rounded-token-sm border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
-                    <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
-                      className={`text-micro px-2 py-0.5 rounded-token-sm ${searchInput.trim() ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button onClick={() => setShowSearch(true)} className="p-1.5 rounded-token-sm transition-colors text-muted hover:text-fg hover:bg-hover" title="Buscar (Ctrl+F)" aria-label="Buscar">
-                <Search size={16} />
+  // La búsqueda vive en la fila de la cinta, pero su caja FLOTA debajo: con
+  // «Reemplazar» abierta mide dos alturas, y estirando la fila empujaba el
+  // documento hacia abajo cada vez que se abría. El botón se queda visible
+  // mientras la caja está abierta: es su ancla, y sin él la fila daba un salto.
+  const buscador = activeDoc ? (
+    <div className="relative shrink-0">
+      <button onClick={() => setShowSearch((v) => !v)} aria-label="Buscar" aria-expanded={showSearch}
+        title="Buscar (Ctrl+F)"
+        className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${showSearch ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+        <Search size={16} />
+      </button>
+      {showSearch && (
+        <div className="absolute right-0 top-full mt-2 z-dropdown menu-pop">
+          <div className="flex flex-col gap-1 rounded-token border border-border bg-panel px-2 py-1.5 shadow-token-md">
+            <div className="flex items-center gap-1">
+              <Search size={14} className="text-muted" />
+              <input ref={searchRef} type="text" placeholder="Buscar…" value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)} onKeyDown={handleSearchKey}
+                aria-label="Buscar en el documento"
+                className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
+              {/* Con cero resultados no se mostraba NADA: ni contador ni aviso, así
+                  que no se sabía si la búsqueda había llegado a ejecutarse. El
+                  aria-live hace que un lector de pantalla cante el resultado. */}
+              <span className="text-mini text-muted tabular" aria-live="polite">
+                {activeDoc.searchResults.length > 0
+                  ? `${activeDoc.searchIndex + 1}/${activeDoc.searchResults.length}${activeDoc.searchResults.length >= 500 ? '+' : ''}`
+                  : activeDoc.searchQuery ? 'Sin resultados' : ''}
+              </span>
+              <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
+              <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
+              <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
+                className={`text-micro px-2 py-0.5 rounded-token-sm border ${showReplace ? 'bg-accent text-on-accent border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
+                Reemplazar
               </button>
+              <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
+            </div>
+            {showReplace && (
+              <div className="flex items-center gap-2">
+                <input ref={replaceRef} type="text" placeholder="Reemplazar…" value={replaceInput}
+                  onChange={(e) => setReplaceInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleReplace()}
+                  aria-label="Reemplazar por"
+                  className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
+                <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
+                  <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
+                    aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                  Aa
+                </label>
+                <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
+                  <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
+                    aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                  Todos los docs
+                </label>
+                <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
+                  <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
+                    aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                  Todo el doc
+                </label>
+                <button onClick={handleReplace} disabled={!searchInput.trim()}
+                  className={`text-micro px-2 py-0.5 rounded-token-sm border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
+                <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
+                  className={`text-micro px-2 py-0.5 rounded-token-sm ${searchInput.trim() ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
+              </div>
             )}
           </div>
         </div>
       )}
+    </div>
+  ) : null
+
+  return (
+    <div className="flex flex-col shrink-0 select-none material text-fg">
+      <RibbonTabs tools={renderRibbon()} trailing={buscador} />
 
       {activeDoc && <PropertiesBar />}
       {formModal}
