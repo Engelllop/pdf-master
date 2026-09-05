@@ -75,7 +75,7 @@ export default function PropertiesBar() {
               title={`${r * 2} px`}
               aria-label={`Pincel de ${r * 2} píxeles`} aria-pressed={store.eraserRadius === r}
               className={`w-7 h-7 rounded-token-sm flex items-center justify-center transition-colors duration-fast ease-token ${
-                store.eraserRadius === r ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+                store.eraserRadius === r ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
               }`}>
               <span className="rounded-full bg-current block"
                 style={{ width: Math.max(4, r / 3), height: Math.max(4, r / 3) }} />
@@ -85,7 +85,7 @@ export default function PropertiesBar() {
               son atajos, pero un plano denso pide un pincel de 11 px, no de 8 o 16. */}
           <input type="range" min={ERASER_MIN} max={ERASER_MAX} step={1} value={store.eraserRadius}
             onChange={(e) => store.setEraserRadius(parseInt(e.target.value))}
-            aria-label="Tamaño del pincel" className="w-24 accent-accent" />
+            aria-label="Tamaño del pincel" className="w-24 accent-fg" />
           <span className="text-micro text-muted tabular w-9 text-right">{store.eraserRadius * 2} px</span>
         </Group>
 
@@ -121,7 +121,7 @@ export default function PropertiesBar() {
             const set = isStamp ? store.setStampColor : store.setAnnotationColor
             return (
               <button key={c} onClick={() => set(c)} aria-label={COLOR_NAMES[c] || c} aria-pressed={current.toLowerCase() === c.toLowerCase()}
-                className={`w-5 h-5 rounded-full border transition-transform ${current.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-accent scale-110 border-transparent' : 'border-border hover:scale-110'}`}
+                className={`w-5 h-5 rounded-full border transition-transform ${current.toLowerCase() === c.toLowerCase() ? 'ring-2 ring-fg scale-110 border-transparent' : 'border-border hover:scale-110'}`}
                 style={{ backgroundColor: c }} />
             )
           })}
@@ -137,17 +137,17 @@ export default function PropertiesBar() {
             <select value={store.textFontFamily}
               onChange={(e) => store.setTextFontFamily(e.target.value)}
               aria-label="Fuente"
-              className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
+              className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-fg">
               {FONT_OPTIONS.map((f) => <option key={f} value={f} style={{ fontFamily: f }}>{f}</option>)}
             </select>
             <input type="number" min={4} max={72}
               value={store.textFontSize}
               onChange={(e) => store.setTextFontSize(parseInt(e.target.value) || 14)}
-              className="w-14 border border-border rounded-token-sm px-2 py-1 text-mini text-center bg-surface text-fg focus:outline-none focus:border-accent" title="Tamaño" aria-label="Tamaño de fuente" />
+              className="w-14 border border-border rounded-token-sm px-2 py-1 text-mini text-center bg-surface text-fg focus:outline-none focus:border-fg" title="Tamaño" aria-label="Tamaño de fuente" />
             <Label>px</Label>
             {(() => {
               const sv = store.textStyle
-              const tBtn = (active: boolean) => `p-1.5 rounded-token-sm transition-colors ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+              const tBtn = (active: boolean) => `p-1.5 rounded-token-sm transition-colors ${active ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`
               return (
                 <>
                   <button title="Negrita" aria-label="Negrita" aria-pressed={sv.bold} className={tBtn(sv.bold)} onClick={() => store.setTextStyle({ bold: !sv.bold })}><Bold size={14} /></button>
@@ -180,14 +180,14 @@ export default function PropertiesBar() {
             {WIDTH_PRESETS.map((w) => (
               <button key={w} onClick={() => store.setAnnotationLineWidth(w)} title={`${w} pt`} aria-label={`Grosor ${w}`} aria-pressed={lineWidthVal === w}
                 className={`h-7 w-7 rounded-token flex items-center justify-center transition-colors ${
-                  lineWidthVal === w ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+                  lineWidthVal === w ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>
                 <span className="rounded-full bg-current block" style={{ width: Math.max(2, w * 1.6), height: Math.max(2, w * 1.6) }} />
               </button>
             ))}
             <input type="number" min={0.5} max={WIDTH_MAX} step={0.5} value={lineWidthVal}
               onChange={(e) => store.setAnnotationLineWidth(parseFloat(e.target.value) || 1)}
-              className="w-12 border border-border rounded-token-sm px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-accent"
+              className="w-12 border border-border rounded-token-sm px-1 py-0.5 text-micro text-center bg-surface text-fg focus:outline-none focus:border-fg"
               title="Grosor exacto (pt)" aria-label="Grosor exacto" />
           </Group>
 
@@ -196,7 +196,7 @@ export default function PropertiesBar() {
             {LINE_STYLES.map((ls) => (
               <button key={ls.id} onClick={() => store.setAnnotationLineStyle(ls.id)} title={ls.label} aria-label={`Línea ${ls.label}`} aria-pressed={lineStyleVal === ls.id}
                 className={`h-7 w-9 rounded-token flex items-center justify-center transition-colors ${
-                  lineStyleVal === ls.id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+                  lineStyleVal === ls.id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>
                 <svg width="26" height="8" aria-hidden="true"><line x1="2" y1="4" x2="24" y2="4" stroke="currentColor" strokeWidth="2" strokeDasharray={ls.dash} strokeLinecap="round" /></svg>
               </button>
@@ -208,7 +208,7 @@ export default function PropertiesBar() {
             {OPACITY_PRESETS.map((o) => (
               <button key={o} onClick={() => store.setAnnotationOpacity(o / 100)} title={`${o}%`} aria-label={`Opacidad ${o}%`}
                 className={`h-7 px-1.5 rounded-token text-micro tabular transition-colors ${
-                  Math.round(opacityVal * 100) === o ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+                  Math.round(opacityVal * 100) === o ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
                 }`}>{o}</button>
             ))}
             <input type="range" min={10} max={100} step={5} value={Math.round(opacityVal * 100)}
@@ -244,7 +244,7 @@ export default function PropertiesBar() {
           <Label>Sello</Label>
           <select value={store.selectedStamp} onChange={(e) => store.setSelectedStamp(e.target.value)}
             aria-label="Sello"
-            className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
+            className="border border-border rounded-token-sm px-2 py-1 text-mini bg-surface text-fg focus:outline-none focus:border-fg">
               {[...BUILTIN_STAMPS, ...customStamps.map((s) => renderStampText(s, store.annotationAuthor))]
                 .map((s) => <option key={s} value={s}>{s}</option>)}
             </select>

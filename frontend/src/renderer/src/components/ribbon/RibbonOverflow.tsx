@@ -185,7 +185,7 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
             <button onClick={alternarMenu} aria-label="Más herramientas"
               aria-haspopup="dialog" aria-expanded={abierto}
               className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${
-                abierto ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
+                abierto ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'
               }`}>
               <MoreHorizontal size={16} />
             </button>

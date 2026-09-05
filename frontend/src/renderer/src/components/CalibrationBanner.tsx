@@ -39,7 +39,7 @@ export default function CalibrationBanner() {
       </span>
       {needsScale && (
         <button onClick={() => setActiveTool('measure_calibrate')}
-          className="text-mini px-2.5 py-1 rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token shrink-0">
+          className="text-mini px-2.5 py-1 rounded-token-sm bg-fg text-panel hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token shrink-0">
           Calibrar
         </button>
       )}

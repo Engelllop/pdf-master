@@ -20,6 +20,7 @@ colors:
   info: "#2a5c96"
   hover: "#f0f0f3"
   active: "#e9e9ed"
+  selected: "#d2d2d8"
   scrim: "#0c0c0e"
   on-scrim: "#ffffff"
   material: "#ffffff"
@@ -50,6 +51,7 @@ colors:
   info-dark: "#96bae2"
   hover-dark: "#2d2d31"
   active-dark: "#36363b"
+  selected-dark: "#54545a"
   scrim-dark: "#020203"
   material-dark: "#222226"
 typography:
@@ -207,7 +209,10 @@ Neutros de sistema (grises sin temperatura), un azul de sistema y semánticos de
 
 ### Primary
 
-- **Azul de sistema** (`accent`, `#0a66d6`): herramienta activa, toggle encendido, foco y selección. **Siempre relleno** con `on-accent` encima. Es un color propio y no la tinta del texto: un estado activo en negro sólido no se distingue de la tipografía. Es un paso más profundo que el `#007AFF` de Apple **a propósito**: ese da 4.06:1 con blanco encima y aquí hay etiquetas de 11–13px sobre relleno; este da 5.41:1. En oscuro invierte polaridad —azul claro (`accent-dark`) con tinta oscura (`on-accent-dark`) encima— porque el azul medio con blanco daba 4.20:1.
+- **Ninguno.** El chrome no tiene color: ni el estado activo, ni el botón primario, ni el anillo de foco. El único color de la pantalla es el de las marcas del usuario sobre la lámina.
+- **Estado elegido** (`selected`, `#d2d2d8` / `#54545a`): herramienta activa, interruptor encendido, opción marcada, fila seleccionada. Relleno gris con `fg` encima. Pesa claramente más que `hover` y que `active` para que «elegido» no se confunda con «el ratón está encima».
+- **Acción primaria**: relleno de **tinta** (`fg`) con `panel` encima. En oscuro eso es un botón claro sobre panel oscuro; es la consecuencia de no tener color, y es preferible a que la acción primaria no se distinga de la secundaria.
+- **Azul de sistema** (`accent`, `#0a66d6`): sobrevive **solo para lo que se dibuja sobre la lámina** — la selección de marcas, los tiradores, el resaltado de la capa de texto. Ahí no es decoración: es «esto es lo que tenés agarrado». Nunca en el chrome.
 
 ### Neutral
 
@@ -230,7 +235,9 @@ Tercer plano, entre el chrome y las marcas: chrome que se dibuja **encima** del 
 
 **The Markup Owns Color Rule.** El chrome no introduce color de marca. El color saturado pertenece a las anotaciones del usuario. El único color del chrome es el estado.
 
-**The Accent-Is-Fill Rule.** `accent` existe **solo como relleno**, siempre con `on-accent` encima. Nunca como color de letra ni de icono sobre el chrome, y nunca como decoración (un icono de panel no se pinta de accent «para que se vea»).
+**The Colorless Chrome Rule.** El chrome no lleva color. Lo elegido es relleno `selected` + tinta; la acción primaria es relleno de tinta; el foco es un anillo de tinta. `accent` solo aparece **sobre la lámina**. Si hace falta distinguir dos cosas en el chrome, se distinguen por peso, relleno o tamaño — no pintándolas.
+
+**The Native Controls Bleed Rule.** Los deslizadores y las casillas nativos se pintan con el acento del **sistema** (el azul de Windows) si nadie dice lo contrario, y en un chrome sin color ese acaba siendo el único azul de la pantalla. Va resuelto en una regla global de `App.css`, no control por control.
 
 **The On-Color Rule.** Todo relleno de estado tiene su token de encima: `accent`→`on-accent`, `danger`→`on-danger`, `scrim`→`on-scrim`. `text-white` sobre un semántico está prohibido: en oscuro `danger` es un salmón claro y el blanco cae a 2.56:1. `on-scrim` es claro en los DOS temas porque el scrim es oscuro en los dos —`on-accent` no sirve ahí, que invierte.
 
@@ -343,6 +350,8 @@ Cuatro duraciones: `instant` 90ms (la respuesta al press: se siente, no se ve), 
 
 **The Reduced-Motion Is Less, Not None Rule.** Con la preferencia activa se cortan los `transform` y se conservan los fades de color y opacidad a 120ms. Los indicadores de progreso **siguen girando**: un spinner congelado se lee como app colgada. Lo que anima por SMIL (`<animate>`) no lo alcanza la regla CSS y consulta la preferencia a mano.
 
+**The Tooltip Says What Is Not Written Rule.** El globo espera 550 ms —cruzar la cinta para llegar al documento no puede dejar un reguero de globos— y **no sale si el control ya dice lo mismo** y no hay atajo que añadir: ahí solo taparía la interfaz para repetir lo que se está leyendo.
+
 **The Keyboard Is Instant Rule.** Lo que el usuario dispara con el teclado y repite decenas de veces al día no se anima.
 
 **The Press Is The Feedback Rule.** La respuesta va en el `pointerdown`, no en el `click`: `active:scale-[0.97]` a 90ms. Esperar al release para acusar la pulsación es lo que hace que un control se sienta muerto.
@@ -358,7 +367,7 @@ Los patrones compartidos viven en `components/panelUi.tsx` (`PanelHeader`, `Empt
 ### Buttons
 
 - **Shape:** 7px (`rounded-token`)
-- **Primary:** relleno `accent`, texto `on-accent`, padding `6px 16px`, hover por `brightness`
+- **Primary:** relleno `fg`, texto `panel`, padding `6px 16px`, hover por **opacidad** (subir el brillo de un casi-negro no se ve)
 - **Ghost:** texto `fg` o `muted`, hover `hover`
 - **Danger:** relleno `danger`, texto `on-danger`
 - **Focus:** `outline: 2px solid accent`, offset −2px, solo `:focus-visible`
@@ -368,7 +377,7 @@ Los patrones compartidos viven en `components/panelUi.tsx` (`PanelHeader`, `Empt
 ### Chips
 
 - **Style:** fondo `active`, texto `muted`, radio 5px (kbd, chips de herramienta)
-- **State:** la herramienta activa no es chip: es botón primary (relleno accent)
+- **State:** la herramienta activa no es chip: es un botón con relleno `selected` y tinta normal
 
 ### Cards / Containers
 

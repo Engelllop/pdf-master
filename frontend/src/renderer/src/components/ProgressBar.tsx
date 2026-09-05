@@ -14,7 +14,7 @@ export default function ProgressBar() {
     <div role="status" aria-live="polite"
       className="toast-pop absolute bottom-16 left-1/2 -translate-x-1/2 z-sticky w-[380px] max-w-[92vw] px-3 py-2.5 rounded-token-lg border border-border bg-panel shadow-token-md">
       <div className="flex items-center gap-2">
-        <Loader2 size={14} className="text-accent animate-spin shrink-0" />
+        <Loader2 size={14} className="text-fg animate-spin shrink-0" />
         <span className="text-mini text-fg flex-1 truncate">
           {canceled ? `Cancelando ${label.toLowerCase()}…` : label}
         </span>
@@ -30,7 +30,7 @@ export default function ProgressBar() {
         {/* Progreso constante = curva lineal: con `ease-token` la barra se frenaba y
             arrancaba en cada tick. Y sin porcentaje conocido, recorre en vez de
             parpadear en el sitio, que es lo que dice "sigo trabajando". */}
-        <div className={`h-full bg-accent transition-[width] duration-token ease-linear ${pct === null ? 'w-1/3 progreso-indet' : ''}`}
+        <div className={`h-full bg-fg transition-[width] duration-token ease-linear ${pct === null ? 'w-1/3 progreso-indet' : ''}`}
           style={pct !== null ? { width: `${pct}%` } : undefined} />
       </div>
       {detail && <div className="mt-1 text-micro text-muted truncate">{detail}</div>}

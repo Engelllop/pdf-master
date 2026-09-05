@@ -341,7 +341,7 @@ export default function ComparisonView() {
     return (
       <div className={`flex-1 flex flex-col items-center justify-center bg-surface text-muted`}>
         <p>Documento de comparación no disponible</p>
-        <button onClick={clearCompare} className="mt-2 px-3 h-8 bg-accent text-on-accent rounded-token text-base transition-[filter] duration-fast ease-token hover:brightness-110 active:brightness-95">Salir</button>
+        <button onClick={clearCompare} className="mt-2 px-3 h-8 bg-fg text-panel rounded-token text-base transition-[filter] duration-fast ease-token hover:opacity-90 active:opacity-80">Salir</button>
       </div>
     )
   }
@@ -403,7 +403,7 @@ export default function ComparisonView() {
           </button>
         </Tooltip>
         <Tooltip content="Ajustar la lámina al panel">
-          <button onClick={handleFit} aria-label="Ajustar la lámina al panel" className={`p-1.5 rounded-token-sm transition-colors ${Math.abs(zoom - 1) < 0.001 ? 'bg-accent text-on-accent' : 'hover:bg-hover text-muted'}`}>
+          <button onClick={handleFit} aria-label="Ajustar la lámina al panel" className={`p-1.5 rounded-token-sm transition-colors ${Math.abs(zoom - 1) < 0.001 ? 'bg-selected text-fg' : 'hover:bg-hover text-muted'}`}>
             <Maximize2 size={16} />
           </button>
         </Tooltip>
@@ -415,14 +415,14 @@ export default function ComparisonView() {
             onClick={() => setCompareSync(!compareSync)}
             aria-label={compareSync ? 'Desbloquear la navegación de los dos paneles' : 'Sincronizar la navegación de los dos paneles'}
             aria-pressed={compareSync}
-            className={`p-1.5 rounded-token-sm transition-colors ${compareSync ? 'bg-accent text-on-accent' : 'hover:bg-hover text-muted'}`}
+            className={`p-1.5 rounded-token-sm transition-colors ${compareSync ? 'bg-selected text-fg' : 'hover:bg-hover text-muted'}`}
           >
             {compareSync ? <Lock size={16} /> : <Unlock size={16} />}
           </button>
         </Tooltip>
 
         <Tooltip content={diff ? 'Ocultar diferencias de texto' : 'Comparar texto'}>
-          <button onClick={runDiff} aria-label="Comparar el texto de las dos revisiones" className={`p-1.5 rounded-token-sm transition-colors ${diff ? 'bg-accent text-on-accent' : 'hover:bg-hover text-muted'}`}>
+          <button onClick={runDiff} aria-label="Comparar el texto de las dos revisiones" className={`p-1.5 rounded-token-sm transition-colors ${diff ? 'bg-selected text-fg' : 'hover:bg-hover text-muted'}`}>
             <GitCompare size={16} />
           </button>
         </Tooltip>
@@ -430,7 +430,7 @@ export default function ComparisonView() {
         <Tooltip content={overlayMode ? 'Volver a lado a lado' : 'Overlay de revisiones (actual en rojo, comparado en azul)'}>
           <button onClick={() => setOverlayMode((v) => !v)}
             aria-label="Superponer las dos revisiones" aria-pressed={overlayMode}
-            className={`p-1.5 rounded-token-sm transition-colors ${overlayMode ? 'bg-accent text-on-accent' : 'hover:bg-hover text-muted'}`}>
+            className={`p-1.5 rounded-token-sm transition-colors ${overlayMode ? 'bg-selected text-fg' : 'hover:bg-hover text-muted'}`}>
             <Layers size={16} />
           </button>
         </Tooltip>
@@ -471,9 +471,9 @@ export default function ComparisonView() {
                 <button key={d.page} onClick={() => { setLeftPage(d.page); setRightPage(d.page) }}
                   aria-current={d.page === leftPage}
                   className={`block w-full text-left px-3 py-1.5 border-t border-border transition-colors duration-fast ease-token hover:bg-hover ${
-                    d.page === leftPage ? 'bg-accent/10' : ''
+                    d.page === leftPage ? 'bg-selected/60' : ''
                   }`}>
-                  <span className={`tabular mr-2 ${d.page === leftPage ? 'text-accent font-medium' : 'text-muted'}`}>Pág {d.page + 1}</span>
+                  <span className={`tabular mr-2 ${d.page === leftPage ? 'text-fg font-medium' : 'text-muted'}`}>Pág {d.page + 1}</span>
                   {d.removed && <span className="text-danger line-through mr-2">{d.removed}</span>}
                   {d.added && <span className="text-success">{d.added}</span>}
                 </button>

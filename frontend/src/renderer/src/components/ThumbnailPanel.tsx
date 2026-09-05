@@ -71,7 +71,7 @@ function ThumbViewportRect() {
   const pct = (n: number, d: number) => `${Math.max(0, Math.min(100, (n / d) * 100))}%`
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-token-sm">
-      <div className="absolute border-2 border-accent bg-accent/20" style={{
+      <div className="absolute border-2 border-fg bg-fg/10" style={{
         left: pct(vs.left, vs.scrollWidth),
         top: pct(vs.top, vs.scrollHeight),
         width: pct(vs.clientWidth, vs.scrollWidth),
@@ -339,7 +339,7 @@ export default function ThumbnailPanel() {
               ? `${title}, ${activeDoc.searchResults.length} resultados`
               : title}
             aria-pressed={on}
-            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
             {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-on-accent" />}
             <Icon size={18} />
             {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
@@ -427,7 +427,7 @@ export default function ThumbnailPanel() {
                       recuadro no se come el filo del plano. */}
                   <div className={`relative rounded-token-sm overflow-hidden bg-paper transition-shadow duration-fast ease-token ${
                     activeDoc.currentPage === i || isSelected
-                      ? 'shadow-token-sm ring-2 ring-accent'
+                      ? 'shadow-token-sm ring-2 ring-fg'
                       : 'shadow-token-sm ring-1 ring-border group-hover:ring-muted'
                   }`}>
                   {isVisible && activeDoc.thumbnails.has(i) ? (
@@ -437,7 +437,7 @@ export default function ThumbnailPanel() {
                   )}
                   {activeDoc.currentPage === i && <ThumbViewportRect />}
                   {isSelected && (
-                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-accent text-on-accent flex items-center justify-center shadow-token-sm">
+                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-selected text-fg flex items-center justify-center shadow-token-sm">
                       <Check size={12} strokeWidth={3} />
                     </div>
                   )}

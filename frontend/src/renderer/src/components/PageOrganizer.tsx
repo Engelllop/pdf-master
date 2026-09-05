@@ -277,14 +277,14 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
                   thumb ? 'bg-paper' : 'skeleton'
                 } ${
                   isSel || dragOver === i
-                    ? 'shadow-token-sm ring-2 ring-accent'
+                    ? 'shadow-token-sm ring-2 ring-fg'
                     : 'shadow-token-sm ring-1 ring-border group-hover:ring-muted'
                 }`}>
                   {thumb
                     ? <img src={thumb} alt={`Página ${i + 1}`} className="w-full h-full object-contain pointer-events-none" />
                     : <span className="text-mini text-muted">{i + 1}</span>}
                   {isSel && (
-                    <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-accent text-on-accent flex items-center justify-center shadow-token-sm">
+                    <div className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-selected text-fg flex items-center justify-center shadow-token-sm">
                       <Check size={12} strokeWidth={3} />
                     </div>
                   )}

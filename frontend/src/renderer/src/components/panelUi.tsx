@@ -18,7 +18,7 @@ export const iconBtnDanger = `${iconBtnBase} hover:text-danger hover:bg-hover`
 /** Un solo lenguaje de fila elegida: el gris de `--active` y el filo de acento. Los
  * paneles tenían tres (uno con `bg-black/5 dark:bg-white/10`, que se saltaba el token
  * y daba un gris distinto en oscuro). */
-export const rowSelected = 'bg-active border-accent'
+export const rowSelected = 'bg-selected border-fg/20'
 export const rowIdle = 'border-transparent hover:bg-hover'
 
 /** Cerrar / descartar. `p-1` con un icono de 16 px daba un objetivo de 24 px, por
@@ -29,14 +29,14 @@ export const closeBtn = 'grid place-items-center w-8 h-8 shrink-0 rounded-token-
  * habían derivado en alto (28–35 px), padding y apagado: uno se ponía `disabled` sin
  * bajar la opacidad y otro seguía aclarándose al pasar el ratón estando apagado. */
 const btnBase = 'inline-flex items-center justify-center gap-1.5 h-8 shrink-0 rounded-token-sm text-base transition-[filter,background-color] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed'
-export const btnPrimary = `${btnBase} px-4 bg-accent text-on-accent hover:brightness-110 active:brightness-95 disabled:hover:brightness-100`
-export const btnDanger = `${btnBase} px-4 bg-danger text-on-danger hover:brightness-110 active:brightness-95 disabled:hover:brightness-100`
+export const btnPrimary = `${btnBase} px-4 bg-fg text-panel hover:opacity-90 active:opacity-80 disabled:hover:opacity-100`
+export const btnDanger = `${btnBase} px-4 bg-danger text-on-danger hover:opacity-90 active:opacity-80 disabled:hover:opacity-100`
 export const btnGhost = `${btnBase} px-3 text-fg hover:bg-hover disabled:hover:bg-transparent`
 
 /** Campo de texto de un diálogo: `border-control` es el contorno que llega al 3:1 que
  * pide WCAG, y `bg-surface` lo despega del panel — con `bg-panel` el campo era un
  * rectángulo del mismo color que su fondo. */
-export const fieldInput = 'border border-border-control rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg placeholder:text-muted transition-colors duration-fast ease-token focus:outline-none focus:border-accent'
+export const fieldInput = 'border border-border-control rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg placeholder:text-muted transition-colors duration-fast ease-token focus:outline-none focus:border-fg'
 
 /** Tecla. Se pintaba con `bg-surface` en el panel de atajos y con `bg-active` en el
  * menú Archivo. `App.css` ya le da cifras tabulares a todo `kbd`. */
@@ -44,7 +44,7 @@ export const kbdChip = 'shrink-0 px-1.5 py-0.5 rounded-token-sm border border-bo
 
 /** Casillas y radios nativos pintan su marca con `accent-color`; sin esto salían con
  * el azul del sistema en vez del de la app. */
-export const nativeAccent = { accentColor: 'rgb(var(--accent))' }
+export const nativeAccent = { accentColor: 'rgb(var(--fg))' }
 
 export function PanelHeader({ icon: Icon, title, children }: {
   icon?: LucideIcon
@@ -175,7 +175,7 @@ export function SegmentedGroup<T extends string>({ value, options, onChange }: {
       {options.map(([id, etiqueta, porque]) => (
         <button key={id} onClick={() => onChange(id)} title={porque} aria-pressed={value === id}
           className={`px-2 h-6 rounded-token-sm text-micro transition-colors duration-fast ease-token ${
-            value === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+            value === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
           }`}>
           {etiqueta}
         </button>

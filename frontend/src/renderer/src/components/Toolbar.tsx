@@ -402,7 +402,7 @@ export default function Toolbar() {
     <Tooltip content={tip || label} shortcut={shortcut}>
       <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
         className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed ${
-          active ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover active:bg-active'
+          active ? 'bg-selected text-fg' : 'text-fg hover:bg-hover active:bg-active'
         }`}>
         <Icon size={16} strokeWidth={1.75} />
         {/* `rb-label` es lo que apaga la fila cuando se queda sin sitio: antes de
@@ -424,7 +424,7 @@ export default function Toolbar() {
       closeCommentMenu()
     }}
       className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-        activeTool === id ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+        activeTool === id ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
       }`}>
       <Icon size={14} strokeWidth={1.75} className="shrink-0" />
       <span className="flex-1">{TOOL_LABELS[id] || label}</span>
@@ -451,7 +451,7 @@ export default function Toolbar() {
         <Tooltip content={tip} shortcut={shortcut}>
           <button onClick={() => { onActivate(); closeCommentMenu() }} aria-label={tip}
             className={`flex items-center gap-1.5 pl-2.5 pr-1.5 h-8 text-ui rounded-l-token whitespace-nowrap transition-colors ${
-              active ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+              active ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
             }`}>
             <Icon size={16} strokeWidth={1.75} />
             <span>{label}</span>
@@ -461,7 +461,7 @@ export default function Toolbar() {
           onClick={() => setCommentMenu(open ? null : family)}
           className={`px-1 h-8 rounded-r-token border-l transition-colors ${
             active || open
-              ? 'bg-accent text-on-accent border-toolbar/20'
+              ? 'bg-selected text-fg border-toolbar/20'
               : 'text-muted hover:text-fg hover:bg-hover border-border'
           }`}>
           <ChevronDown size={12} />
@@ -492,7 +492,7 @@ export default function Toolbar() {
         <button type="button" aria-label={label} aria-expanded={open} aria-haspopup="menu"
           onClick={() => setCommentMenu(open ? null : id)}
           className={`flex items-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors ${
-            active || open ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+            active || open ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
           }`}>
           <Icon size={16} strokeWidth={1.75} />
           <span>{label}</span>
@@ -592,7 +592,7 @@ export default function Toolbar() {
               ? 'Herramienta fija: se queda activa hasta pulsar Esc'
               : 'Herramienta de un solo uso: se suelta tras cada marca'}>
               <button onClick={() => setStickyTools(!stickyTools)} aria-label="Fijar herramienta"
-                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
                 {stickyTools ? <Pin size={16} strokeWidth={1.75} /> : <PinOff size={16} strokeWidth={1.75} />}
               </button>
             </Tooltip>
@@ -629,7 +629,7 @@ export default function Toolbar() {
                 <button type="button" role="menuitem"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDrawFormasOpen((o) => !o) }}
                   className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
                   }`}>
                   <Hexagon size={14} strokeWidth={1.75} className="shrink-0" />
                   <span className="flex-1">Formas</span>
@@ -693,7 +693,7 @@ export default function Toolbar() {
                 <div className="flex items-center gap-0.5 shrink-0">
                   {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon }) => (
                     <button key={id} onClick={() => setCountSymbol(id)} title={`Símbolo: ${id}`} aria-label={`Símbolo ${id}`}
-                      className={`p-1 rounded-token-sm transition-colors ${countSymbol === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+                      className={`p-1 rounded-token-sm transition-colors ${countSymbol === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}>
                       <Icon size={14} />
                     </button>
                   ))}
@@ -710,7 +710,7 @@ export default function Toolbar() {
         const contentOn = ['edittext', 'text', 'image', 'editimage'].includes(activeTool || '')
         const formOn = ['formtext', 'formcheck', 'formradio', 'formcombo'].includes(activeTool || '')
         const itemCls = (id: string) =>
-          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-accent text-on-accent' : 'text-fg'}`
+          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-selected text-fg' : 'text-fg'}`
         return (
           <>
             <OverflowMenu id="edit-content" icon={Type} label="Contenido" active={contentOn}>
@@ -911,7 +911,7 @@ export default function Toolbar() {
     <div className="relative shrink-0">
       <button onClick={() => setShowSearch((v) => !v)} aria-label="Buscar" aria-expanded={showSearch}
         title="Buscar (Ctrl+F)"
-        className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${showSearch ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`}>
+        className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${showSearch ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
         <Search size={16} />
       </button>
       {showSearch && (
@@ -934,7 +934,7 @@ export default function Toolbar() {
               <button onClick={() => prevSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado anterior"><ChevronUp size={14} /></button>
               <button onClick={() => nextSearchResult(activeDoc.doc_id)} disabled={activeDoc.searchResults.length === 0} className="disabled:opacity-40 disabled:cursor-not-allowed text-muted hover:text-fg" aria-label="Resultado siguiente"><ChevronDown size={14} /></button>
               <button onClick={() => setShowReplace((v) => !v)} aria-pressed={showReplace}
-                className={`text-micro px-2 py-0.5 rounded-token-sm border ${showReplace ? 'bg-accent text-on-accent border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
+                className={`text-micro px-2 py-0.5 rounded-token-sm border ${showReplace ? 'bg-selected text-fg border-transparent' : 'border-border text-fg hover:bg-hover'}`}>
                 Reemplazar
               </button>
               <button onClick={handleCloseSearch} className="ml-1 text-muted hover:text-fg" aria-label="Cerrar búsqueda"><X size={14} /></button>
@@ -947,23 +947,23 @@ export default function Toolbar() {
                   className="bg-transparent text-base focus:outline-none w-28 text-fg placeholder:text-muted" />
                 <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Distinguir mayúsculas y minúsculas">
                   <input type="checkbox" checked={replaceCaseSensitive} onChange={(e) => setReplaceCaseSensitive(e.target.checked)}
-                    aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    aria-label="Distinguir mayúsculas y minúsculas" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--fg))' }} />
                   Aa
                 </label>
                 <label className="flex items-center gap-1 text-micro cursor-pointer text-muted" title="Buscar en todos los documentos abiertos">
                   <input type="checkbox" checked={searchAllDocs} onChange={(e) => setSearchAllDocs(e.target.checked)}
-                    aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    aria-label="Buscar en todos los documentos abiertos" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--fg))' }} />
                   Todos los docs
                 </label>
                 <label className="flex items-center gap-1 text-micro cursor-pointer text-muted">
                   <input type="checkbox" checked={replaceAllPages} onChange={(e) => setReplaceAllPages(e.target.checked)}
-                    aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--accent))' }} />
+                    aria-label="Reemplazar en todo el documento" className="w-3.5 h-3.5" style={{ accentColor: 'rgb(var(--fg))' }} />
                   Todo el doc
                 </label>
                 <button onClick={handleReplace} disabled={!searchInput.trim()}
                   className={`text-micro px-2 py-0.5 rounded-token-sm border ${searchInput.trim() ? 'border-border text-fg hover:bg-hover' : 'border-transparent opacity-40 bg-hover text-muted'}`}>Reemplazar</button>
                 <button onClick={handleReplaceAll} disabled={!searchInput.trim()}
-                  className={`text-micro px-2 py-0.5 rounded-token-sm ${searchInput.trim() ? 'bg-accent text-on-accent hover:brightness-110 active:brightness-95' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
+                  className={`text-micro px-2 py-0.5 rounded-token-sm ${searchInput.trim() ? 'bg-fg text-panel hover:opacity-90 active:opacity-80' : 'opacity-40 bg-hover text-muted'}`}>Reemplazar todo</button>
               </div>
             )}
           </div>

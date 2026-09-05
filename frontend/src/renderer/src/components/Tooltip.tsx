@@ -7,7 +7,7 @@ interface TooltipProps {
   shortcut?: string
 }
 
-const RETARDO_MS = 200
+const RETARDO_MS = 550
 const GRACIA_MS = 300
 const MARGEN_PANTALLA = 8
 
@@ -19,6 +19,7 @@ let finRafaga: ReturnType<typeof setTimeout> | null = null
 
 export default function Tooltip({ content, children, position = 'bottom', shortcut }: TooltipProps) {
   const [visible, setVisible] = useState(false)
+  const anclaRef = useRef<HTMLDivElement>(null)
   const [desvio, setDesvio] = useState(0)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const globoRef = useRef<HTMLDivElement>(null)
@@ -30,7 +31,17 @@ export default function Tooltip({ content, children, position = 'bottom', shortc
     enRafaga = true
     setVisible(true)
   }
+  /** Si el control ya dice lo mismo que el globo y no hay atajo que añadir, el globo
+   * solo tapa la interfaz para repetir lo que se está leyendo. */
+  const sobra = (): boolean => {
+    if (shortcut) return false
+    const rotulo = anclaRef.current?.textContent?.trim().toLowerCase()
+    if (!rotulo) return false
+    return content.trim().toLowerCase() === rotulo
+  }
+
   const show = () => {
+    if (sobra()) return
     if (enRafaga) { setInstantaneo(true); abrir(); return }
     setInstantaneo(false)
     timerRef.current = setTimeout(abrir, RETARDO_MS)
@@ -83,7 +94,7 @@ export default function Tooltip({ content, children, position = 'bottom', shortc
   const centrado = position === 'top' || position === 'bottom'
 
   return (
-    <div className="relative inline-flex"
+    <div ref={anclaRef} className="relative inline-flex"
       onMouseEnter={show} onMouseLeave={hide}
       // Navegando con Tab no se veía ni el nombre completo ni el atajo: el tooltip
       // solo existía para el ratón.

@@ -151,7 +151,7 @@ Ctrl+Z lo deshace.`,
                   }}
                   onBlur={() => renombrar(cat, list)}
                   aria-label={`Nuevo nombre para la categoría ${cat}`}
-                  className="flex-1 px-2 py-0.5 text-mini rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
+                  className="flex-1 px-2 py-0.5 text-mini rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-fg" />
               ) : (
                 <>
                   <button onClick={() => setCountCategory(cat)}
@@ -165,7 +165,7 @@ Ctrl+Z lo deshace.`,
                     {cat}
                     {/* Chip, no letra de acento: el accent es relleno de estado activo. */}
                     {countCategory === cat && (
-                      <span className="ml-1.5 bg-accent text-on-accent text-micro font-normal px-1.5 rounded-token-sm">contando</span>
+                      <span className="ml-1.5 bg-selected text-fg text-micro font-normal px-1.5 rounded-token-sm">contando</span>
                     )}
                   </button>
                   <button onClick={() => { setRenombrando(cat); setNombreNuevo(cat) }}
@@ -214,7 +214,7 @@ Ctrl+Z lo deshace.`,
                       onKeyDown={(e) => { if (e.key === 'Enter') saveComment(a); if (e.key === 'Escape') setEditing(null) }}
                       onBlur={() => saveComment(a)}
                       placeholder="Comentario…"
-                      className="flex-1 px-2 py-1 text-micro rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-accent" />
+                      className="flex-1 px-2 py-1 text-micro rounded-token-sm border border-border bg-surface text-fg focus:outline-none focus:border-fg" />
                   </div>
                 )}
               </div>

@@ -272,7 +272,7 @@ export default function FileMenu() {
   return (
     <div className="relative h-full" ref={menuRef}>
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
-        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'}`}>
+        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'}`}>
         Archivo <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (

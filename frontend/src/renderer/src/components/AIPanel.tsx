@@ -161,9 +161,9 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
           <p className="text-micro text-muted">También sirve una API key de pago (<code className="px-1 rounded-token-sm bg-surface border border-border">sk-ant-api…</code>). Se guarda solo en este equipo.</p>
           <input type="password" value={keyInput} onChange={(e) => setKeyInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && saveKey()} placeholder="sk-ant-oat… o sk-ant-api…"
-            className="w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-fg" />
           <button onClick={saveKey} disabled={!keyInput.trim()}
-            className="w-full px-3 py-1.5 text-base rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">Conectar</button>
+            className="w-full px-3 py-1.5 text-base rounded-token-sm bg-fg text-panel hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">Conectar</button>
         </div>
       </div>
     )
@@ -187,7 +187,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
                   ['Extraé tablas o cómputos que veas en el documento, en formato lista.', 'Extraer tablas'],
                 ].map(([prompt, label]) => (
                   <button key={label} onClick={() => send(prompt)}
-                    className="px-2.5 h-7 rounded-token border border-border text-mini text-fg transition-colors duration-fast ease-token hover:border-accent/50 hover:bg-hover">
+                    className="px-2.5 h-7 rounded-token border border-border text-mini text-fg transition-colors duration-fast ease-token hover:border-fg/30 hover:bg-hover">
                     {label}
                   </button>
                 ))}
@@ -198,7 +198,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[85%] rounded-token px-3 py-2 text-base whitespace-pre-wrap ${
-              m.role === 'user' ? 'bg-accent text-on-accent' : 'bg-active text-fg border border-border'
+              m.role === 'user' ? 'bg-selected text-fg' : 'bg-active text-fg border border-border'
             }`}>
               {m.text || (streaming && reqKeyRef.current === convKey && i === messages.length - 1 ? <Loader2 size={14} className="animate-spin" /> : '')}
             </div>
@@ -216,10 +216,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
             aria-label="Pregunta para el asistente" 
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
             placeholder={activeDoc ? `Pregunta sobre ${activeDoc.file_name}…` : 'Abre un PDF para preguntar…'}
-            className="flex-1 resize-none border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-accent" />
+            className="flex-1 resize-none border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-fg" />
           <button onClick={() => (streaming ? stop() : send(input))} disabled={!streaming && !input.trim()}
             title={streaming ? 'Detener' : 'Enviar'} aria-label={streaming ? 'Detener la respuesta' : 'Enviar la pregunta'}
-            className="p-2 rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
+            className="p-2 rounded-token bg-fg text-panel hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
             {streaming ? <Square size={16} /> : <Send size={16} />}
           </button>
         </div>

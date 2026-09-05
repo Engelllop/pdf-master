@@ -72,7 +72,7 @@ export default function FloatingSelectionBar({ ann, docId, pageData, toScreen, s
   // `active:scale` en la superficie más pulsada al anotar: sin él, veinte botones
   // no devolvían ningún acuse de la pulsación.
   const btn = 'p-1.5 rounded-token-sm text-muted hover:text-fg hover:bg-hover active:scale-[0.97] transition-[color,background-color,transform] duration-fast ease-token'
-  const onBtn = (active: boolean) => `p-1.5 rounded-token-sm active:scale-[0.97] transition-[color,background-color,transform] duration-fast ease-token ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+  const onBtn = (active: boolean) => `p-1.5 rounded-token-sm active:scale-[0.97] transition-[color,background-color,transform] duration-fast ease-token ${active ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`
   const styleVal: LineStyle = ann.lineStyle || 'solid'
   const opacityPct = Math.round((ann.opacity ?? (ann.type === 'highlight' ? 0.5 : 1)) * 100)
 

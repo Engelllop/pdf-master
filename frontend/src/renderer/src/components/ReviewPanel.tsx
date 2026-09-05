@@ -95,7 +95,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
     setReplyText('')
   }
 
-  const selectCls = 'flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg focus:outline-none focus:border-accent'
+  const selectCls = 'flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg focus:outline-none focus:border-fg'
   const resolvedCount = anns.filter((a) => a.status === 'resolved').length
 
   // Las capas eran solo un filtro: nada en la app ponía una marca en otra capa (todo se
@@ -152,7 +152,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
             options={[['all', 'Todas'], ['open', 'Abiertas'], ['resolved', 'Resueltas']]} />
           <label className="flex items-center gap-1 text-micro text-muted cursor-pointer ml-auto" title="Solo la página actual">
             <input type="checkbox" checked={onlyThisPage} onChange={(e) => setOnlyThisPage(e.target.checked)}
-              className="w-3 h-3" style={{ accentColor: 'rgb(var(--accent))' }} />
+              className="w-3 h-3" style={{ accentColor: 'rgb(var(--fg))' }} />
             Esta pág.
           </label>
         </div>
@@ -166,7 +166,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                   title={oculta ? `Mostrar la capa ${l}` : `Ocultar la capa ${l}`}
                   aria-pressed={!oculta}
                   className={`flex items-center gap-1 px-1.5 py-0.5 rounded-token-sm text-micro border transition-colors ${
-                    oculta ? 'border-border text-muted line-through' : 'border-accent text-fg'
+                    oculta ? 'border-border text-muted line-through' : 'border-fg text-fg'
                   }`}>
                   {oculta ? <EyeOff size={12} /> : <Eye size={12} />} {l}
                 </button>
@@ -267,7 +267,7 @@ export default function ReviewPanel({ activeDoc }: { activeDoc: PdfDoc }) {
                             <input value={isOpen ? replyText : ''} onChange={(e) => setReplyText(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') sendReply(ann.id) }}
                               placeholder={annotationAuthor ? `Responder como ${annotationAuthor}…` : 'Responder…'}
-                              className="flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+                              className="flex-1 min-w-0 border border-border rounded-token-sm px-1.5 py-1 text-micro bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-fg" />
                             <button onClick={() => sendReply(ann.id)} disabled={!replyText.trim()} aria-label="Enviar respuesta"
                               className="p-1.5 rounded-token-sm text-fg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-hover transition-colors duration-fast ease-token">
                               <Send size={14} />

@@ -143,7 +143,7 @@ export default function UnsavedDialog() {
             {isAppClose ? 'Salir sin guardar' : 'Cerrar sin guardar'}
           </button>
           <button onClick={saveAll} disabled={saving} autoFocus
-            className="px-3 py-1.5 text-mini rounded-token bg-accent text-on-accent hover:brightness-110 active:brightness-95 active:scale-[0.97] transition-[filter,transform] duration-fast ease-token flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+            className="px-3 py-1.5 text-mini rounded-token bg-fg text-panel hover:opacity-90 active:opacity-80 active:scale-[0.97] transition-[filter,transform] duration-fast ease-token flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
             {saving && <Loader2 size={14} className="animate-spin" />}
             {saving ? 'Guardando…' : isAppClose ? 'Guardar y salir' : 'Guardar y cerrar'}
           </button>

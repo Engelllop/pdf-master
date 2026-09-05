@@ -140,17 +140,17 @@ export default function CommandPalette({ onClose }: { onClose: () => void }) {
                       role="option" aria-selected={activa} tabIndex={-1}
                       onClick={() => run(cmd)} onMouseMove={() => setIndex(i)}
                       className={`w-full flex items-center gap-2.5 px-3.5 py-1.5 text-left ${
-                        activa ? 'bg-accent text-on-accent' : 'text-fg hover:bg-hover'
+                        activa ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
                       }`}>
-                      <Icono size={14} className={`shrink-0 ${activa ? 'text-on-accent' : 'text-muted'}`} />
+                      <Icono size={14} className={`shrink-0 ${activa ? 'text-fg' : 'text-muted'}`} />
                       <span className="flex-1 text-base truncate">{cmd.label}</span>
                       {cmd.shortcut && (
                         <kbd className={`px-1.5 py-0.5 rounded-token-sm border text-micro shrink-0 tabular ${
-                          activa ? 'border-on-accent/40 text-on-accent' : 'border-border bg-active text-muted'
+                          activa ? 'border-fg/25 text-fg' : 'border-border bg-active text-muted'
                         }`}>{cmd.shortcut}</kbd>
                       )}
                       <CornerDownLeft size={12}
-                        className={`shrink-0 ${activa ? 'text-on-accent' : 'text-transparent'}`} aria-hidden />
+                        className={`shrink-0 ${activa ? 'text-fg' : 'text-transparent'}`} aria-hidden />
                     </button>
                   )
                 })}

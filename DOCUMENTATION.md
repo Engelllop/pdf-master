@@ -1,6 +1,6 @@
 # PDF Master — Documentación técnica
 
-> Versión: **1.20.1** · Actualizado: 2026-09-04  
+> Versión: **1.21.0** · Actualizado: 2026-09-04  
 > Changelog de sesión: `CHANGELOG_SESSION.md`  
 > Repo canónico: `C:\dev\pdf-master` (`C:\Users\Engelllop\pdf-master` es junction).
 

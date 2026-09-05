@@ -31,6 +31,10 @@ module.exports = {
         // porque en oscuro es tinta.
         'on-scrim': 'rgb(var(--on-scrim) / <alpha-value>)',
         hover: 'rgb(var(--hover) / <alpha-value>)',
+        // Estado ACTIVO del chrome (herramienta elegida, interruptor encendido).
+        // Relleno gris con `text-fg` encima: el acento queda para lo que se dibuja
+        // sobre la lámina, que es del usuario.
+        selected: 'rgb(var(--selected) / <alpha-value>)',
         active: 'rgb(var(--active) / <alpha-value>)',
         // Estados: versiones apagadas, no los rojos/verdes saturados de Tailwind.
         danger: 'rgb(var(--danger) / <alpha-value>)',

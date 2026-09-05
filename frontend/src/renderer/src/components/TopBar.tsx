@@ -44,7 +44,7 @@ export default function TopBar() {
           <button onClick={toggleSidebar} aria-label={sidebarOpen ? 'Ocultar páginas' : 'Mostrar páginas'}
             aria-pressed={sidebarOpen}
             className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${
-              sidebarOpen ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
+              sidebarOpen ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'
             }`}>
             <PanelLeft size={16} />
           </button>

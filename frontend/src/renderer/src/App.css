@@ -38,6 +38,12 @@
   --on-danger: 255 255 255; /* texto/icono encima de --danger */
   --hover: 240 240 243;     /* hover de botones */
   --active: 233 233 237;    /* superficie elevada (kbd, chips, filas) */
+  /* Estado ACTIVO del chrome: herramienta elegida, interruptor encendido, opción
+     marcada. Es un relleno gris con la tinta normal encima, y no el acento: el
+     color de la pantalla es el de las marcas del usuario, no el de la interfaz.
+     Pesa claramente más que --hover (240) y que --active (233), para que
+     "elegido" no se confunda con "el ratón está encima". */
+  --selected: 210 210 216;
   --danger: 175 58 48;
   --success: 32 116 79;
   --warning: 150 98 15;
@@ -147,6 +153,7 @@ html.dark {
   /* El hover pesa MENOS que la superficie elevada, igual que en claro. */
   --hover: 45 45 49;
   --active: 54 54 59;
+  --selected: 84 84 90;
   --danger: 226 138 130;
   --success: 122 200 160;
   --warning: 224 176 100;
@@ -235,10 +242,13 @@ select:focus-visible,
 textarea:focus-visible,
 a:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid rgb(var(--accent));
+  /* El anillo de foco es de TINTA, no de acento: el chrome no lleva color.
+     Invierte con el tema —casi negro en claro, casi blanco en oscuro—, así que
+     contrasta con el control esté relleno o vacío. */
+  outline: 2px solid rgb(var(--fg));
   outline-offset: -2px;
   border-radius: var(--radius-sm);
-  box-shadow: 0 0 0 1px rgb(var(--panel)), 0 0 0 4.5px rgb(var(--accent) / 0.25);
+  box-shadow: 0 0 0 1px rgb(var(--panel)), 0 0 0 4.5px rgb(var(--fg) / 0.22);
 }
 
 /* La lámina de PDF: sombra de mesa + un filo, porque una hoja blanca sobre un
@@ -403,6 +413,11 @@ a:focus-visible,
    atributos, así que basta con esto y con marcar las excepciones. */
 .lucide { stroke-width: 1.75; }
 .lucide.icon-thin { stroke-width: 1.5; }
+
+/* Los deslizadores y las casillas nativos se pintan con el acento del SISTEMA (el
+   azul de Windows) si nadie dice lo contrario: en un chrome sin color, eso acababa
+   siendo el único azul de la pantalla. */
+input[type="range"], input[type="checkbox"], input[type="radio"] { accent-color: rgb(var(--fg)); }
 
 /* Números que no bailan al cambiar de valor (zoom, páginas, contadores, medidas) */
 .tabular, input[type='number'], kbd {

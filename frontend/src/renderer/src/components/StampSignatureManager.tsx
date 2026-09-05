@@ -47,7 +47,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
   const tabBtn = (id: typeof tab, label: string, Icon: typeof StampIcon) => (
     <button onClick={() => setTab(id)} aria-pressed={tab === id}
       className={`flex items-center gap-1.5 h-8 px-3 text-mini rounded-token-sm transition-colors duration-fast ease-token ${
-        tab === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+        tab === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
       }`}>
       <Icon size={14} /> {label}
     </button>
@@ -145,7 +145,7 @@ export default function StampSignatureManager({ onClose }: { onClose: () => void
                     fuera un campo, y el `border-b` que aparecía al enfocar movía la fila. */}
                 <input defaultValue={sig.name} aria-label="Nombre de la firma"
                   onBlur={(e) => { renameSignature(sig.id, e.target.value.trim() || sig.name); setSignatures(loadSignatures()) }}
-                  className="flex-1 min-w-0 px-1.5 py-0.5 rounded-token-sm bg-transparent border border-transparent text-mini text-fg transition-colors duration-fast ease-token hover:border-border-control focus:outline-none focus:border-accent" />
+                  className="flex-1 min-w-0 px-1.5 py-0.5 rounded-token-sm bg-transparent border border-transparent text-mini text-fg transition-colors duration-fast ease-token hover:border-border-control focus:outline-none focus:border-fg" />
                 <button onClick={() => colocarFirma(sig)} title="Colocar en el documento" aria-label="Colocar en el documento"
                   className={iconBtn}><Check size={14} /></button>
                 <button onClick={() => { removeSignature(sig.id); setSignatures(loadSignatures()) }} aria-label="Eliminar firma"

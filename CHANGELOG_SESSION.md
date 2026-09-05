@@ -4,6 +4,19 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-09-04 — v1.21.0
+
+El chrome se queda sin color.
+
+- **Nada de azul en la interfaz.** Lo elegido —herramienta activa, interruptor encendido, opción marcada, fila seleccionada— pasa a un relleno gris (`selected`) con la tinta normal encima. La acción primaria pasa a relleno de **tinta**: en oscuro eso es un botón claro sobre panel oscuro, que es la consecuencia de no tener color y es preferible a que la acción primaria no se distinga de la secundaria. El anillo de foco también es de tinta, y como invierte con el tema contrasta con el control esté relleno o vacío.
+- **El acento sobrevive solo sobre la lámina**: selección de marcas, tiradores, resaltado de la capa de texto. Ahí no es decoración, es «esto es lo que tenés agarrado».
+- **Los controles nativos dejan de sangrar azul.** Los deslizadores y las casillas se pintaban con el acento del *sistema* (el azul de Windows) porque nadie decía lo contrario: en un chrome sin color, ese acabó siendo el único azul de la pantalla. Resuelto en una regla global, no control por control.
+- **El tooltip espera medio segundo y ya no repite lo que el botón dice.** Con 200 ms, cruzar la cinta para llegar al documento dejaba un reguero de globos tapando lo de debajo; y un botón con su etiqueta a la vista no necesita un globo que la repita, salvo para añadir el atajo.
+
+25 archivos de interfaz migrados, 563 tests.
+
+---
+
 ## Sesión 2026-09-04 — v1.20.1
 
 Arreglos de lo que rompió 1.20.0, encontrados mirando la app de verdad.

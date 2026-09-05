@@ -86,7 +86,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       {options.map(([id, label]) => (
         <button key={id} onClick={() => onChange(id)}
           className={`px-2.5 h-7 rounded-token-sm text-micro transition-colors duration-fast ease-token ${
-            value === id ? 'bg-accent text-on-accent' : 'text-muted hover:bg-hover hover:text-fg'
+            value === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
           }`}>
           {label}
         </button>
@@ -112,7 +112,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <Row label="Tu nombre" hint="Firma las marcas que crees; se usa para filtrar por autor y en las respuestas.">
             <input value={annotationAuthor} onChange={(e) => setAnnotationAuthor(e.target.value)}
               placeholder="Sin autor" autoFocus
-              className="w-44 border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-accent" />
+              className="w-44 border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg placeholder:text-muted focus:outline-none focus:border-fg" />
           </Row>
 
           <Row label="Herramienta fija" hint="La herramienta se queda activa tras cada marca; Esc la suelta.">
@@ -123,7 +123,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
 
           <Row label="Unidad de medida por defecto" hint="Se propone al calibrar la escala de un plano.">
             <select value={defaultUnit} onChange={(e) => setDefaultUnit(e.target.value as typeof defaultUnit)}
-              className="border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg focus:outline-none focus:border-accent">
+              className="border border-border rounded-token-sm px-2 h-7 text-mini bg-surface text-fg focus:outline-none focus:border-fg">
               {(['mm', 'cm', 'm', 'ft', 'in'] as const).map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </Row>
@@ -145,7 +145,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <Row label="Tamaño de la interfaz" hint="Escala menús, paneles y textos de la app (no el PDF en sí).">
             <div className="flex items-center gap-2">
               <input type="range" min={75} max={150} step={5} value={Math.round(uiScale * 100)}
-                onChange={(e) => setUiScale(parseInt(e.target.value) / 100)} className="w-28 accent-accent" />
+                onChange={(e) => setUiScale(parseInt(e.target.value) / 100)} className="w-28 accent-fg" />
               <span className="text-micro text-muted w-9 tabular">{Math.round(uiScale * 100)}%</span>
             </div>
           </Row>

@@ -48,9 +48,10 @@ describe('paleta de comandos', () => {
   it('el comando resaltado usa el color de texto del relleno, no el del panel', () => {
     render(<CommandPalette onClose={() => {}} />)
     const fila = screen.getByRole('option', { selected: true })
-    expect(fila.className).toMatch(/bg-accent/)
-    // `text-toolbar` sobre relleno azul dejaba texto oscuro sobre oscuro en tema oscuro.
-    expect(fila.className).toMatch(/text-on-accent/)
+    // v2 monocromo: lo elegido se marca con relleno gris (`selected`) y la tinta
+    // normal encima. El acento quedó para lo que se dibuja sobre la lámina.
+    expect(fila.className).toMatch(/bg-selected/)
+    expect(fila.className).toMatch(/text-fg/)
     expect(fila.className).not.toMatch(/text-toolbar/)
   })
 })

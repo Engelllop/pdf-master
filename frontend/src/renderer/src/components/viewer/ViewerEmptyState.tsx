@@ -56,7 +56,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
       onDragOver={onDragOver} onDrop={onDrop}>
       <div className="w-full max-w-3xl space-y-7">
         <div className="text-center">
-          <div className="w-14 h-14 mx-auto rounded-token-lg flex items-center justify-center bg-accent/10 text-accent">
+          <div className="w-14 h-14 mx-auto rounded-token-lg flex items-center justify-center bg-accent/10 text-fg">
             <FileText size={26} className="icon-thin" />
           </div>
           <h2 className="mt-4 text-display font-semibold text-fg tracking-tight">PDF Master</h2>
@@ -64,7 +64,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
 
           <div className="mt-4 flex items-center justify-center gap-2">
             <button onClick={handleOpen}
-              className="flex items-center gap-2 px-4 h-9 text-base rounded-token bg-accent text-on-accent shadow-token-sm hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token">
+              className="flex items-center gap-2 px-4 h-9 text-base rounded-token bg-fg text-panel shadow-token-sm hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token">
               <FolderOpen size={16} /> Abrir PDF
             </button>
             {lastSession && (
@@ -137,7 +137,7 @@ export default function ViewerEmptyState({ containerRef, onDragOver, onDrop }: {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-5 border-t border-border">
           {CAPABILITIES.map(({ icon: Icon, title, text }) => (
             <div key={title} className="flex gap-2.5 p-2">
-              <Icon size={16} className="text-accent shrink-0 mt-0.5" strokeWidth={1.75} />
+              <Icon size={16} className="text-fg shrink-0 mt-0.5" strokeWidth={1.75} />
               <div>
                 <div className="text-mini font-medium text-fg">{title}</div>
                 <div className="text-micro text-muted leading-snug mt-0.5">{text}</div>

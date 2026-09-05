@@ -698,7 +698,7 @@ export default function Viewer() {
 
       {!pageData && loading && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <Loader2 className="animate-spin text-accent" size={36} />
+          <Loader2 className="animate-spin text-fg" size={36} />
         </div>
       )}
 
@@ -713,7 +713,7 @@ export default function Viewer() {
           <div className="relative" data-page-wrapper="left" style={{ width: displayWidth, height: displayHeight, overflow: 'hidden', flexShrink: 0 }}>
             {loading && (
               <div className={`absolute inset-0 flex items-center justify-center z-canvas rounded-token-sm bg-surface/80`}>
-                <Loader2 className="animate-spin text-accent" size={32} />
+                <Loader2 className="animate-spin text-fg" size={32} />
               </div>
             )}
             <div className="relative"
@@ -924,10 +924,10 @@ export default function Viewer() {
                 return (
                   <div className="absolute z-float flex gap-1 -translate-y-full" style={{ left: s.x, top: s.y - 4 }}>
                     <button onMouseDown={(e) => e.stopPropagation()} onClick={() => applyImageTransform(im, { delete: true })}
-                      className="px-2 py-1 text-mini rounded-token-sm bg-danger text-on-danger shadow-token-sm transition-[filter] duration-fast ease-token hover:brightness-110">Eliminar</button>
+                      className="px-2 py-1 text-mini rounded-token-sm bg-danger text-on-danger shadow-token-sm transition-[filter] duration-fast ease-token hover:opacity-90">Eliminar</button>
                     <button onMouseDown={(e) => e.stopPropagation()}
                       onClick={async () => { const p = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]); if (p) applyImageTransform(im, { replace_path: p, new: [im.x0, im.y0, im.x1, im.y1] }) }}
-                      className="px-2 py-1 text-mini rounded-token-sm bg-accent text-on-accent hover:brightness-110 active:brightness-95 transition-[filter] duration-fast ease-token shadow-token-sm">Reemplazar</button>
+                      className="px-2 py-1 text-mini rounded-token-sm bg-fg text-panel hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token shadow-token-sm">Reemplazar</button>
                   </div>
                 )
               })()}
@@ -972,7 +972,7 @@ export default function Viewer() {
               {/* Area measurement floating controls */}
               {drawingArea && (
                 <div className="absolute z-float bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-                  <button onClick={closeArea} className="px-3 py-1.5 bg-accent text-on-accent text-mini rounded-token-sm shadow-token-md hover:brightness-110">
+                  <button onClick={closeArea} className="px-3 py-1.5 bg-fg text-panel text-mini rounded-token-sm shadow-token-md hover:opacity-90">
                     {store.activeTool === 'measure_perimeter' ? 'Terminar medición (Enter)' : 'Cerrar polígono (Enter)'}
                   </button>
                   <button onClick={() => { store.setActiveTool(null); cancelDraw(); }} className={`px-3 py-1.5 text-mini rounded-token-sm shadow-token-md bg-active text-fg hover:bg-hover`}>
@@ -1064,7 +1064,7 @@ export default function Viewer() {
           <div className="relative" data-page-wrapper="right" style={{ width: displayWidthRight, height: displayHeightRight, overflow: 'hidden', flexShrink: 0 }}>
             {loadingRight && (
               <div className={`absolute inset-0 flex items-center justify-center z-canvas rounded-token-sm bg-surface/60`}>
-                <Loader2 className="animate-spin text-accent" size={24} />
+                <Loader2 className="animate-spin text-fg" size={24} />
               </div>
             )}
             <div className="relative"
@@ -1123,7 +1123,7 @@ export default function Viewer() {
       {isDraggingFile && (
         <div className="overlay-in absolute inset-0 z-sticky flex items-center justify-center pointer-events-none bg-surface/70 backdrop-blur-[2px]">
           <div className="border-2 border-dashed border-accent rounded-token-lg px-14 py-12 flex flex-col items-center gap-4 bg-panel/80 shadow-token-lg">
-            <svg className="w-14 h-14 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-14 h-14 text-fg" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
             </svg>
             <span className="text-fg text-base font-medium">Soltá el PDF acá</span>

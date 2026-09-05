@@ -53,7 +53,7 @@ export default function TextBoxEditor({
   // para desplegarse.
   const keepFocus = { onMouseDown: (e: React.MouseEvent) => e.preventDefault() }
   const btn = 'p-1 rounded-token-sm text-muted hover:text-fg hover:bg-hover transition-colors'
-  const toggleBtn = (active: boolean) => `p-1 rounded-token-sm transition-colors ${active ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'}`
+  const toggleBtn = (active: boolean) => `p-1 rounded-token-sm transition-colors ${active ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`
   const ListIcon = style.listStyle === 'number' ? ListOrdered : List
 
   return (

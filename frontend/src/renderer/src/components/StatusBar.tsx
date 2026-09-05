@@ -52,7 +52,7 @@ export default function StatusBar() {
           <input type="number" min={1} max={activeDoc.page_count} value={activeDoc.currentPage + 1}
             onChange={(e) => { const v = parseInt(e.target.value); if (v >= 1 && v <= activeDoc.page_count) setPage(activeDoc.doc_id, v - 1) }}
             aria-label="Página actual"
-            className="w-10 border border-border rounded-token-sm px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-accent" />
+            className="w-10 border border-border rounded-token-sm px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-fg" />
           / {activeDoc.page_count}
         </span>
       ) : (
@@ -115,7 +115,7 @@ export default function StatusBar() {
 
       {activeDoc && !compareMode && (
         <>
-          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-accent text-on-accent hover:text-on-accent' : ''}`}
+          <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-selected text-fg hover:text-fg' : ''}`}
             title="Scroll continuo" aria-label="Scroll continuo" aria-pressed={continuousMode}>
             <ScrollText size={14} />
           </button>
@@ -135,7 +135,7 @@ export default function StatusBar() {
                 <div className="absolute bottom-full right-0 mb-1 z-dropdown w-32 border border-border rounded-token shadow-token-md py-1 bg-panel">
                   {ZOOM_PRESETS.map((z) => (
                     <button key={z} onClick={() => { setZoom(activeDoc.doc_id, z); setFitMode(activeDoc.doc_id, 'custom'); setZoomMenuOpen(false) }}
-                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'bg-accent text-on-accent' : 'text-fg'}`}>
+                      className={`w-full text-left px-3 py-1 text-mini hover:bg-hover ${Math.round(z * 100) === zoomPercent ? 'bg-selected text-fg' : 'text-fg'}`}>
                       {Math.round(z * 100)}%
                     </button>
                   ))}

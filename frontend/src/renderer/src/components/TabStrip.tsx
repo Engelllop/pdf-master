@@ -93,7 +93,7 @@ export default function TabStrip() {
                   : 'text-muted hover:bg-hover hover:text-fg'
               }`}>
               {loadingDocId === doc.doc_id
-                ? <Loader2 size={14} className="animate-spin text-accent shrink-0" />
+                ? <Loader2 size={14} className="animate-spin text-fg shrink-0" />
                 : <FileText size={14} className="shrink-0 text-muted" />}
               <span className="truncate flex-1">{doc.file_name}</span>
               {doc.dirty && (
@@ -130,7 +130,7 @@ export default function TabStrip() {
           <Tooltip content="Ir a pestaña…">
             <button onClick={() => setTabListOpen((o) => !o)} aria-label="Lista de pestañas"
               className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-colors ${
-                tabListOpen ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
+                tabListOpen ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'
               }`}>
               <ChevronsUpDown size={16} />
             </button>
@@ -147,11 +147,11 @@ export default function TabStrip() {
                       doc.doc_id === activeDocId ? 'text-fg font-medium' : 'text-muted'
                     }`}>
                     {loadingDocId === doc.doc_id
-                      ? <Loader2 size={14} className="animate-spin text-accent shrink-0" />
+                      ? <Loader2 size={14} className="animate-spin text-fg shrink-0" />
                       : <FileText size={14} className="shrink-0 text-muted" />}
                     <span className="truncate flex-1">{doc.file_name}</span>
                     {doc.dirty && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-warning" title="Cambios sin guardar" />}
-                    {doc.doc_id === activeDocId && <Check size={14} className="shrink-0 text-accent" />}
+                    {doc.doc_id === activeDocId && <Check size={14} className="shrink-0 text-fg" />}
                   </button>
                 ))}
               </div>

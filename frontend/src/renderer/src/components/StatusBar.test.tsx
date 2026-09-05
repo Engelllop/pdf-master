@@ -73,8 +73,10 @@ describe('chrome de zoom', () => {
     render(<StatusBar />)
     fireEvent.click(screen.getByLabelText('Nivel de zoom'))
     const current = screen.getByRole('button', { name: '100%' })
-    expect(current.className).toMatch(/bg-accent/)
-    expect(current.className).toMatch(/text-on-accent/)
+    // v2 monocromo: relleno gris y tinta normal, nunca color de LETRA para marcar
+    // un estado (que es lo que hacía `text-accent`).
+    expect(current.className).toMatch(/bg-selected/)
+    expect(current.className).toMatch(/text-fg/)
     expect(current.className).not.toMatch(/text-accent/)
   })
 

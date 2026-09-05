@@ -114,15 +114,16 @@ describe('capas apagadas', () => {
 })
 
 describe('acción primaria', () => {
-  it('Imprimir usa el acento, no tinta plana', async () => {
+  it('Imprimir usa el botón primario del sistema, no un color propio', async () => {
     render(<PrintDialog docId="doc-1" pageCount={3} currentPage={0} onClose={() => {}} />)
     const imprimir = screen.getByRole('button', { name: /Imprimir$/ })
-    // El mismo rol se pintaba de dos colores según el archivo: este diálogo en
-    // `bg-fg` (que en tema oscuro es un botón BLANCO) y el de «sin guardar» en acento.
-    expect(imprimir.className).toMatch(/bg-accent/)
-    expect(imprimir.className).toMatch(/text-on-accent/)
-    expect(imprimir.className).not.toMatch(/bg-fg/)
-    // `hover:opacity-90` sobre un relleno sólido transparenta, no aclara.
-    expect(imprimir.className).not.toMatch(/hover:opacity/)
+    // Lo que importa es que el MISMO rol se pinte igual en toda la app: antes este
+    // diálogo iba en tinta y el de «sin guardar» en acento. Ahora los dos salen de
+    // `btnPrimary`, que en el sistema monocromo es relleno de tinta.
+    expect(imprimir.className).toMatch(/bg-fg/)
+    expect(imprimir.className).toMatch(/text-panel/)
+    // La acción primaria no puede confundirse con un estado elegido, que es el
+    // relleno gris: son dos cosas distintas y ahora las dos son sin color.
+    expect(imprimir.className).not.toMatch(/bg-selected/)
   })
 })
