@@ -973,7 +973,7 @@ export default function Toolbar() {
   ) : null
 
   return (
-    <div className="flex flex-col shrink-0 select-none material text-fg">
+    <div className="relative z-dropdown flex flex-col shrink-0 select-none material text-fg">
       <RibbonTabs tools={renderRibbon()} trailing={buscador} />
 
       {activeDoc && <PropertiesBar />}

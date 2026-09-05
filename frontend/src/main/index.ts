@@ -11,7 +11,7 @@ import { createAiStreamParser } from './aiStream'
 import { avisoActualizacionLista, respuestaEsReiniciar } from './updatePrompt'
 import { debeBorrarse, esTempDeImpresion } from './tempSweep'
 import { rutaCarpetaAbrible, rutaImagenLegible, rutaParaMostrarEnCarpeta } from './safePaths'
-import { comandoMatarArbol, comandoTasklist, esNuestroMotor, pidGuardado } from './enginePid'
+import { comandoMatarArbol, comandoMotoresDeEstaInstalacion, comandoTasklist, esNuestroMotor, pidGuardado, pidsDeLaSalida } from './enginePid'
 import { colaDeTexto, construirDiagnostico, nombreArchivoDiagnostico } from './diagnostics'
 
 // GPU & performance flags
@@ -130,6 +130,47 @@ function killExistingBackend(): void {
     // tasklist/taskkill fallan si el PID ya no existe: es el caso normal
   }
   olvidarPidMotor()
+}
+
+/** Ruta del motor que ESTA instalación empaqueta. En desarrollo no hay exe. */
+function rutaDelMotor(): string {
+  return join(process.resourcesPath, 'backend', 'pdf-engine.exe')
+}
+
+/**
+ * ¿Hay alguien en el puerto que no seamos nosotros? Se pregunta con NUESTRO token:
+ * un 403 significa que quien contesta es otro motor (el huérfano de la versión
+ * anterior, casi siempre). Si lo es, se mata —solo los de esta instalación— para
+ * que el motor nuevo pueda bindear.
+ */
+async function liberarPuertoDeMotoresViejos(): Promise<void> {
+  let ajeno = false
+  try {
+    const res = await engineFetch('/pdf/dirty/__ping__', { signal: AbortSignal.timeout(1500) })
+    // 403: el middleware del token nos rechaza, o sea que no es nuestro motor.
+    // 404 (doc inexistente) o 200: es el nuestro, no hay nada que hacer.
+    ajeno = res.status === 403
+  } catch {
+    return // nadie contesta: el puerto está libre
+  }
+  if (!ajeno) return
+
+  try {
+    const salida = execSync(comandoMotoresDeEstaInstalacion(rutaDelMotor()), { windowsHide: true }).toString()
+    const pids = pidsDeLaSalida(salida, backendProcess?.pid ? [backendProcess.pid] : [])
+    if (pids.length === 0) {
+      safeLog('ERROR', '[Main] El 8745 lo tiene un motor que NO es de esta instalacion: no se toca.')
+      return
+    }
+    for (const pid of pids) {
+      try {
+        execSync(comandoMatarArbol(pid), { windowsHide: true, stdio: 'ignore' })
+        safeLog('INFO', `[Main] Motor viejo ${pid} terminado: tenia el puerto tomado`)
+      } catch { /* ya no existe */ }
+    }
+  } catch (err) {
+    safeLog('ERROR', `[Main] No se pudo revisar quien tiene el puerto: ${err}`)
+  }
 }
 
 function startBackend(): Promise<void> {
@@ -517,6 +558,7 @@ app.whenReady().then(async () => {
     stopBackend()
     await new Promise((r) => setTimeout(r, 500))
     try {
+      await liberarPuertoDeMotoresViejos()
       await startBackend()
       safeLog('INFO', '[Main] Backend restarted successfully')
       return { success: true }
@@ -886,8 +928,11 @@ app.whenReady().then(async () => {
   // Create window immediately — don't block on backend startup
   createWindow()
 
-  // Start backend in background with a timeout so it never blocks UI
-  startBackend().then(() => {
+  // Start backend in background with a timeout so it never blocks UI.
+  // Antes de lanzarlo hay que asegurarse de que el puerto no lo tenga un motor de
+  // una versión anterior: si lo tiene, el nuestro no bindea y el renderer acaba
+  // hablando con un motor que rechaza su token.
+  liberarPuertoDeMotoresViejos().then(startBackend).then(() => {
     safeLog('INFO', 'Backend started successfully')
   }).catch((err) => {
     safeLog('ERROR', 'Failed to start backend: ' + err)

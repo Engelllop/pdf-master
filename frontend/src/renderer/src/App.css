@@ -391,7 +391,11 @@ a:focus-visible,
    entran el doble de herramientas. El menú de desbordamiento las mantiene siempre
    —ahí sobra el ancho, y un icono suelto en una lista no dice nada. */
 [data-ribbon-compacto] .rb-label { display: none; }
-[data-ribbon-menu] .rb-label { display: inline; }
+/* Fuerza la etiqueta aunque esté dentro de una fila compacta. La usan el menú de
+   desbordamiento —ahí sobra el ancho y un icono suelto en una lista no dice nada— y
+   la copia de medida CON etiquetas, que si no medía lo mismo que la compacta y
+   dejaba a la fila sin forma de volver a las etiquetas al ensancharse. */
+[data-ribbon-etiquetas] .rb-label { display: inline; }
 
 /* Grosor de trazo único para TODOS los iconos. Lucide viene a 2, que a 14 px se ve
    embarrado; la cinta ya pedía 1.75 a mano en once sitios y el resto de la app

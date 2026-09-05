@@ -1,6 +1,6 @@
 # PDF Master — Documentación técnica
 
-> Versión: **1.20.0** · Actualizado: 2026-09-04  
+> Versión: **1.20.1** · Actualizado: 2026-09-04  
 > Changelog de sesión: `CHANGELOG_SESSION.md`  
 > Repo canónico: `C:\dev\pdf-master` (`C:\Users\Engelllop\pdf-master` es junction).
 
@@ -41,6 +41,7 @@ Renderer       →  HTTP 127.0.0.1:8745  (header X-Pdfmaster-Token)
 - Caps de render: 3000 / 6000 px. Miniaturas 300 px.
 - Bitmaps de página = blob URLs, y `cachePage` **revoca el que reemplaza**: dos rasterizaciones de la misma página compitiendo por la misma entrada dejan revocado el blob que se está mostrando (página en blanco). El bitmap se sube de resolución al cambiar el zoom (`useZoomUpgrade`, 250 ms) en **los dos paneles** de la vista doble — el efecto de carga no vuelve a correr al hacer zoom, así que el derecho se quedaba borroso hasta cambiar de página. En scroll continuo el zoom vivo manda la geometría y el rasterizado espera 250 ms a que se quede quieto: los bitmaps **no se vacían** al hacer zoom (se estiran y se reemplazan al llegar el nuevo), que vaciarlos dejaba la ventana entera en blanco en cada paso de la rueda. El preload no pisa una entrada existente —descarta y libera su propio bitmap— y en vista doble no precarga `page + 1`, que es el panel derecho.
 - Instancia única: la perdedora hace `app.exit(0)` inmediato.
+- **El chrome va en `z-dropdown`.** `material` usa `backdrop-filter`, y eso crea un contexto de apilamiento: sin z-index propio, TODOS los desplegables de la cinta (dibujar, medir, conteo, archivo, más herramientas) se abren DEBAJO del documento — existen y no se ven. Quitarle el z-index al contenedor del chrome devuelve el bug entero.
 - El motor deja su PID en `logs\engine.pid` y al arrancar solo se mata **ese** (y solo si sigue siendo un `pdf-engine.exe`: Windows recicla PIDs). Antes era `taskkill /F /IM pdf-engine.exe`, que barría el motor de otra instalación o de otro usuario. Al salir se mata el árbol (`/T`): PyInstaller onefile deja un hijo que se quedaba con el puerto.
 - Cada petición que no es `/health` lleva un id de 8 hex: va en la miga de pan, en la línea del log si tarda ≥ 2 s y en la respuesta (`X-Request-Id`).
 - `doc_id` muerto (404) → `reopenDeadDoc` + remap conservando marcas.
@@ -131,6 +132,8 @@ CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest + lint (tope de avi
 `.github/workflows/security.yml` (PR + semanal): `npm audit`, `pip-audit` y CodeQL (TS + Python). Dependabot semanal para npm, pip y actions, con Electron y PyMuPDF fuera del salto mayor automático.
 
 **Versiones:** `frontend/package.json` es la fuente. `versionSync.test.ts` ata la cabecera de este archivo y el changelog; `backend/tests/test_version.py` ata `ENGINE_VERSION` (el `version` que declara la API); el job de release ata el tag.
+
+**Banco de pruebas del renderer:** `npm run harness` construye y deja `out/renderer/harness.html`, que monta la interfaz REAL en un navegador con un `window.api` de mentira y un documento abierto. Existe porque el chrome no se puede mirar de otra forma —la app es Electron y los tests corren en jsdom, que no hace layout—, así que un desbordamiento que se pisa o un menú que no abre pasaban los 562 tests en verde. El stub vive en `design/harness/`.
 
 **E2E:** `npm run e2e` (Playwright + Electron, `frontend/e2e/`) arranca la app construida con un PDF por línea de comandos y comprueba que el motor levanta y rasteriza. Necesita `npm run build` y `backend/venv`, así que **no** corre en CI; si el 8745 ya está tomado por otro motor, se salta diciéndolo.
 

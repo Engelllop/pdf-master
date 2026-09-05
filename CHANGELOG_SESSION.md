@@ -4,6 +4,31 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-09-04 — v1.20.1
+
+Arreglos de lo que rompió 1.20.0, encontrados mirando la app de verdad.
+
+### El PDF que pedía contraseña y no estaba protegido
+Al actualizar, el motor de la versión anterior sobrevive al cierre (PyInstaller onefile deja un hijo) y se queda con el 8745. La app nueva no puede bindear, le habla a ese motor viejo, el token no coincide y el visor —donde 401 significa «este PDF pide contraseña»— abría el diálogo de contraseña **para todos los PDFs**.
+
+1.20.0 lo empeoró: cambió el `taskkill` por nombre de imagen —que barría el motor de otra instalación— por matar solo el PID del pidfile, y el motor viejo nunca escribió ese pidfile. Lo que antes se curaba solo quedaba clavado.
+
+Ahora, si alguien tiene el puerto, la app le pregunta con su token: un **403** significa que no es el suyo, y entonces mata los `pdf-engine.exe` cuyo **ExecutablePath** es el de esta instalación. Ni por nombre (mataba ajenos) ni por pidfile (no conoce al huérfano).
+
+### Los desplegables de la cinta no abrían
+`material` usa `backdrop-filter`, y eso crea un contexto de apilamiento: los z-index de los menús dejaron de valer contra el visor, que es un hermano posterior. Dibujar, Medir, Conteo, Archivo y Más herramientas se abrían **debajo del documento** — existían y no se veían. El contenedor del chrome sube a `z-dropdown`.
+
+### La cinta se pisaba con la búsqueda y las acciones
+La copia de medida «con etiquetas» vive dentro de la fila, así que en cuanto la fila se compactaba **también perdía las etiquetas**: medía lo mismo que la copia compacta, la cuenta se degradaba y las herramientas se desbordaban encima de lo de la derecha. La copia se blinda con la regla que fuerza la etiqueta. Además se vuelve a medir con el `resize` de la ventana, no solo con el `ResizeObserver`.
+
+### El aviso de calibración tapaba las herramientas
+Colgaba de la columna entera, así que su `top-3` caía sobre la cinta justo cuando hay que usarla. Ahora se ancla al área del documento.
+
+### Banco de pruebas del renderer
+`npm run harness` monta la interfaz **real** en un navegador, sin Electron y sin motor, con un documento abierto. Es lo que faltaba: los tres bugs de arriba pasaban los 562 tests en verde porque jsdom no hace layout y la app no arranca en un panel de navegador.
+
+---
+
 ## Sesión 2026-09-04 — v1.20.0
 
 Dos frentes: el arranque y el CI por un lado, el sistema visual por el otro.

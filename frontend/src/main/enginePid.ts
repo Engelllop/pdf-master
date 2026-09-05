@@ -45,3 +45,32 @@ export function comandoTasklist(pid: number): string {
 export function comandoMatarArbol(pid: number): string {
   return `taskkill /F /T /PID ${pid}`
 }
+
+/**
+ * El pidfile solo conoce el motor que ESTA sesión lanzó. Cuando la app se actualiza,
+ * el motor de la versión anterior sobrevive al cierre (PyInstaller deja un hijo) y se
+ * queda con el puerto: la app nueva no puede bindear, le habla al motor viejo, el
+ * token no coincide y el visor —donde 401 es «este PDF pide contraseña»— pedía
+ * contraseña para PDFs que no están protegidos.
+ *
+ * Barrer por nombre de imagen mataba también el motor de otra instalación. Filtrar
+ * por `ExecutablePath` mata exactamente los de ESTA instalación y ninguno más.
+ */
+export function comandoMotoresDeEstaInstalacion(rutaExe: string): string {
+  // Dentro del -Command solo van comillas SIMPLES: las dobles anidadas se las come
+  // cmd.exe y el comando llega partido. Por eso el nombre se filtra en el
+  // Where-Object y no en el -Filter, que exige comillas dobles.
+  const ruta = rutaExe.replace(/'/g, "''")
+  return 'powershell -NoProfile -NonInteractive -Command "Get-CimInstance Win32_Process | ' +
+    `Where-Object { $_.Name -eq '${IMAGEN_MOTOR}' -and $_.ExecutablePath -eq '${ruta}' } | ` +
+    'ForEach-Object { $_.ProcessId }"'
+}
+
+/** La salida es una lista de PIDs, uno por línea. Se filtra el propio para no
+ * suicidarse si esta misma app ya tiene el motor levantado. */
+export function pidsDeLaSalida(salida: string, excluir: number[] = []): number[] {
+  return salida
+    .split(/\r?\n/)
+    .map((linea) => Number(linea.trim()))
+    .filter((pid) => Number.isInteger(pid) && pid > 0 && !excluir.includes(pid))
+}

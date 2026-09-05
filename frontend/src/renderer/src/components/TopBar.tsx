@@ -17,7 +17,7 @@ export default function TopBar() {
   const rightBtn = 'w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant text-muted hover:text-fg hover:bg-hover disabled:opacity-40 disabled:cursor-not-allowed'
 
   return (
-    <div className="app-drag h-chrome material material-edge flex items-center shrink-0 select-none pr-[140px]">
+    <div className="app-drag relative z-dropdown h-chrome material material-edge flex items-center shrink-0 select-none pr-[140px]">
       <Tooltip content="Menú de PDF Master">
         <button onClick={() => window.dispatchEvent(new CustomEvent('app:file-menu'))} aria-label="Menú de PDF Master"
           className="app-no-drag flex items-center justify-center w-8 h-8 ml-2 mr-1 rounded-token-sm hover:bg-hover transition-colors duration-fast ease-token shrink-0">

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { comandoMatarArbol, comandoTasklist, esNuestroMotor, pidGuardado } from './enginePid'
+import {
+  comandoMatarArbol, comandoMotoresDeEstaInstalacion, comandoTasklist, esNuestroMotor,
+  pidGuardado, pidsDeLaSalida,
+} from './enginePid'
 
 describe('pidfile del motor', () => {
   it('acepta un PID entero positivo y rechaza basura', () => {
@@ -36,5 +39,34 @@ describe('comandos', () => {
   it('filtran por PID e imagen, y matan el árbol', () => {
     expect(comandoTasklist(42)).toBe('tasklist /FI "PID eq 42" /FI "IMAGENAME eq pdf-engine.exe" /NH')
     expect(comandoMatarArbol(42)).toBe('taskkill /F /T /PID 42')
+  })
+})
+
+describe('el motor viejo que se quedó con el puerto', () => {
+  const RUTA = 'C:\\Users\\x\\AppData\\Local\\Programs\\PDF Master\\resources\\backend\\pdf-engine.exe'
+
+  it('filtra por la ruta del ejecutable, no por el nombre de imagen', () => {
+    // Barrer por nombre mataba también el motor de OTRA instalación; la ruta
+    // identifica exactamente los de esta.
+    const cmd = comandoMotoresDeEstaInstalacion(RUTA)
+    expect(cmd).toContain(RUTA)
+    expect(cmd).toContain("$_.Name -eq 'pdf-engine.exe'")
+  })
+
+  it('no mete comillas dobles dentro del -Command: cmd.exe parte el comando', () => {
+    const cmd = comandoMotoresDeEstaInstalacion(RUTA)
+    const dentro = cmd.slice(cmd.indexOf('-Command "') + '-Command "'.length, -1)
+    expect(dentro.includes('"')).toBe(false)
+  })
+
+  it('escapa las comillas simples de la ruta', () => {
+    expect(comandoMotoresDeEstaInstalacion("C:\\a'b\\pdf-engine.exe")).toContain("a''b")
+  })
+
+  it('lee los PID de la salida y no se suicida', () => {
+    expect(pidsDeLaSalida('1234\r\n5678\r\n')).toEqual([1234, 5678])
+    expect(pidsDeLaSalida('1234\n5678', [5678])).toEqual([1234])
+    expect(pidsDeLaSalida('')).toEqual([])
+    expect(pidsDeLaSalida('sin procesos')).toEqual([])
   })
 })

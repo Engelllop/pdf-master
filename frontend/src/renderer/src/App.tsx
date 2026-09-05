@@ -408,12 +408,17 @@ function App() {
         {!readingMode && !compareMode && <ThumbnailPanel />}
         <div className="relative flex-1 flex flex-col overflow-hidden">
           {!readingMode && <Toolbar />}
-          {compareMode ? (
-            <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
-          ) : (
-            continuousMode ? <ContinuousView /> : <Viewer />
-          )}
-          {!readingMode && !compareMode && <CalibrationBanner />}
+          {/* El aviso de calibración se ancla AQUÍ, al área del documento: colgado de
+              la columna entera, su `top-3` caía sobre la cinta y tapaba las
+              herramientas justo cuando hay que usarlas. */}
+          <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
+            {compareMode ? (
+              <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
+            ) : (
+              continuousMode ? <ContinuousView /> : <Viewer />
+            )}
+            {!readingMode && !compareMode && <CalibrationBanner />}
+          </div>
           <ProgressBar />
           {!readingMode && <StatusBar />}
         </div>

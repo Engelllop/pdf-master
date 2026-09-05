@@ -1,6 +1,6 @@
 {
   "name": "pdf-master",
-  "version": "1.20.0",
+  "version": "1.20.1",
   "description": "PDF Master - Editor Profesional de PDFs",
   "main": "./out/main/index.js",
   "author": "PDF Master Team",
@@ -22,7 +22,8 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "e2e": "node --test \"e2e/**/*.test.mjs\""
+    "e2e": "node --test \"e2e/**/*.test.mjs\"",
+    "harness": "npm run build && node design/harness/make.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",

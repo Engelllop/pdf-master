@@ -2,6 +2,7 @@ import {
   Children, Fragment, isValidElement, useCallback, useEffect, useLayoutEffect, useRef, useState,
   type ReactNode,
 } from 'react'
+import { createPortal } from 'react-dom'
 import { MoreHorizontal } from 'lucide-react'
 import Tooltip from '../Tooltip'
 
@@ -87,7 +88,12 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
   const botonRef = useRef<HTMLDivElement>(null)
   const medidorCompacto = useRef<HTMLDivElement>(null)
   const [reparto, setReparto] = useState<Reparto>({ compacto: false, corte: items.length })
-  const [abierto, setAbierto] = useState(false)
+  // El menú se dibuja en el body, no aquí dentro: la fila recorta (para que las
+  // herramientas no pisen la búsqueda) y el chrome es material, que crea contexto
+  // de apilamiento. Anclarlo al botón con coordenadas de pantalla lo saca de los dos
+  // problemas de una vez.
+  const [menu, setMenu] = useState<{ top: number; right: number } | null>(null)
+  const abierto = menu !== null
   const { compacto, corte } = reparto
 
   const medir = useCallback(() => {
@@ -117,19 +123,33 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
     if (!contenedor) return
     const ro = new ResizeObserver(() => medir())
     ro.observe(contenedor)
-    return () => ro.disconnect()
+    window.addEventListener('resize', medir)
+    return () => { ro.disconnect(); window.removeEventListener('resize', medir) }
   }, [medir])
 
   // Lo escondido deja de estarlo al ensancharse la ventana: un menú abierto que se
   // queda vacío es peor que uno que se cierra solo.
-  useEffect(() => { if (corte >= items.length) setAbierto(false) }, [corte, items.length])
+  useEffect(() => { if (corte >= items.length) setMenu(null) }, [corte, items.length])
 
   useEffect(() => {
     if (!abierto) return
-    const alPulsar = (e: KeyboardEvent) => { if (e.key === 'Escape') setAbierto(false) }
+    const alPulsar = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null) }
+    // Si la ventana se mueve o se redimensiona, el ancla deja de valer.
+    const cerrar = () => setMenu(null)
     window.addEventListener('keydown', alPulsar)
-    return () => window.removeEventListener('keydown', alPulsar)
+    window.addEventListener('resize', cerrar)
+    return () => {
+      window.removeEventListener('keydown', alPulsar)
+      window.removeEventListener('resize', cerrar)
+    }
   }, [abierto])
+
+  const alternarMenu = () => {
+    if (abierto) { setMenu(null); return }
+    const r = botonRef.current?.getBoundingClientRect()
+    if (!r) return
+    setMenu({ top: Math.round(r.bottom + 8), right: Math.round(window.innerWidth - r.right) })
+  }
 
   if (items.length === 0) return null
 
@@ -140,11 +160,14 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
   const hayOcultos = ocultos.length > 0
 
   return (
+    // Sin recorte a propósito: los desplegables de las familias (dibujar, medir,
+    // formas) se pintan DENTRO de la fila, y un `overflow-hidden` aquí los decapita.
+    // Que no se desborde es cosa de la medida, no de un recorte.
     <div ref={fila} data-ribbon-compacto={compacto || undefined}
       className="relative flex items-center gap-1 min-w-0 flex-1">
       {/* Copia de medida: siempre completa, nunca visible, fuera del orden de
           tabulación y del árbol de accesibilidad. */}
-      <div ref={medidor} aria-hidden="true" inert
+      <div ref={medidor} aria-hidden="true" inert data-ribbon-etiquetas
         className="fixed -left-[9999px] top-0 flex items-center gap-1 pointer-events-none invisible">
         {items.map((item, i) => <span key={i} className="inline-flex items-center">{item}</span>)}
       </div>
@@ -159,7 +182,7 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
       {hayOcultos && (
         <div ref={botonRef} className="relative shrink-0">
           <Tooltip content={`Más herramientas (${ocultos.length})`}>
-            <button onClick={() => setAbierto((v) => !v)} aria-label="Más herramientas"
+            <button onClick={alternarMenu} aria-label="Más herramientas"
               aria-haspopup="dialog" aria-expanded={abierto}
               className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${
                 abierto ? 'bg-accent text-on-accent' : 'text-muted hover:text-fg hover:bg-hover'
@@ -167,17 +190,19 @@ export default function RibbonOverflow({ clave, children }: { clave: string; chi
               <MoreHorizontal size={16} />
             </button>
           </Tooltip>
-          {abierto && (
+          {menu && createPortal(
             <>
-              <div className="fixed inset-0 z-dropdown" onClick={() => setAbierto(false)} />
+              <div className="fixed inset-0 z-overlay" onClick={() => setMenu(null)} />
               {/* Se cierra con cualquier clic dentro: cada herramienta es una acción
                   suelta y dejar el menú abierto encima del documento estorba. */}
-              <div role="group" aria-label="Más herramientas" onClick={() => setAbierto(false)} data-ribbon-menu
-                className="menu-pop absolute right-0 top-full mt-2 z-dropdown min-w-[200px] max-h-[60vh] overflow-y-auto
+              <div role="group" aria-label="Más herramientas" onClick={() => setMenu(null)} data-ribbon-etiquetas
+                style={{ top: menu.top, right: menu.right }}
+                className="menu-pop fixed z-overlay-menu min-w-[200px] max-h-[60vh] overflow-y-auto
                            flex flex-col items-stretch gap-0.5 p-1.5 rounded-token-lg bg-panel border border-border shadow-token-md">
                 {ocultos}
               </div>
-            </>
+            </>,
+            document.body,
           )}
         </div>
       )}
