@@ -320,7 +320,10 @@ export interface PdfState {
   countCategory: string
   setCountCategory: (category: string) => void
   countSymbol: CountSymbol
+  /** Diámetro de la burbuja de conteo, en puntos del PDF. */
+  countSize: number
   setCountSymbol: (symbol: CountSymbol) => void
+  setCountSize: (size: number) => void
   setAnnotationLineWidth: (width: number) => void
   setAnnotationLineStyle: (style: LineStyle) => void
   setAnnotationOpacity: (opacity: number) => void
@@ -473,6 +476,14 @@ const ONE_SHOT_TOOLS = ['image', 'measure_calibrate', 'croparea', 'redactarea']
 // marca, así que contar 50 piezas pedía elegir la herramienta 50 veces. Se queda
 // puesta y sale con Esc, como en Bluebeam.
 const ALWAYS_STICKY_TOOLS = ['count', 'eraser']
+
+/** Diámetro de la burbuja de conteo, en PUNTOS del PDF y no en píxeles de pantalla:
+ * una burbuja puesta al 400% tiene que salir del mismo tamaño al imprimir que una
+ * puesta al 50%. 18 pt era el valor fijo que estaba escrito a mano en el visor y en
+ * el motor; ahora es el valor por defecto. */
+export const COUNT_MIN = 8
+export const COUNT_MAX = 72
+export const COUNT_DEFAULT = 18
 
 function loadStrokePrefs(): Record<string, unknown> {
   try { return JSON.parse(localStorage.getItem(STROKE_KEY) || '{}') } catch { return {} }
@@ -640,6 +651,7 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   annotationColor: '#fbbf24',
   countCategory: 'General',
   countSymbol: 'circle',
+  countSize: typeof strokePrefs.countSize === 'number' ? strokePrefs.countSize as number : COUNT_DEFAULT,
   annotationLineWidth: typeof strokePrefs.lineWidth === 'number' ? strokePrefs.lineWidth as number : 2,
   annotationLineStyle: (['solid', 'dashed', 'dotted'].includes(strokePrefs.lineStyle as string) ? strokePrefs.lineStyle : 'solid') as LineStyle,
   annotationOpacity: typeof strokePrefs.opacity === 'number' ? strokePrefs.opacity as number : 1,
@@ -992,6 +1004,11 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   setAnnotationColor: (color) => set({ annotationColor: color }),
   setCountCategory: (category) => set({ countCategory: category }),
   setCountSymbol: (symbol) => set({ countSymbol: symbol }),
+  setCountSize: (size) => {
+    const v = Math.max(COUNT_MIN, Math.min(COUNT_MAX, Math.round(size)))
+    persistStrokePrefs({ countSize: v })
+    set({ countSize: v })
+  },
   setAnnotationLineWidth: (width) => {
     const v = Math.max(0.5, Math.min(20, width))
     persistStrokePrefs({ lineWidth: v })

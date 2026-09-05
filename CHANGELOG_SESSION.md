@@ -4,6 +4,17 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-09-04 — v1.22.0
+
+**El tamaño de la burbuja de conteo se elige.** Estaba escrito a mano en tres sitios (9 de radio en el visor, 9 en el motor): en un plano denso la burbuja tapaba lo que estabas contando, y en uno grande no se veía.
+
+- Control en la barra de propiedades con la herramienta de conteo activa: cuatro presets, deslizador y el valor a la vista. De paso, el conteo no estaba en ninguna lista de la barra, así que **el color de la categoría tampoco se podía tocar** desde ahí.
+- Va en **puntos del PDF**, no en píxeles de pantalla: una burbuja puesta al 400% sale igual que una puesta al 50%.
+- El tamaño viaja **en la marca** (`width`), no en el ajuste: cambiar el ajuste después no reescala lo ya contado.
+- Las marcas de antes no llevan tamaño y se siguen dibujando a 18 pt. Al reabrir, el diámetro se recupera del propio círculo **descontando el borde**: el rect de PyMuPDF lo incluye, así que sin eso una burbuja vieja crecía 2 pt en cada guardado.
+
+---
+
 ## Sesión 2026-09-04 — v1.21.0
 
 El chrome se queda sin color.

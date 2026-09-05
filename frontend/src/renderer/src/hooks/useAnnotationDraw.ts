@@ -34,7 +34,7 @@ export function useAnnotationDraw(
     'activeTool', 'annotationColor', 'addAnnotation', 'setActiveTool', 'releaseTool', 'showToast',
     'setMeasurementScale', 'textFontFamily', 'textFontSize',
     'annotationLineWidth', 'annotationLineStyle', 'annotationOpacity',
-    'annotationFillColor', 'annotationFillOpacity', 'countCategory', 'countSymbol',
+    'annotationFillColor', 'annotationFillOpacity', 'countCategory', 'countSymbol', 'countSize',
     'setAnnotations', 'setDocDirty', 'textStyle', 'annotationAuthor', 'defaultUnit',
   )
   const { activeTool, annotationColor, addAnnotation, setActiveTool, releaseTool, showToast, setMeasurementScale, textFontFamily, textFontSize } = store
@@ -149,6 +149,9 @@ export function useAnnotationDraw(
         color: annotationColor,
         text: store.countCategory || 'General',
         symbol: store.countSymbol,
+        // El tamaño viaja EN la marca, no en el ajuste: cambiar el ajuste después no
+        // puede reescalar lo ya contado en el plano.
+        width: store.countSize,
       })
       setDrawing(false)
       return true

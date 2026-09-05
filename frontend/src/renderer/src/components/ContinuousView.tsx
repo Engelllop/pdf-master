@@ -74,7 +74,7 @@ function ContinuousPageOverlay({
     'addAnnotation', 'selectAnnotation', 'selectAnnotations', 'selectedAnnotationIds',
     'selectedAnnotationId', 'updateAnnotation', 'updateAnnotationUndoable', 'deleteAnnotation',
     'releaseTool', 'selectedStamp', 'stampColor', 'stampSize', 'countCategory', 'moveAnnotations',
-    'countSymbol', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
+    'countSymbol', 'countSize', 'textFontSize', 'textFontFamily', 'textStyle', 'setTextStyle',
     'setTextFontFamily', 'setTextFontSize', 'setAnnotationColor', 'eraserRadius', 'eraserMode',
   )
   const pageRef = useRef<HTMLDivElement>(null)
@@ -345,6 +345,7 @@ function ContinuousPageOverlay({
         store.addAnnotation(doc.doc_id, {
           id: crypto.randomUUID(), type: 'count', page, x: pt.x, y: pt.y,
           color: store.annotationColor, text: store.countCategory || 'General', symbol: store.countSymbol,
+          width: store.countSize,
         })
       } else if (tool === 'stamp') {
         const size = store.stampSize

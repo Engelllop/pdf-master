@@ -1,5 +1,12 @@
 import { MessageSquare } from 'lucide-react'
-import { type Annotation } from '../../store/usePdfStore'
+import { COUNT_DEFAULT, type Annotation } from '../../store/usePdfStore'
+
+/** El diámetro viaja en `width` (puntos del PDF). Las marcas de antes de que el
+ * tamaño fuera elegible no lo llevan: para esas vale el valor que estaba escrito a
+ * mano, para que no cambien de tamaño al abrirlas con una versión nueva. */
+function radioConteo(ann: Annotation): number {
+  return (ann.width && ann.width > 0 ? ann.width : COUNT_DEFAULT) / 2
+}
 
 export interface PageDims {
   width: number
@@ -78,7 +85,7 @@ export function getAnnotationBounds(
     }
     case 'count': {
       const s = toScreen(ann.x, ann.y)
-      const r = 9 * sx
+      const r = radioConteo(ann) * sx
       return { x: s.x - r, y: s.y - r * (sy / sx), w: r * 2, h: r * 2 * (sy / sx) }
     }
     case 'image': {
@@ -436,7 +443,7 @@ export function renderAnnotation(
       )
     }
     case 'count': {
-      const r = 9 * sx
+      const r = radioConteo(ann) * sx
       const color = ann.color || '#ef4444'
       const sw = Math.max(1, r * 0.16)
       const inner = Math.max(1, r * 0.2)

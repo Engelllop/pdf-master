@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import PropertiesBar from './PropertiesBar'
-import { usePdfStore } from '../store/usePdfStore'
+import { COUNT_MAX, COUNT_MIN, usePdfStore } from '../store/usePdfStore'
 
 const initialState = usePdfStore.getState()
 
@@ -81,5 +81,37 @@ describe('edición de la anotación seleccionada', () => {
     render(<PropertiesBar />)
     expect(screen.getByLabelText('Ámbar')).toBeTruthy()
     expect(screen.queryByLabelText('Color #fbbf24')).toBeNull()
+  })
+})
+
+describe('tamaño de la burbuja de conteo', () => {
+  it('con la herramienta de conteo aparecen color y tamaño', () => {
+    // El conteo no estaba en ninguna lista de la barra, así que ni el color de la
+    // categoría ni el tamaño se podían tocar sin salir a otro sitio.
+    openDoc()
+    usePdfStore.setState({ activeTool: 'count' })
+    render(<PropertiesBar />)
+    expect(screen.getByText('Color')).toBeTruthy()
+    expect(screen.getByText('Tamaño')).toBeTruthy()
+    expect(screen.getByLabelText('Tamaño de la burbuja de conteo')).toBeTruthy()
+  })
+
+  it('el tamaño se elige en puntos del PDF y se guarda', () => {
+    openDoc()
+    usePdfStore.setState({ activeTool: 'count' })
+    render(<PropertiesBar />)
+    fireEvent.click(screen.getByLabelText('Burbuja de 36 puntos'))
+    expect(usePdfStore.getState().countSize).toBe(36)
+    // En PUNTOS, no en píxeles: una burbuja puesta al 400% tiene que salir igual
+    // que una puesta al 50%.
+    expect(screen.getByText('36 pt')).toBeTruthy()
+  })
+
+  it('el deslizador no deja salirse del rango', () => {
+    openDoc()
+    usePdfStore.getState().setCountSize(999)
+    expect(usePdfStore.getState().countSize).toBe(COUNT_MAX)
+    usePdfStore.getState().setCountSize(1)
+    expect(usePdfStore.getState().countSize).toBe(COUNT_MIN)
   })
 })

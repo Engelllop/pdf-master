@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { FONT_OPTIONS } from '../lib/fonts'
 import { ControlGroup as Group, FieldLabel as Label, SegmentedGroup as Segmented } from './panelUi'
+import { COUNT_MAX, COUNT_MIN } from '../store/usePdfStore'
 import { ERASER_SIZES, ERASER_MIN, ERASER_MAX, type EraserMode } from '../lib/eraser'
 import { BUILTIN_STAMPS, loadStamps, renderStampText } from '../lib/stamps'
 
@@ -42,6 +43,7 @@ export default function PropertiesBar() {
     'annotationFillColor', 'setAnnotationFillColor', 'annotationFillOpacity', 'setAnnotationFillOpacity',
     'textFontFamily', 'setTextFontFamily', 'textFontSize', 'setTextFontSize', 'textStyle', 'setTextStyle',
     'selectedStamp', 'setSelectedStamp', 'stampColor', 'setStampColor', 'stampSize', 'setStampSize',
+    'countSize', 'setCountSize',
     'annotationAuthor', 'eraserRadius', 'setEraserRadius', 'eraserMode', 'setEraserMode',
   )
   const { activeTool, activeDocId, docs } = store
@@ -52,6 +54,7 @@ export default function PropertiesBar() {
   const showStroke = !!activeTool && STROKE_TOOLS.includes(activeTool)
   const showColor = isTextCtx || showStroke || activeTool === 'note' || (!!activeTool && COLOR_TOOLS.includes(activeTool))
   const isStamp = activeTool === 'stamp'
+  const isCount = activeTool === 'count'
   const fillCapable = !!activeTool && FILLABLE.includes(activeTool)
 
   // El borrador no tiene color ni grosor: modo y tamaño de pincel.
@@ -102,7 +105,7 @@ export default function PropertiesBar() {
   }
 
   // Defaults de herramienta. La marca seleccionada se edita en la barra flotante.
-  if (!activeDoc || selAnn || (!showColor && !showStroke && !isTextCtx && !isStamp)) return null
+  if (!activeDoc || selAnn || (!showColor && !showStroke && !isTextCtx && !isStamp && !isCount)) return null
 
   const lineWidthVal = store.annotationLineWidth
   const lineStyleVal: LineStyle = store.annotationLineStyle
@@ -113,7 +116,7 @@ export default function PropertiesBar() {
 
   return (
     <div className="min-h-10 border-t border-border bg-toolbar flex items-center gap-2 px-3 py-1.5 flex-wrap text-fg">
-      {(showColor || isStamp) && (
+      {(showColor || isStamp || isCount) && (
         <Group>
           <Label>Color</Label>
           {COLORS.map((c) => {
@@ -128,6 +131,27 @@ export default function PropertiesBar() {
           <input type="color" value={isStamp ? store.stampColor : colorVal}
             onChange={(e) => (isStamp ? store.setStampColor(e.target.value) : store.setAnnotationColor(e.target.value))}
             className="w-6 h-6 rounded-token-sm cursor-pointer border border-border p-0 bg-transparent" title="Color personalizado" aria-label="Color personalizado" />
+        </Group>
+      )}
+
+      {isCount && (
+        <Group>
+          <Label>Tamaño</Label>
+          {[12, 18, 26, 36].map((d) => (
+            <button key={d} onClick={() => store.setCountSize(d)}
+              title={`${d} pt`} aria-label={`Burbuja de ${d} puntos`} aria-pressed={store.countSize === d}
+              className={`w-7 h-7 rounded-token-sm flex items-center justify-center transition-colors duration-fast ease-token ${
+                store.countSize === d ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'
+              }`}>
+              <span className="rounded-full bg-current block" style={{ width: d / 3.2, height: d / 3.2 }} />
+            </button>
+          ))}
+          <input type="range" min={COUNT_MIN} max={COUNT_MAX} step={1} value={store.countSize}
+            onChange={(e) => store.setCountSize(parseInt(e.target.value))}
+            aria-label="Tamaño de la burbuja de conteo" className="w-24" />
+          {/* En PUNTOS del PDF, no en píxeles: una burbuja puesta al 400% tiene que
+              salir del mismo tamaño al imprimir que una puesta al 50%. */}
+          <span className="text-micro text-muted tabular w-8 text-right">{store.countSize} pt</span>
         </Group>
       )}
 

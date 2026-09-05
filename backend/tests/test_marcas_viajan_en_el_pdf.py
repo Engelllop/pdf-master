@@ -162,3 +162,28 @@ class TestTextoVisibleFueraDeLatin1:
         finally:
             client.post(f"/pdf/close/{nuevo}")
         assert [a["text"] for a in anns] == [self.TEXTO]
+
+class TestTamanoDeLaBurbujaDeConteo:
+    """El diametro lo elige el usuario y viaja en `width`, en puntos del PDF: una
+    burbuja puesta al 400% tiene que salir igual que una puesta al 50%."""
+
+    def test_el_tamano_elegido_sobrevive_a_guardar_y_reabrir(self, client, open_doc, tmp_path):
+        marcas = [
+            {"id": "c-chica", "type": "count", "page": 0, "x": 60, "y": 100,
+             "color": "#ef4444", "text": "Luminarias", "symbol": "circle", "width": 12},
+            {"id": "c-grande", "type": "count", "page": 0, "x": 160, "y": 100,
+             "color": "#ef4444", "text": "Luminarias", "symbol": "circle", "width": 36},
+        ]
+        _, got = _guardar_y_reabrir(client, open_doc, tmp_path, marcas, "conteo.pdf")
+        anchos = sorted(round(a["width"]) for a in got if a["type"] == "count")
+        assert anchos == [12, 36], anchos
+
+    def test_una_marca_vieja_sin_tamano_conserva_el_de_siempre(self, client, open_doc, tmp_path):
+        """Las marcas hechas antes de que el tamano fuera elegible no llevan `width`:
+        tienen que seguir midiendo 18 pt y no cambiar de tamano al reabrirlas."""
+        marcas = [{"id": "c-vieja", "type": "count", "page": 0, "x": 60, "y": 100,
+                   "color": "#ef4444", "text": "General", "symbol": "circle"}]
+        _, got = _guardar_y_reabrir(client, open_doc, tmp_path, marcas, "conteo-viejo.pdf")
+        conteos = [a for a in got if a["type"] == "count"]
+        assert len(conteos) == 1
+        assert round(conteos[0]["width"]) == 18

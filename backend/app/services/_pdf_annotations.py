@@ -250,6 +250,14 @@ class AnnotationsMixin:
                             author=info.get('title') or None, status=pm.get('status'),
                             layer=pm.get('layer') or None,
                             symbol=pm.get('symbol'),
+                            # El diametro se recupera del propio circulo: sin esto,
+                            # guardar y reabrir devolvia todas las burbujas al tamano
+                            # por defecto.
+                            # El rect del circulo incluye el borde (PyMuPDF lo
+                            # expande w/2 por lado), asi que sin descontarlo una
+                            # burbuja vieja crecia 2 pt en CADA guardado.
+                            width=(float(pm['width']) if pm.get('width')
+                                   else max(1.0, float(r.width) - float(pm.get('lineWidth') or 2))),
                             createdAt=pm.get('createdAt'),
                         )
                         continue
@@ -776,7 +784,10 @@ class AnnotationsMixin:
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':
-                r = 9.0
+                # El diametro viaja en `width` (puntos del PDF). Las marcas de antes
+                # de que el tamano fuera elegible no lo llevan: para esas vale el 18
+                # que estaba escrito a mano, para que no cambien de tamano al abrirlas.
+                r = (ann.width if ann.width and ann.width > 0 else 18.0) / 2
                 annot = page.add_circle_annot(fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r))
                 self._style_annot(annot, ann, color, color)
                 self._stamp_markup(annot, ann)
