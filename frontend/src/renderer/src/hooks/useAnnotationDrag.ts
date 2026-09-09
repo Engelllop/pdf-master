@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { type Annotation } from '../store/usePdfStore'
+import { usePdfStore, type Annotation } from '../store/usePdfStore'
 import { geometriaRedimensionada, type ResizeCorner } from '../lib/resizeGeometry'
 import { useStoreSlice } from './useStoreSlice'
 import { localPointFromClient } from '../lib/svgPoint'
@@ -16,11 +16,13 @@ export function useAnnotationDrag(
   getAnnotationBounds: (ann: Annotation, pageData: { width: number; height: number; originalWidth: number; originalHeight: number }, toScreen: (x: number, y: number) => { x: number; y: number }) => { x: number; y: number; w: number; h: number } | null,
 ) {
   const store = useStoreSlice(
-    'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotation', 'updateAnnotation',
-    'commitAnnotationGesture',
-    'moveAnnotations', 'activeTool', 'docs', 'getAnnotationsForPage',
+    'selectedAnnotationId', 'selectedAnnotationIds', 'selectAnnotation',
+    'activeTool', 'docs', 'getAnnotationsForPage',
   )
-  const { selectAnnotation, updateAnnotation, moveAnnotations, commitAnnotationGesture } = store
+  // Las que MUTAN durante el gesto se piden por `getState()` dentro del handler, no
+  // acá: si vienen del slice, viajan en el closure y arrastran con ellas el `docs`
+  // viejo del render en que arrancó el arrastre.
+  const { selectAnnotation } = store
 
   const [draggingAnn, setDraggingAnn] = useState<{ id: string; offsetX: number; offsetY: number } | null>(null)
   // Arrastre en grupo: se aplican deltas incrementales a todas las marcas
@@ -38,37 +40,51 @@ export function useAnnotationDrag(
     ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage)
     : []
 
+  // Los listeners de gesto viven en `window` y el efecto solo se re-suscribe al
+  // empezar y al terminar el arrastre, así que TODO lo que lean tiene que venir de
+  // una fuente viva: el store por `getState()` y los props por este ref.
+  //
+  // Leyéndolos del closure —como estaba— `ann.x` se quedaba clavada en la posición
+  // del mousedown durante todo el gesto, y `moveAnnotations` aplica DELTAS: el delta
+  // se acumulaba y la marca se escapaba del cursor cuadráticamente (cinco pasos de
+  // 50 px la dejaban 500 px más allá). Los dos tests que había hacían UN solo
+  // mousemove, que es el único caso en que el bug no se ve.
+  const vivo = useRef({ activeDocId, pageData })
+  vivo.current = { activeDocId, pageData }
+
   // Window-level annotation drag listeners
   useEffect(() => {
     if (!draggingAnn) return
-    // Foto de las marcas al empezar el gesto: las deps del efecto son [draggingAnn],
-    // así que `store.docs` es el del render en que arrancó el arrastre.
-    const antes = store.docs.find((d) => d.doc_id === activeDocId)?.annotations ?? null
+    // Foto de las marcas al empezar el gesto, para el undo de un gesto entero.
+    const docIdAlEmpezar = vivo.current.activeDocId
+    const antes = usePdfStore.getState().docs.find((d) => d.doc_id === docIdAlEmpezar)?.annotations ?? null
     const handleMove = (e: MouseEvent) => {
-      if (!svgRef.current || !pageData) return
-      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
+      const { activeDocId: docId, pageData: pd } = vivo.current
+      if (!svgRef.current || !pd) return
+      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pd.width)
       const newX = svgX - draggingAnn.offsetX
       const newY = svgY - draggingAnn.offsetY
 
-      const pdfX = newX * (pageData.originalWidth / pageData.width)
-      const pdfY = newY * (pageData.originalHeight / pageData.height)
+      const pdfX = newX * (pd.originalWidth / pd.width)
+      const pdfY = newY * (pd.originalHeight / pd.height)
 
-      const doc = store.docs.find((d) => d.doc_id === activeDocId)
+      const estado = usePdfStore.getState()
+      const doc = estado.docs.find((d) => d.doc_id === docId)
       if (!doc) return
       const ann = doc.annotations.find((a) => a.id === draggingAnn.id)
       if (!ann) return
 
       const group = groupDragRef.current
       if (group) {
-        moveAnnotations(doc.doc_id, group.ids, pdfX - group.lastX, pdfY - group.lastY)
+        estado.moveAnnotations(doc.doc_id, group.ids, pdfX - group.lastX, pdfY - group.lastY)
         group.lastX = pdfX
         group.lastY = pdfY
         return
       }
-      moveAnnotations(doc.doc_id, [draggingAnn.id], pdfX - ann.x, pdfY - ann.y)
+      estado.moveAnnotations(doc.doc_id, [draggingAnn.id], pdfX - ann.x, pdfY - ann.y)
     }
     const handleUp = () => {
-      if (antes && activeDocId) commitAnnotationGesture(activeDocId, antes)
+      if (antes && docIdAlEmpezar) usePdfStore.getState().commitAnnotationGesture(docIdAlEmpezar, antes)
       setDraggingAnn(null)
       groupDragRef.current = null
     }
@@ -78,24 +94,36 @@ export function useAnnotationDrag(
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [draggingAnn])
+  }, [draggingAnn, svgRef])
 
   // Window-level annotation resize listeners (8-directional)
+  //
+  // A diferencia del arrastre, el redimensionado NO puede leer la marca viva: parte de
+  // una caja de origen (`start*`) y un delta absoluto desde el mousedown, y
+  // `geometriaRedimensionada` escala los `points` con un factor ACUMULADO respecto de
+  // esa caja. Con los puntos ya escalados del paso anterior, el factor se aplica otra
+  // vez encima y el trazo se dispara (un +100 px en cuatro pasos llevaba un punto de
+  // 300 a 756). Así que aquí la foto del arranque es deliberada, y se toma explícita
+  // en vez de depender de que el closure quede viejo.
   useEffect(() => {
     if (!resizingAnn) return
-    const antes = store.docs.find((d) => d.doc_id === activeDocId)?.annotations ?? null
+    const docIdAlEmpezar = vivo.current.activeDocId
+    const annsAlEmpezar = usePdfStore.getState().docs.find((d) => d.doc_id === docIdAlEmpezar)?.annotations ?? null
+    const annAlEmpezar = annsAlEmpezar?.find((a) => a.id === resizingAnn.id) ?? null
     const handleMove = (e: MouseEvent) => {
-      if (!svgRef.current || !pageData) return
-      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pageData.width)
+      const { activeDocId: docId, pageData: pd } = vivo.current
+      if (!svgRef.current || !pd || !annAlEmpezar) return
+      const { x: svgX, y: svgY } = localPointFromClient(svgRef.current, e.clientX, e.clientY, pd.width)
       const deltaX = svgX - resizingAnn.startX
       const deltaY = svgY - resizingAnn.startY
 
-      const doc = store.docs.find((d) => d.doc_id === activeDocId)
-      if (!doc) return
-      const ann = doc.annotations.find((a) => a.id === resizingAnn.id)
-      if (!ann) return
-      const scaleX = pageData.originalWidth / pageData.width
-      const scaleY = pageData.originalHeight / pageData.height
+      const estado = usePdfStore.getState()
+      const doc = estado.docs.find((d) => d.doc_id === docId)
+      // La marca puede haber desaparecido a mitad del gesto (Ctrl+Z en la otra mano):
+      // se comprueba contra el estado vivo, pero la geometría sale de la foto.
+      if (!doc || !doc.annotations.some((a) => a.id === resizingAnn.id)) return
+      const scaleX = pd.originalWidth / pd.width
+      const scaleY = pd.originalHeight / pd.height
       // Los valores de arranque llegan en px del bitmap (los mide SelectionOverlay sobre
       // el SVG) y aquí se escribe en puntos PDF: sumarlos a `dx` sin convertir hacía que
       // la marca saltara al tamaño del bitmap en cuanto el rasterizado no era 1:1 — que
@@ -106,13 +134,13 @@ export function useAnnotationDrag(
         w: resizingAnn.startW * scaleX,
         h: resizingAnn.startH * scaleY,
       }
-      updateAnnotation(
+      estado.updateAnnotation(
         doc.doc_id, resizingAnn.id,
-        geometriaRedimensionada(ann, resizingAnn.corner, deltaX * scaleX, deltaY * scaleY, inicio),
+        geometriaRedimensionada(annAlEmpezar, resizingAnn.corner, deltaX * scaleX, deltaY * scaleY, inicio),
       )
     }
     const handleUp = () => {
-      if (antes && activeDocId) commitAnnotationGesture(activeDocId, antes)
+      if (annsAlEmpezar && docIdAlEmpezar) usePdfStore.getState().commitAnnotationGesture(docIdAlEmpezar, annsAlEmpezar)
       setResizingAnn(null)
     }
     window.addEventListener('mousemove', handleMove)
@@ -121,7 +149,7 @@ export function useAnnotationDrag(
       window.removeEventListener('mousemove', handleMove)
       window.removeEventListener('mouseup', handleUp)
     }
-  }, [resizingAnn])
+  }, [resizingAnn, svgRef])
 
   const handleMouseDown = (_e: React.MouseEvent, svgPoint: { x: number; y: number }) => {
     if (!activeDoc || !pageData) return false

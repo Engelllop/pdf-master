@@ -66,6 +66,48 @@ describe('redimensionado de marcas', () => {
     expect(annActual().height).toBeCloseTo(100, 5)
   })
 
+  it('un trazo redimensionado en varios pasos escala una sola vez, no acumulando', () => {
+    // `geometriaRedimensionada` escala los `points` con un factor ACUMULADO desde la
+    // caja de origen (`inicio`), asi que tiene que recibir los puntos ORIGINALES. Si
+    // en cada mousemove se le pasan los ya escalados, el trazo se dispara.
+    usePdfStore.setState({ docs: [] })
+    usePdfStore.getState().addDoc({
+      doc_id: 'd1', file_path: 'C:/planos/a.pdf', page_count: 1,
+      title: null, author: null, subject: null,
+      page_sizes: [{ page_num: 0, width: 1000, height: 1000 }],
+    })
+    usePdfStore.getState().addAnnotation('d1', {
+      id: 'p1', type: 'draw', page: 0, x: 100, y: 100, color: '#ff0000',
+      points: [{ x: 100, y: 100 }, { x: 200, y: 100 }, { x: 200, y: 200 }],
+    })
+    usePdfStore.getState().selectAnnotation('d1', 'p1')
+
+    const el = document.createElement('div')
+    el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 }) as DOMRect
+    const ref = { current: el as unknown as SVGSVGElement }
+    const { result } = renderHook(() =>
+      useAnnotationDrag(ref, 'd1', pageData, toScreen, getAnnotationBounds))
+
+    // Tirador 'e' en el borde derecho (x=200), caja original 100x100 desde (100,100).
+    act(() => {
+      result.current.setResizingAnn({
+        id: 'p1', corner: 'e',
+        startX: 200, startY: 150,
+        startW: 100, startH: 100,
+        startBoundsX: 100, startBoundsY: 100,
+      })
+    })
+
+    // Se arrastra hasta +100 px en cuatro pasos: el ancho final tiene que ser 200.
+    for (const x of [225, 250, 275, 300]) {
+      act(() => { window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 150 })) })
+    }
+
+    const puntos = usePdfStore.getState().docs[0].annotations[0].points!
+    // fx = 200/100 = 2 -> el punto que estaba a 100 del borde izquierdo va a 200.
+    expect(puntos.map((q) => q.x)).toEqual([100, 300, 300])
+  })
+
   it('arrastrar el borde izquierdo mueve la esquina y ajusta el ancho', () => {
     const el = document.createElement('div')
     el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 2000, height: 2000 }) as DOMRect
@@ -108,6 +150,31 @@ describe('arrastre de marcas', () => {
     // Agarrada 50 pt adentro, la esquina tiene que quedar en 200-50 = 150.
     expect(annActual().x).toBeCloseTo(150, 5)
     expect(annActual().y).toBeCloseTo(150, 5)
+  })
+
+  it('varios mousemove: la marca queda donde esta el cursor, no mas alla', () => {
+    // Los dos tests de arriba hacen UN solo mousemove. Un arrastre real son decenas,
+    // y `moveAnnotations` aplica DELTAS: si el efecto lee la posicion vieja de la
+    // marca en cada paso, el delta se acumula y la marca se escapa del cursor.
+    const ref = { current: (() => {
+      const el = document.createElement('div')
+      el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 }) as DOMRect
+      return el as unknown as SVGSVGElement
+    })() }
+    const { result } = renderHook(() =>
+      useAnnotationDrag(ref, 'd1', pageData, toScreen, getAnnotationBounds))
+
+    // Agarrada 50 pt adentro (la esquina esta en 100).
+    act(() => { result.current.handleMouseDown({} as React.MouseEvent, { x: 150, y: 150 }) })
+
+    for (const x of [200, 250, 300, 350, 400]) {
+      act(() => { window.dispatchEvent(new MouseEvent('mousemove', { clientX: x, clientY: 150 })) })
+    }
+
+    // Cursor en 400, agarrada 50 adentro -> la esquina va en 350. Y en 350 se queda,
+    // sin importar en cuantos pasos se llego.
+    expect(annActual().x).toBeCloseTo(350, 5)
+    expect(annActual().y).toBeCloseTo(100, 5)
   })
 
   it('sin escalado, arrastrar sigue funcionando igual', () => {
