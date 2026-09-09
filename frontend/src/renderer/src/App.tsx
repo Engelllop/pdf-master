@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, X } from 'lucide-react'
 import { usePdfStore } from './store/usePdfStore'
 import { useStoreSlice } from './hooks/useStoreSlice'
@@ -8,12 +8,6 @@ import ThumbnailPanel from './components/ThumbnailPanel'
 import Viewer from './components/Viewer'
 import StatusBar from './components/StatusBar'
 import Toasts from './components/Toasts'
-import ComparisonView from './components/ComparisonView'
-import PresentationView from './components/PresentationView'
-import ContinuousView from './components/ContinuousView'
-import ShortcutsModal from './components/ShortcutsModal'
-import SettingsModal from './components/SettingsModal'
-import AIPanel from './components/AIPanel'
 import { useFormModal } from './components/FormModal'
 import { registerPromptHandler } from './lib/uiPrompt'
 import { reopenDeadDoc } from './lib/openDocument'
@@ -23,12 +17,29 @@ import { updateRecentMeta } from './lib/recents'
 import { TOOL_KEYS } from './lib/tools'
 import CalibrationBanner from './components/CalibrationBanner'
 import ProgressBar from './components/ProgressBar'
-import CommandPalette from './components/CommandPalette'
-import StampSignatureManager from './components/StampSignatureManager'
-import PageOrganizer from './components/PageOrganizer'
 import UnsavedDialog from './components/UnsavedDialog'
 
 import { apiFetch } from './lib/api'
+
+/**
+ * Vistas y paneles que NO existen al arrancar: hasta que el usuario compara, entra en
+ * continuo, presenta, abre el asistente o saca un modal, su código no hace falta. Con
+ * `lazy` salen del chunk de arranque —que era un solo archivo de 2,2 MB— y se traen
+ * del disco en el momento; el `import()` de un chunk local son milisegundos.
+ *
+ * Lo que se monta en el primer pintado (TopBar, Toolbar, ThumbnailPanel, Viewer,
+ * StatusBar) se queda estático a propósito: diferirlo solo cambiaría parsear por
+ * parpadear.
+ */
+const ComparisonView = lazy(() => import('./components/ComparisonView'))
+const ContinuousView = lazy(() => import('./components/ContinuousView'))
+const PresentationView = lazy(() => import('./components/PresentationView'))
+const AIPanel = lazy(() => import('./components/AIPanel'))
+const ShortcutsModal = lazy(() => import('./components/ShortcutsModal'))
+const SettingsModal = lazy(() => import('./components/SettingsModal'))
+const CommandPalette = lazy(() => import('./components/CommandPalette'))
+const StampSignatureManager = lazy(() => import('./components/StampSignatureManager'))
+const PageOrganizer = lazy(() => import('./components/PageOrganizer'))
 
 function App() {
   const store = useStoreSlice(
@@ -48,6 +59,12 @@ function App() {
   const { askForm, askConfirm, formModal } = useFormModal()
 
   useEffect(() => { registerPromptHandler({ askForm, askConfirm }) }, [askForm, askConfirm])
+
+  // El chunk de pdfjs (~850 kB) se pide en cuanto la interfaz está montada, no cuando
+  // ya hay un documento: así se lee y se compila mientras Chromium y React siguen
+  // ocupados, en vez de en serie con el `/pdf/raw` y con el usuario esperando la
+  // página. Va en un hueco de inactividad para no competir con el primer pintado, con
+  // tope de 300 ms para que un arranque ocupado no lo posponga indefinidamente.
 
   useEffect(() => {
     const onOpen = (e: Event) => {
@@ -412,17 +429,26 @@ function App() {
               la columna entera, su `top-3` caía sobre la cinta y tapaba las
               herramientas justo cuando hay que usarlas. */}
           <div className="relative flex-1 flex flex-col min-h-0 overflow-hidden">
-            {compareMode ? (
-              <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
-            ) : (
-              continuousMode ? <ContinuousView /> : <Viewer />
-            )}
+            {/* `Viewer` es estático, así que suspender aquí solo pasa al cambiar a
+                comparar o a continuo. El hueco conserva el tamaño del área para que
+                la interfaz no salte mientras llega el chunk. */}
+            <Suspense fallback={<div className="flex-1" />}>
+              {compareMode ? (
+                <div className="flex-1 flex overflow-hidden"><ComparisonView /></div>
+              ) : (
+                continuousMode ? <ContinuousView /> : <Viewer />
+              )}
+            </Suspense>
             {!readingMode && !compareMode && <CalibrationBanner />}
           </div>
           <ProgressBar />
           {!readingMode && <StatusBar />}
         </div>
-        {!readingMode && aiOpen && <AIPanel onClose={() => setAiOpen(false)} />}
+        {!readingMode && aiOpen && (
+          <Suspense fallback={<div className="w-[360px] border-l border-border-strong bg-panel shrink-0" />}>
+            <AIPanel onClose={() => setAiOpen(false)} />
+          </Suspense>
+        )}
       </div>
       <Toasts />
       <UnsavedDialog />
@@ -439,12 +465,14 @@ function App() {
           <X size={16} />
         </button>
       )}
-      {presentationMode && <PresentationView />}
-      {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
-      {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
-      {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
-      {showStamps && <StampSignatureManager onClose={() => setShowStamps(false)} />}
-      {showOrganizer && <PageOrganizer onClose={() => setShowOrganizer(false)} />}
+      <Suspense fallback={null}>
+        {presentationMode && <PresentationView />}
+        {showShortcuts && <ShortcutsModal onClose={() => setShowShortcuts(false)} />}
+        {showSettings && <SettingsModal onClose={() => setShowSettings(false)} />}
+        {showPalette && <CommandPalette onClose={() => setShowPalette(false)} />}
+        {showStamps && <StampSignatureManager onClose={() => setShowStamps(false)} />}
+        {showOrganizer && <PageOrganizer onClose={() => setShowOrganizer(false)} />}
+      </Suspense>
     </div>
   )
 }

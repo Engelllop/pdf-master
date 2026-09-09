@@ -1,17 +1,43 @@
-import * as pdfjsLib from 'pdfjs-dist'
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl
-
 import { apiFetch } from './api'
+
+/**
+ * pdfjs entra por `import()`, no estático: eran 833 kB de los 2,2 MB del chunk del
+ * renderer (38 %), y hasta que hay un documento abierto no se usa para nada. Con la
+ * carga en diferido, la ventana pinta su interfaz sin haber parseado ni compilado
+ * eso; cuando se abre un PDF, el chunk se pide en paralelo con el arranque del motor,
+ * que tarda muchísimo más.
+ *
+ * Todo lo que se exporta de este módulo ya era `async`, así que el `await` no cambia
+ * ninguna firma. `workerSrc` se pone al resolverse, no al importar: ponerlo antes no
+ * serviría de nada porque el objeto todavía no existe.
+ */
+type PdfjsModule = typeof import('pdfjs-dist')
+let cargando: Promise<PdfjsModule> | null = null
+
+function pdfjs(): Promise<PdfjsModule> {
+  if (!cargando) {
+    cargando = import('pdfjs-dist').then((mod) => {
+      mod.GlobalWorkerOptions.workerSrc = workerUrl
+      return mod
+    })
+    // Un fallo de red/disco al traer el chunk no puede dejarlo cacheado como roto:
+    // sin esto, la app se queda sin poder rasterizar nada hasta reiniciarla.
+    cargando.catch(() => { cargando = null })
+  }
+  return cargando
+}
+
 
 // Caché de documentos PDF.js por `${docId}:${version}`. Una versión nueva (rotar,
 // borrar página, etc.) invalida la anterior y se destruye para liberar memoria.
 const MAX_DOCS = 3
 
 interface DocEntry {
-  task: pdfjsLib.PDFDocumentLoadingTask | null
-  promise: Promise<pdfjsLib.PDFDocumentProxy>
+  task: PDFDocumentLoadingTask | null
+  promise: Promise<PDFDocumentProxy>
   destroyed: boolean
 }
 
@@ -30,7 +56,7 @@ function destroyEntry(key: string): void {
   if (entry.task) entry.task.destroy().catch(() => {})
 }
 
-export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib.PDFDocumentProxy> {
+export function getPdfDocument(docId: string, version: number): Promise<PDFDocumentProxy> {
   const key = `${docId}:${version}`
   const existing = docCache.get(key)
   if (existing) {
@@ -47,12 +73,14 @@ export function getPdfDocument(docId: string, version: number): Promise<pdfjsLib
     if (k.startsWith(`${docId}:`)) destroyEntry(k)
   }
 
-  const entry: DocEntry = { task: null, promise: null as unknown as Promise<pdfjsLib.PDFDocumentProxy>, destroyed: false }
+  const entry: DocEntry = { task: null, promise: null as unknown as Promise<PDFDocumentProxy>, destroyed: false }
   entry.promise = (async () => {
-    const res = await apiFetch(`/pdf/raw/${docId}?v=${version}`)
+    // El chunk de pdfjs y los bytes del PDF se piden a la vez: en serie, el primer
+    // documento sumaba la descarga del chunk al `/pdf/raw`.
+    const [{ getDocument }, res] = await Promise.all([pdfjs(), apiFetch(`/pdf/raw/${docId}?v=${version}`)])
     if (!res.ok) throw new Error(`HTTP ${res.status} en /pdf/raw`)
     const data = await res.arrayBuffer()
-    const task = pdfjsLib.getDocument({ data })
+    const task = getDocument({ data })
     if (entry.destroyed) {
       task.destroy().catch(() => {})
       throw new DOMException('documento descartado', 'AbortError')

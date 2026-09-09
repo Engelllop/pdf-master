@@ -32,6 +32,10 @@ export default defineConfig({
     plugins: [react()],
     root: resolve(__dirname, 'src/renderer'),
     build: {
+      // Solo bajo demanda: el sourcemap del renderer son varios MB y no tiene nada
+      // que hacer dentro del instalador. `npm run analizar:bundle` lo necesita para
+      // atribuir los bytes del chunk a cada fuente.
+      sourcemap: !!process.env.ANALIZAR_BUNDLE,
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'src/renderer/index.html')
