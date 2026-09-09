@@ -1,5 +1,6 @@
 import { extname, isAbsolute } from 'path'
 import { statSync } from 'fs'
+import { fileURLToPath } from 'url'
 
 const MAX_IMAGE_BYTES = 50 * 1024 * 1024
 
@@ -29,6 +30,25 @@ export function rutaCarpetaAbrible(value: unknown): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * Ruta del PDF que el usuario soltó sobre la ventana, o null si eso no es un PDF
+ * local. El `will-navigate` la traducía a mano (`replace('file:///','')` +
+ * `decodeURI`), y eso deja fuera las rutas UNC (`file://servidor/planos/x.pdf`, que
+ * quedaba como `servidor\planos\x.pdf`) y revienta con un `#` en el nombre, que
+ * `decodeURI` no decodifica: «Lámina #3.pdf» no abría nunca.
+ */
+export function rutaDePdfArrastrado(url: unknown): string | null {
+  if (typeof url !== 'string' || !url.toLowerCase().startsWith('file://')) return null
+  let ruta: string
+  try {
+    ruta = fileURLToPath(url)
+  } catch {
+    return null // no es una file:// que apunte a una ruta de este sistema
+  }
+  if (extname(ruta).toLowerCase() !== '.pdf') return null
+  return rutaLocalAbsoluta(ruta)
 }
 
 export function rutaImagenLegible(value: unknown, allowedExts: Set<string>): string | null {

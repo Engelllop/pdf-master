@@ -10,8 +10,9 @@ import { dirtyWindowCount, forgetWindow, isWindowDirty, setWindowDirty } from '.
 import { createAiStreamParser } from './aiStream'
 import { avisoActualizacionLista, respuestaEsReiniciar } from './updatePrompt'
 import { debeBorrarse, esTempDeImpresion } from './tempSweep'
-import { rutaCarpetaAbrible, rutaImagenLegible, rutaParaMostrarEnCarpeta } from './safePaths'
+import { rutaCarpetaAbrible, rutaDePdfArrastrado, rutaImagenLegible, rutaParaMostrarEnCarpeta } from './safePaths'
 import { comandoMatarArbol, comandoMotoresDeEstaInstalacion, comandoTasklist, esNuestroMotor, pidGuardado, pidsDeLaSalida } from './enginePid'
+import { PUERTOS_A_PROBAR, PUERTO_PREFERIDO, primerPuertoLibre, rangoDePuertos } from './enginePort'
 import { colaDeTexto, construirDiagnostico, nombreArchivoDiagnostico } from './diagnostics'
 
 // GPU & performance flags
@@ -24,15 +25,24 @@ app.commandLine.appendSwitch('disable-software-rasterizer')
 // reenvía a V8.
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096')
 
-const API_BASE = 'http://localhost:8745'
 const API_TOKEN = randomBytes(24).toString('hex')
-const backendEnv = { ...process.env, PDFMASTER_API_TOKEN: API_TOKEN }
+
+// El puerto ya no es una constante: si el 8745 lo tiene un programa ajeno, el motor
+// no podía bindear y la app abría sin motor con una sola línea en el log. Se elige
+// en `elegirPuertoDelMotor()` antes de spawnearlo y viaja al renderer por IPC.
+let enginePort: number = PUERTO_PREFERIDO
+const apiBase = (): string => `http://localhost:${enginePort}`
+const backendEnv = (): NodeJS.ProcessEnv => ({
+  ...process.env,
+  PDFMASTER_API_TOKEN: API_TOKEN,
+  PDFMASTER_PORT: String(enginePort),
+})
 
 /** El motor exige el token en todo lo que no sea /health. El renderer lo pone en
  * `apiFetch`; el main tiene que ponerlo igual o recibe 403 (empaquetado siempre,
  * porque `dev.ps1` arranca el motor sin token y ahí el middleware no aplica). */
 function engineFetch(path: string, init?: RequestInit): Promise<Response> {
-  return fetch(`${API_BASE}${path}`, {
+  return fetch(`${apiBase()}${path}`, {
     ...init,
     headers: { ...(init?.headers as Record<string, string> | undefined), 'x-pdfmaster-token': API_TOKEN },
   })
@@ -159,7 +169,8 @@ async function liberarPuertoDeMotoresViejos(): Promise<void> {
     const salida = execSync(comandoMotoresDeEstaInstalacion(rutaDelMotor()), { windowsHide: true }).toString()
     const pids = pidsDeLaSalida(salida, backendProcess?.pid ? [backendProcess.pid] : [])
     if (pids.length === 0) {
-      safeLog('ERROR', '[Main] El 8745 lo tiene un motor que NO es de esta instalacion: no se toca.')
+      // No se toca lo ajeno: el motor se muda de puerto en `elegirPuertoDelMotor`.
+      safeLog('INFO', `[Main] El ${enginePort} lo tiene algo que NO es un motor de esta instalacion: no se toca.`)
       return
     }
     for (const pid of pids) {
@@ -172,6 +183,33 @@ async function liberarPuertoDeMotoresViejos(): Promise<void> {
     safeLog('ERROR', `[Main] No se pudo revisar quien tiene el puerto: ${err}`)
   }
 }
+
+/**
+ * Deja `enginePort` en un puerto que el motor pueda bindear de verdad.
+ *
+ * Primero se libera el preferido si lo tenía un motor nuestro (lo normal: el huérfano
+ * de la versión anterior). Si después sigue tomado —un programa ajeno con el 8745—
+ * el motor se muda al siguiente libre en vez de morir: antes fallaba el bind y la app
+ * abría sin motor, y lo único que lo decía era una línea en el log.
+ */
+async function elegirPuertoDelMotor(): Promise<void> {
+  await liberarPuertoDeMotoresViejos()
+  const libre = await primerPuertoLibre(PUERTO_PREFERIDO, PUERTOS_A_PROBAR)
+  const rango = rangoDePuertos()
+  if (libre === null) {
+    faltaPuerto = `${rango[0]}-${rango[rango.length - 1]}`
+    safeLog('ERROR', `[Main] Ningun puerto libre en ${faltaPuerto}: el motor no va a arrancar.`)
+    return
+  }
+  if (libre !== PUERTO_PREFERIDO) {
+    safeLog('INFO', `[Main] El ${PUERTO_PREFERIDO} esta tomado: el motor va al ${libre}.`)
+  }
+  enginePort = libre
+}
+
+/** Rango que se probó sin encontrar hueco, para avisarlo en pantalla una vez que hay
+ * ventana (el log no lo lee nadie mientras la app parece funcionar). */
+let faltaPuerto: string | null = null
 
 function startBackend(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -198,13 +236,13 @@ function startBackend(): Promise<void> {
       child = spawn(exePath, ['main.py'], {
         cwd: join(process.cwd(), '..', 'backend'),
         windowsHide: true,
-        env: backendEnv,
+        env: backendEnv(),
       })
     } else {
       exePath = join(process.resourcesPath, 'backend', 'pdf-engine.exe')
       child = spawn(exePath, [], {
         windowsHide: true,
-        env: backendEnv,
+        env: backendEnv(),
       })
     }
     backendProcess = child
@@ -262,9 +300,10 @@ function stopBackend() {
   const pid = backendProcess.pid
   backendProcess.kill()
   backendProcess = null
-  // pdf-engine.exe es PyInstaller onefile: el bootloader lanza un hijo, y matar solo
-  // al padre dejaba ese hijo con el puerto tomado (era lo que el taskkill por nombre
-  // acababa barriendo en el arranque siguiente).
+  // Se mata el ÁRBOL, no solo el proceso. Con el onefile de antes era obligatorio (el
+  // bootloader lanzaba un hijo que se quedaba con el puerto); en onedir ya no hay ese
+  // hijo, pero uvicorn sí puede tener descendencia y matar por árbol no cuesta nada
+  // frente a dejar el puerto tomado hasta el arranque siguiente.
   if (pid && !is.dev) {
     try { execSync(comandoMatarArbol(pid), { windowsHide: true, stdio: 'ignore' }) } catch { /* ya murió */ }
   }
@@ -281,7 +320,10 @@ function createWindow(): void {
     titleBarOverlay: { color: '#ffffff', symbolColor: '#1f2329', height: 40 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      // El preload solo importa de 'electron' (contextBridge, ipcRenderer, webUtils),
+      // que sí están en un preload sandboxeado: no hacía falta el `sandbox: false`
+      // que tenía, y con él el renderer corría sin la caja de arena de Chromium.
+      sandbox: true,
       contextIsolation: true
     }
   })
@@ -339,10 +381,8 @@ function createWindow(): void {
   // se reenvían por IPC.
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()
-    if (url.startsWith('file://') && url.toLowerCase().endsWith('.pdf')) {
-      const filePath = decodeURI(url.replace('file:///', '').replace(/\//g, '\\'))
-      handleFileOpen(filePath)
-    }
+    const ruta = rutaDePdfArrastrado(url)
+    if (ruta) handleFileOpen(ruta)
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -595,7 +635,10 @@ app.whenReady().then(async () => {
     }
   })
 
-  ipcMain.handle('api:token', () => API_TOKEN)
+  // Token Y base en la misma llamada: el puerto se decide en el arranque y el
+  // renderer no lo puede dar por sabido. Pedirlos por separado dejaba media
+  // configuración aplicada si una de las dos fallaba.
+  ipcMain.handle('api:config', () => ({ base: apiBase(), token: API_TOKEN }))
 
   /** Un archivo de texto con versiones, estado del motor y la cola de los logs, para
    * adjuntar cuando algo falla en una máquina ajena. Todo lo que arma ya estaba en
@@ -733,12 +776,21 @@ app.whenReady().then(async () => {
 
   // API key de Anthropic: cifrada con safeStorage (DPAPI en Windows) en userData,
   // nunca en localStorage del renderer. El renderer solo sabe si hay clave o no.
+  //
+  // Sin cifrado disponible NO se guarda. Antes caía a `Buffer.from(key)` —texto
+  // plano en %APPDATA%— y devolvía `{success: true}`: el usuario pegaba su clave, la
+  // app decía que quedó guardada, y quedaba legible para cualquier proceso del
+  // equipo sin que nada lo dijera.
   const aiKeyFile = join(app.getPath('userData'), 'ai-key.bin')
+  const SIN_CIFRADO = 'El sistema no ofrece almacenamiento cifrado, así que la clave no se guarda (quedaría en texto plano en el disco).'
   const readAiKey = (): string | null => {
     try {
       if (!existsSync(aiKeyFile)) return null
-      const raw = readFileSync(aiKeyFile)
-      return safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(raw) : raw.toString('utf-8')
+      if (!safeStorage.isEncryptionAvailable()) {
+        safeLog('ERROR', '[AI] Hay un ai-key.bin pero el cifrado no está disponible: no se descifra.')
+        return null
+      }
+      return safeStorage.decryptString(readFileSync(aiKeyFile))
     } catch (err) {
       safeLog('ERROR', `[AI] No se pudo leer la API key: ${err}`)
       return null
@@ -751,10 +803,11 @@ app.whenReady().then(async () => {
         if (existsSync(aiKeyFile)) unlinkSync(aiKeyFile)
         return { success: true }
       }
-      const data = safeStorage.isEncryptionAvailable()
-        ? safeStorage.encryptString(key)
-        : Buffer.from(key, 'utf-8')
-      writeFileSync(aiKeyFile, data)
+      if (!safeStorage.isEncryptionAvailable()) {
+        safeLog('ERROR', '[AI] safeStorage no disponible: la API key NO se guarda.')
+        return { success: false, error: SIN_CIFRADO }
+      }
+      writeFileSync(aiKeyFile, safeStorage.encryptString(key))
       return { success: true }
     } catch (err) {
       safeLog('ERROR', `[AI] No se pudo guardar la API key: ${err}`)
@@ -932,10 +985,22 @@ app.whenReady().then(async () => {
   // Antes de lanzarlo hay que asegurarse de que el puerto no lo tenga un motor de
   // una versión anterior: si lo tiene, el nuestro no bindea y el renderer acaba
   // hablando con un motor que rechaza su token.
-  liberarPuertoDeMotoresViejos().then(startBackend).then(() => {
+  elegirPuertoDelMotor().then(startBackend).then(() => {
     safeLog('INFO', 'Backend started successfully')
   }).catch((err) => {
     safeLog('ERROR', 'Failed to start backend: ' + err)
+  }).finally(() => {
+    // Sin puerto la app abre y muere al primer PDF ("motor desconectado"), y el
+    // motivo real solo estaba en el log. Se dice en pantalla, con el rango, que es
+    // lo que hace falta para ir a buscar quién lo tiene.
+    if (!faltaPuerto) return
+    mostrarAviso({
+      type: 'error',
+      title: 'PDF Master no pudo arrancar su motor',
+      message: `Los puertos ${faltaPuerto} están todos ocupados.`,
+      detail: 'PDF Master necesita uno libre en 127.0.0.1 para su motor de PDF. Cerrá el programa que los esté usando y volvé a abrir la app.',
+      buttons: ['Entendido'],
+    })
   })
 
   // Initialize auto-updater after a short delay so it doesn't block startup

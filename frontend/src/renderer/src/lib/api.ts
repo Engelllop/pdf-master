@@ -1,24 +1,36 @@
-// Cliente único del backend local (PyMuPDF en localhost:8745).
+// Cliente único del backend local (PyMuPDF en loopback).
 // Centraliza la URL base —antes duplicada como `const API_BASE` en 15 archivos— y
-// ofrece helpers (`apiUrl`/`apiFetch`) que son el punto natural para inyectar el
-// token Electron↔backend cuando se implemente, sin tocar cada llamada.
-export const API_BASE = 'http://localhost:8745'
+// el token Electron↔backend, así que ninguna llamada tiene que saber el puerto.
 
-export const apiUrl = (path: string) => `${API_BASE}${path}`
+/** Puerto de siempre. Solo se usa mientras no hay puente con el main (tests) o si la
+ * consulta falla: el real lo decide el arranque y puede ser otro del rango. */
+const BASE_POR_DEFECTO = 'http://localhost:8745'
 
-let apiToken: string | null = null
-async function tokenHeader(): Promise<Record<string, string>> {
-  if (apiToken === null) {
-    try {
-      apiToken = (typeof window !== 'undefined' && window.api?.getApiToken)
-        ? await window.api.getApiToken()
-        : ''
-    } catch {
-      apiToken = ''
-    }
+type ApiConfig = { base: string; token: string }
+
+/** Se cachea SOLO el resultado bueno. Antes se cacheaba con `apiToken === null`, así
+ * que un fallo transitorio de la consulta dejaba el token en '' PARA SIEMPRE y todas
+ * las llamadas siguientes se iban sin él: 403 en todo, sin forma de recuperarse
+ * salvo reiniciar la app. */
+let config: ApiConfig | null = null
+
+async function leerConfig(): Promise<ApiConfig> {
+  if (config) return config
+  const puente = typeof window !== 'undefined' ? window.api?.getApiConfig : undefined
+  // Sin preload (tests, o el renderer antes de que exista el puente) no hay nada que
+  // pedir. No se cachea: si el puente aparece después, la próxima llamada lo ve.
+  if (!puente) return { base: BASE_POR_DEFECTO, token: '' }
+  try {
+    const leida = await puente()
+    config = { base: leida?.base || BASE_POR_DEFECTO, token: leida?.token || '' }
+    return config
+  } catch {
+    return { base: BASE_POR_DEFECTO, token: '' }
   }
-  return apiToken ? { 'X-Pdfmaster-Token': apiToken } : {}
 }
+
+/** La base que se está usando, para los mensajes de error. '' si aún no se consultó. */
+export const baseConocida = (): string => config?.base ?? ''
 
 /** Reabre un doc_id muerto y devuelve el nuevo. Lo inyecta `openDocument.ts` para
  * no crear un ciclo de imports (openDocument ya usa apiFetch). */
@@ -35,14 +47,17 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
  * conservando su estado y se reintenta la llamada una sola vez con el id nuevo.
  */
 export async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
-  const auth = await tokenHeader()
-  const headers = { ...(init?.headers as Record<string, string> | undefined), ...auth }
-  const res = await fetch(apiUrl(path), { ...init, headers })
+  const { base, token } = await leerConfig()
+  const headers = {
+    ...(init?.headers as Record<string, string> | undefined),
+    ...(token ? { 'X-Pdfmaster-Token': token } : {}),
+  }
+  const res = await fetch(`${base}${path}`, { ...init, headers })
   if (res.status !== 404 || !reopener || path.startsWith('/pdf/open')) return res
 
   const docId = path.match(UUID_RE)?.[0]
   if (!docId) return res
   const newId = await reopener(docId)
   if (!newId || newId === docId) return res
-  return fetch(apiUrl(path.replace(docId, newId)), { ...init, headers })
+  return fetch(`${base}${path.replace(docId, newId)}`, { ...init, headers })
 }

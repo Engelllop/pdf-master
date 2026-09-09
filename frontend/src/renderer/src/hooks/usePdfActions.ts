@@ -4,7 +4,7 @@ import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
 import { parsePageRanges, parsePagesField } from '../lib/pageRange'
-import { correrCola } from '../lib/batchQueue'
+import { correrLote } from '../lib/lote'
 import { avisarSiFallóLaCopia, confirmarEscrituraEn, confirmarSobrescritura, pushAnnotations, refrescarEstadoEnDisco } from '../lib/saveDocument'
 import {
   deletePagesUndoable,
@@ -455,28 +455,15 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const runBatch = async (label: string, op: (d: typeof docs[number]) => Promise<void>) => {
     if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
-    const { startProgress, updateProgress, endProgress, isCancelRequested } = usePdfStore.getState()
-    startProgress(label, docs.length)
-    let ok = 0
-    let canceled = false
-    try {
-      const r = await correrCola(docs, async (d) => {
-        try { await op(d); return true } catch (err) {
-          window.api.logError(`[batch] ${String(err)}`).catch(() => {})
-          return false
-        }
-      }, {
-        avanzar: (n, d) => updateProgress(n, d.file_name),
-        cancelado: isCancelRequested,
-      })
-      ok = r.ok
-      canceled = r.cancelado
-    } finally {
-      endProgress()
-    }
+    const { ok, cancelado } = await correrLote(label, docs, (d) => d.file_name, async (d) => {
+      try { await op(d); return true } catch (err) {
+        window.api.logError(`[batch] ${String(err)}`).catch(() => {})
+        return false
+      }
+    })
     showToast(
-      canceled ? `${label}: cancelado tras ${ok} documento(s)` : `${label}: ${ok}/${docs.length} completado(s)`,
-      canceled ? 'info' : ok === docs.length ? 'success' : 'error',
+      cancelado ? `${label}: cancelado tras ${ok} documento(s)` : `${label}: ${ok}/${docs.length} completado(s)`,
+      cancelado ? 'info' : ok === docs.length ? 'success' : 'error',
     )
   }
 

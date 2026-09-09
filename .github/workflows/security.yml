@@ -27,8 +27,12 @@ jobs:
       # El arbol entero, no solo lo que viaja en el instalador: el toolchain de
       # build tambien firma y empaqueta. Se limpio a cero antes de poner esto, asi
       # que un fallo aqui es una CVE nueva, no deuda heredada que se acaba ignorando.
+      # `--audit-level=high` dejaba pasar las moderate sin decir nada, y ahi hay
+      # cosas reales (un path traversal en @vitest/mocker vivio semanas en verde).
+      # Se limpio a cero antes de bajar el umbral, asi que un fallo aqui es una CVE
+      # nueva, no deuda heredada que se acaba ignorando.
       - name: npm audit
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
         working-directory: frontend
       - uses: actions/setup-python@v5
         with:

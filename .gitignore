@@ -12,6 +12,14 @@ ENV/
 # PyInstaller
 backend/dist/
 backend/build/
+# El motor compilado NO va en git: 48 MB por revision dejaron el repo en 705 MB con
+# 74 commits, y encima la copia versionada se quedo en 1.14.2 mientras el producto
+# iba en 1.22.0 (un `build:win` local empaquetaba ese motor viejo en silencio).
+# Lo compila el CI en el release, y en local lo exige `npm run verificar:motor`.
+# Desde que es onedir no es un .exe suelto sino un arbol (exe + _internal/), asi que
+# se ignora la carpeta entera menos el .gitkeep que la mantiene existiendo.
+frontend/resources/backend/*
+!frontend/resources/backend/.gitkeep
 
 # Node
 node_modules/

@@ -1,6 +1,6 @@
 # PDF Master — Documentación técnica
 
-> Versión: **1.22.0** · Actualizado: 2026-09-04  
+> Versión: **1.23.0** · Actualizado: 2026-09-09  
 > Changelog de sesión: `CHANGELOG_SESSION.md`  
 > Repo canónico: `C:\dev\pdf-master` (`C:\Users\Engelllop\pdf-master` es junction).
 
@@ -21,22 +21,26 @@ Editor de PDFs para Windows (Electron + React + FastAPI + PyMuPDF), pensado para
 | Shell | Electron 43, electron-vite 5, electron-builder 26 |
 | UI | React 19, TypeScript 5.6, Tailwind 3.4, Zustand 5 |
 | Render cliente | pdfjs-dist 6 (página / continua / comparar / tiles) |
-| Motor | Python 3.13 (CI), FastAPI, PyMuPDF 1.28, Pillow |
+| Motor | Python 3.13 (CI), FastAPI, PyMuPDF 1.28, Pillow — empaquetado **onedir** |
 | Export | python-docx, openpyxl (`find_tables`), python-pptx, pytesseract |
-| Tests | Vitest (frontend), pytest (backend), Playwright+Electron (e2e local) |
+| Tests | Vitest (frontend), pytest (backend), Playwright+Electron (e2e, en CI) |
 
 ---
 
 ## 3. Arquitectura
 
 ```
-Electron main  →  spawnea pdf-engine.exe (o python main.py)
-       │              token PDFMASTER_API_TOKEN
-Renderer       →  HTTP 127.0.0.1:8745  (header X-Pdfmaster-Token)
+Electron main  →  elige puerto libre en 8745-8752
+       │          spawnea pdf-engine.exe (o python main.py)
+       │              PDFMASTER_API_TOKEN + PDFMASTER_PORT
+Renderer       →  pide base+token por IPC (`api:config`)
+                  HTTP 127.0.0.1:<puerto>  (header X-Pdfmaster-Token)
                       FastAPI 1 worker  (PyMuPDF no es thread-safe)
 ```
 
-- **1 worker** en el threadpool. No subir. El health-check es `async`.
+- **1 worker** en el threadpool. No subir. El health-check es `async`. Serializa TODO el motor a propósito (MuPDF no es thread-safe): un render de plano grande bloquea las demás peticiones, y eso es el precio de no reventar con un access violation.
+- **El puerto no es fijo.** `enginePort.ts` prueba 8745 y, si lo tiene un programa ajeno, se muda al siguiente libre del rango (8 puertos). Antes el bind fallaba y la app quedaba abierta sin motor con una sola línea en el log; ahora, si están los ocho tomados, sale un aviso en pantalla con el rango. El puerto elegido viaja al renderer por `api:config` (base + token en una sola llamada) y `apiFetch` **solo cachea la respuesta buena**: cacheando también el fallo, un tropiezo transitorio dejaba el token vacío para siempre y todo daba 403 hasta reiniciar la app. La CSP de `index.html` enumera los ocho puertos — si `PUERTOS_A_PROBAR` sube, esa lista sube con él (lo ata `enginePort.test.ts`).
+- Cerrar un documento libera también sus bitmaps y sus mallas de snap (`_invalidate_render_cache`): sin eso quedaban hasta 150 renders del documento cerrado en RAM hasta que el LRU los desplazara.
 - LRU: máx. 12 documentos vivos; no se evictan docs dirty.
 - Caps de render: 3000 / 6000 px. Miniaturas 300 px.
 - Bitmaps de página = blob URLs, y `cachePage` **revoca el que reemplaza**: dos rasterizaciones de la misma página compitiendo por la misma entrada dejan revocado el blob que se está mostrando (página en blanco). El bitmap se sube de resolución al cambiar el zoom (`useZoomUpgrade`, 250 ms) en **los dos paneles** de la vista doble — el efecto de carga no vuelve a correr al hacer zoom, así que el derecho se quedaba borroso hasta cambiar de página. En scroll continuo el zoom vivo manda la geometría y el rasterizado espera 250 ms a que se quede quieto: los bitmaps **no se vacían** al hacer zoom (se estiran y se reemplazan al llegar el nuevo), que vaciarlos dejaba la ventana entera en blanco en cada paso de la rueda. El preload no pisa una entrada existente —descarta y libera su propio bitmap— y en vista doble no precarga `page + 1`, que es el panel derecho.
@@ -45,8 +49,9 @@ Renderer       →  HTTP 127.0.0.1:8745  (header X-Pdfmaster-Token)
 - El motor deja su PID en `logs\engine.pid` y al arrancar solo se mata **ese** (y solo si sigue siendo un `pdf-engine.exe`: Windows recicla PIDs). Antes era `taskkill /F /IM pdf-engine.exe`, que barría el motor de otra instalación o de otro usuario. Al salir se mata el árbol (`/T`): PyInstaller onefile deja un hijo que se quedaba con el puerto.
 - Cada petición que no es `/health` lleva un id de 8 hex: va en la miga de pan, en la línea del log si tarda ≥ 2 s y en la respuesta (`X-Request-Id`).
 - `doc_id` muerto (404) → `reopenDeadDoc` + remap conservando marcas.
+- **Hooks de gesto (arrastrar, redimensionar, girar, la página derecha).** Los listeners van en `window` y el efecto solo se re-suscribe al empezar y terminar el gesto, así que lo que lean del closure se queda congelado durante todo el arrastre. La regla: el estado se pide por `usePdfStore.getState()` y los props que puede cambiar el zoom (`pageData`, que `useZoomUpgrade` reemplaza a los 250 ms) por un ref vivo. **La excepción es el redimensionado**, que sí necesita la foto del arranque: parte de una caja de origen y un delta absoluto, y `geometriaRedimensionada` escala los `points` con un factor acumulado respecto de esa caja — con los puntos ya escalados del paso anterior, el factor se aplica encima y el trazo se dispara. Esa foto se toma explícita. Arrastrar leyendo del closure hacía que la marca se escapara del cursor cuadráticamente; los tests de un solo `mousemove` no lo ven.
 
-**Sandbox Electron:** `sandbox: false` porque el renderer habla HTTP al motor local y usa `webUtils.getPathForFile`. No activar sin revalidar open/print/AI. La superficie IPC que abre rutas del sistema valida rutas locales absolutas existentes antes de llamar a `shell.openPath`, `shell.showItemInFolder` o leer imágenes para base64.
+**Sandbox Electron:** `sandbox: true` + `contextIsolation: true`. El `sandbox: false` que había no hacía falta: el preload solo importa de `electron` (`contextBridge`, `ipcRenderer`, `webUtils`), y las tres están disponibles en un preload sandboxeado. Validado con el e2e real (abrir por línea de comandos, rasterizar, cerrar pestaña), no solo con typecheck. La superficie IPC que abre rutas del sistema valida rutas locales absolutas existentes antes de llamar a `shell.openPath`, `shell.showItemInFolder` o leer imágenes para base64; el PDF que se suelta sobre la ventana se traduce con `fileURLToPath` (`rutaDePdfArrastrado`) y no a mano — el `replace`+`decodeURI` de antes se comía las rutas UNC y no abría un «Lámina #3.pdf».
 
 ---
 
@@ -90,7 +95,8 @@ Ajustes → Diagnóstico → Exportar deja un `.txt` con versiones (app, Electro
 - `file:readBase64` solo imágenes locales absolutas existentes, con extensión permitida y tope de 50 MB.
 - `shell.openPath` solo abre carpetas locales absolutas existentes; `showItemInFolder` exige una ruta local existente.
 - Rutas de salida: absolutas, sin bytes nulos, extensión esperada y directorio existente (`_shared.py`).
-- Firmas = polyline, no PAdES. Sin firma de código (SmartScreen).
+- **API key de Anthropic:** cifrada con `safeStorage` (DPAPI) en userData. Si el cifrado NO está disponible **no se guarda** y el panel lo dice; antes caía a texto plano en `%APPDATA%` devolviendo `success: true`, o sea que el usuario pegaba su clave, la app decía que quedó guardada y quedaba legible para cualquier proceso del equipo.
+- Firmas = polyline, no PAdES. Sin firma de código todavía: el CI ya tiene el cableado y firma en cuanto existan los secretos `WINDOWS_CERT_BASE64` / `WINDOWS_CERT_PASSWORD` (falta comprar el certificado), y además comprueba con `Get-AuthenticodeSignature` que la firma quedó aplicada, porque electron-builder no falla si no se aplicó.
 
 ---
 
@@ -113,33 +119,45 @@ Export: `export-word`, `export-excel`, `export-pptx`, `export-txt`, `export-html
 2. No subir el threadpool de PyMuPDF.
 3. No evictar docs dirty del LRU.
 4. Sidecar solo en guardado manual.
-5. Tras tocar Python: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q`
+5. Tras tocar Python: `cd backend; .\venv\Scripts\python.exe -m pytest tests -q`. Y un endpoint nuevo se cubre: los 66 aparecen en tests, y los que escriben a disco prueban además que un rechazo NO deje archivo.
+6. `pdf-engine.exe` no vuelve a git: lo compila el CI, y en local lo exige `verificar:motor`.
+7. Un hook de gesto no lee estado mutable del closure (ver Arquitectura), y sus tests hacen VARIOS `mousemove`: con uno solo, una acumulación de deltas pasa en verde.
+8. Un componente nuevo en `React.lazy` se abre en el e2e. Y una optimización de arranque se justifica con `medir:arranque`, no con el número que imprime vite.
 
 ---
 
 ## 7. Build
 
+**`pdf-engine.exe` NO está en git.** 48 MB por revisión dejaron el repo en 705 MB con 74 commits, y la copia versionada se quedó en 1.14.2 mientras el producto iba en 1.22.0: un `build:win` local empaquetaba ese motor viejo sin un solo síntoma. Hay que compilarlo antes de empaquetar.
+
 ```powershell
 cd backend
-.\venv\Scripts\pyinstaller.exe pdf-engine.spec --noconfirm --clean
+.\venv\Scripts\python.exe -m PyInstaller pdf-engine.spec --noconfirm --clean
 Copy-Item dist\pdf-engine.exe ..\frontend\resources\backend\ -Force
 cd ..\frontend
 # bump version en package.json
-$env:CSC_IDENTITY_AUTO_DISCOVERY='false'
-npm run build:win    # → dist\PDF-Master-Setup-<version>.exe
+npm run build:win    # typecheck + build + verificar:motor + NSIS
 ```
 
-CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest + lint (tope de avisos); antes de empaquetar se verifica que `pdf-engine.exe` esté en `resources/backend` y no sea un binario truncado; tag `v*` publica release. Sin Authenticode.
+`npm run verificar:motor` (que `build:win` corre solo, y el CI también) **arranca el .exe en un puerto libre y le pregunta su versión por `/pdf/health`**. Mirar el tamaño solo detecta un binario truncado; esto detecta además el motor viejo, que es lo que pasaba de verdad.
 
-`.github/workflows/security.yml` (PR + semanal): `npm audit`, `pip-audit` y CodeQL (TS + Python). Dependabot semanal para npm, pip y actions, con Electron y PyMuPDF fuera del salto mayor automático.
+CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest + lint (tope de avisos, hoy 34: es un trinquete, cuando bajen el número baja con ellos) + **e2e**; antes de empaquetar corre `verificar:motor`; tag `v*` publica release. Authenticode en cuanto haya certificado (ver Seguridad local).
+
+`.github/workflows/security.yml` (PR + semanal): `npm audit --audit-level=moderate` (era `high`, y así una CVE moderate real de `@vitest/mocker` pasó semanas en verde), `pip-audit` y CodeQL (TS + Python). Dependabot semanal para npm, pip y actions, con Electron y PyMuPDF fuera del salto mayor automático.
 
 **Versiones:** `frontend/package.json` es la fuente. `versionSync.test.ts` ata la cabecera de este archivo y el changelog; `backend/tests/test_version.py` ata `ENGINE_VERSION` (el `version` que declara la API); el job de release ata el tag.
 
+**El motor va empaquetado onedir, no onefile.** El onefile se descomprimía entero en `%TEMP%` en cada arranque (47 MB) y costaba ~1 s: el motor contesta `/pdf/health` en **692 ms** en vez de 1.746. PyInstaller deja `dist/pdf-engine/` y al empaquetar se copia su **CONTENIDO** a `resources/backend`, así que el motor sigue en `resources/backend/pdf-engine.exe` y el main no cambia de ruta — copiar la carpeta en vez de su contenido deja el exe un nivel más abajo y la app arranca sin motor. `verificar:motor` exige el exe **y** su `_internal/`. `upx` va en False: no está instalado (el True de antes no hacía nada) y en onedir cambiaría arranque por disco.
+
+**Dónde está el arranque, medido.** ~1,5 s de Chromium hasta el primer pintado y ~0,9 s más hasta la página (chunk de pdfjs + parseo + rasterizado). El motor se lanza en paralelo con la ventana, así que con el disco caliente ya está vivo cuando el renderer pinta, y una vez vivo **todas** las peticiones de apertura suman 95 ms. Conclusión que costó dos intentos: ni el tamaño del bundle ni el arranque del motor son la palanca del arranque percibido. El onedir paga en «reiniciar el motor» (ahí el usuario espera), en frío, y en no escribir 47 MB en `%TEMP%` por apertura. Herramientas: `medir:arranque`, `medir:motor` (con `--venv` separa PyInstaller de los imports), `analizar:bundle`.
+
+**Bundle y arranque.** El chunk de arranque del renderer son ~1.240 kB; `pdfjs` (854 kB) y nueve vistas/paneles que solo existen tras una acción del usuario van en chunks aparte (`import()` en `lib/pdfjs.ts`, `React.lazy` en `App.tsx`). Lo que se monta en el primer pintado —TopBar, Toolbar, ThumbnailPanel, Viewer, StatusBar— se queda estático a propósito: diferirlo cambia parsear por parpadear. `npm run analizar:bundle` dice de qué está hecho cada chunk (necesita `ANALIZAR_BUNDLE=1 npm run build`, que activa el sourcemap; sin la variable no se genera y no viaja al instalador), y `npm run medir:arranque` mide el arranque real y saca la mediana (`CON_DOC=0` para aislar el primer pintado del arranque del motor). **Dato medido, no estimado:** partir el bundle a la mitad movió el primer pintado ~25 ms de ~1.530. El arranque lo domina Chromium; el tamaño del chunk casi no participa, porque se lee de disco y V8 compila cuando se llama. Vale para memoria y para que los límites de chunk signifiquen algo, no como palanca de arranque.
+
+**Optimizaciones de arranque descartadas con medición.** No volver a intentarlas sin datos nuevos: (1) precargar el chunk de pdfjs al montar no mueve nada, porque `getPdfDocument` ya lo pide con `Promise.all` junto al `/pdf/raw` y al abrir con un archivo el montaje y la apertura coinciden; (2) quitar el debounce de 350 ms de `useFileDrop` tampoco, porque `addDoc` ignora `activate: false` si no hay documento activo, así que la primera pestaña se activa sola al arrancar. **Y el método:** con la app instalada abierta al lado, el arranque medido deriva ~500 ms entre tandas — una tanda contra otra no prueba nada. `medir:arranque` acepta `MAIN_JS=out-a/main/index.js` para alternar dos builds sin reconstruir; medir interleaved o no medir.
+
 **Banco de pruebas del renderer:** `npm run harness` construye y deja `out/renderer/harness.html`, que monta la interfaz REAL en un navegador con un `window.api` de mentira y un documento abierto. Existe porque el chrome no se puede mirar de otra forma —la app es Electron y los tests corren en jsdom, que no hace layout—, así que un desbordamiento que se pisa o un menú que no abre pasaban los 562 tests en verde. El stub vive en `design/harness/`.
 
-**E2E:** `npm run e2e` (Playwright + Electron, `frontend/e2e/`) arranca la app construida con un PDF por línea de comandos y comprueba que el motor levanta y rasteriza. Necesita `npm run build` y `backend/venv`, así que **no** corre en CI; si el 8745 ya está tomado por otro motor, se salta diciéndolo.
-
-Puerto de desarrollo del motor instalado vs. repo: **8746** si 8745 está ocupado.
+**E2E:** `npm run e2e` (Playwright + Electron, `frontend/e2e/`) arranca la app construida con un PDF por línea de comandos, comprueba que el motor levanta y rasteriza, y **abre los paneles en diferido** (un `import()` que no resuelva en el renderer empaquetado no rompe el arranque: rompe el panel, y solo al abrirlo). **Corre en CI** (job `e2e`, que crea el venv del motor) y bloquea el release: estaba escrito y no corría, o sea que un motor que no arranca —token, puerto, ruta del exe— pasaba el CI entero en verde. Ya no se salta porque el 8745 esté tomado (para eso está el fallback, y así el e2e lo prueba de verdad); solo se salta si están tomados los ocho.
 
 ---
 
@@ -154,8 +172,9 @@ Puerto de desarrollo del motor instalado vs. repo: **8746** si 8745 está ocupad
 | Undo | Marcas y operaciones de página soportadas por stash del motor |
 | OneDrive / colaboración | No |
 | i18n | Español hardcodeado |
-| macOS/Linux | Scripts existen; CI es Windows |
-| Code signing | No (SmartScreen) |
+| macOS/Linux | Scripts existen; CI es Windows, y el motor solo se empaqueta para Windows |
+| Disco instalado | ~94 MB de motor (onedir) contra ~47 del onefile: se cambió espacio por segundo de arranque |
+| Code signing | Cableado en CI; falta el certificado (hasta entonces, SmartScreen avisa) |
 | Mediciones | Visuales + export; embed parcial |
 | XFDF | Sin imágenes |
 

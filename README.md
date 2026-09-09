@@ -18,8 +18,10 @@ Editor profesional de PDFs inspirado en Bluebeam Revu, UPDF y PDFelement.
 
 ## Requisitos
 
-- Node.js 18+
-- Python 3.10+
+- Node.js 20+ (el CI usa 22; Vite 7 ya no arranca con 18)
+- Python 3.10+ (el CI y el motor empaquetado usan 3.13)
+- Tesseract OCR **aparte**, solo para el OCR: el instalador no lo trae. Sin él, las
+  herramientas de OCR avisan y el resto de la app funciona igual.
 
 ## Estructura del Proyecto
 
@@ -64,13 +66,38 @@ npm run dev
 
 ## Build
 
+El motor compilado **no está en git** (48 MB por revisión dejaron el repo en 705 MB,
+y la copia versionada se quedaba vieja sin que nada lo dijera). Hay que compilarlo
+antes de empaquetar:
+
+El motor va empaquetado **onedir** (una carpeta, no un `.exe` suelto): el onefile se
+descomprimía entero en `%TEMP%` en cada arranque y eso costaba ~1 s. Se copia el
+**contenido** de `dist\pdf-engine\`, no la carpeta.
+
 ```powershell
-cd frontend
-npm run build          # Build frontend assets
-npm run build:win      # Crear installer NSIS
+# 1. Motor
+cd backend
+.\venv\Scripts\python.exe -m PyInstaller pdf-engine.spec --noconfirm --clean
+Copy-Item dist\pdf-engine\* ..\frontend\resources\backend\ -Recurse -Force
+
+# 2. Instalador
+cd ..\frontend
+npm run build:win      # typecheck + build + verificar:motor + NSIS
 ```
 
-> El backend ejecutable (`backend/dist/pdf-engine.exe`) debe copiarse a `frontend/resources/backend/pdf-engine.exe` antes de empaquetar.
+`npm run verificar:motor` (que `build:win` corre solo) exige el exe **y** su
+`_internal/`, lo arranca y le pregunta su versión por `/pdf/health`: si falta algo o
+no coincide con `package.json`, el build se detiene ahí en vez de producir un
+instalador con un motor viejo o a medias.
+
+## Medir en vez de adivinar
+
+```powershell
+cd frontend
+npm run medir:motor          # motor: lanzamiento -> /pdf/health (--venv para comparar)
+npm run medir:arranque       # app real (CON_DOC=0 aísla el primer pintado)
+npm run analizar:bundle      # de qué está hecho cada chunk (ANALIZAR_BUNDLE=1 npm run build)
+```
 
 ---
 

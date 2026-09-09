@@ -23,6 +23,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const [hasKey, setHasKey] = useState<boolean | null>(null)
   const [keyInput, setKeyInput] = useState('')
   const [editingKey, setEditingKey] = useState(false)
+  // El guardado puede fallar de verdad (sin safeStorage no se guarda en claro), y
+  // antes `saveKey` se comía el `success: false`: el botón no hacía nada y no había
+  // ni un mensaje.
+  const [keyError, setKeyError] = useState<string | null>(null)
 
   useEffect(() => {
     // Migración: keys guardadas en localStorage por versiones anteriores pasan al
@@ -122,8 +126,10 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
   const saveKey = async () => {
     const k = keyInput.trim()
     if (!k) return
+    setKeyError(null)
     const r = await window.api.aiSetKey(k)
     if (r.success) { setHasKey(true); setEditingKey(false); setKeyInput('') }
+    else setKeyError(r.error || 'No se pudo guardar la clave.')
   }
 
   const send = (text: string) => {
@@ -164,6 +170,7 @@ export default function AIPanel({ onClose }: { onClose: () => void }) {
             className="w-full border border-border rounded-token-sm px-2 py-1.5 text-base bg-surface text-fg focus:outline-none focus:border-fg" />
           <button onClick={saveKey} disabled={!keyInput.trim()}
             className="w-full px-3 py-1.5 text-base rounded-token-sm bg-fg text-panel hover:opacity-90 active:opacity-80 transition-[filter] duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed">Conectar</button>
+          {keyError && <p role="alert" className="text-mini text-danger text-left">{keyError}</p>}
         </div>
       </div>
     )

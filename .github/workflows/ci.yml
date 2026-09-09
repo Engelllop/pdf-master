@@ -1,8 +1,7 @@
 name: CI
 
-# `playwright` es dependencia de desarrollo solo por el e2e local (`npm run e2e`),
-# que no corre en CI: sin esto, cada `npm ci` de cada job se baja tres navegadores
-# que nadie va a abrir.
+# El e2e usa `playwright` para lanzar ELECTRON (`_electron.launch`), no un navegador:
+# sin esto, cada `npm ci` de cada job se baja Chromium, Firefox y WebKit para nada.
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
 
@@ -55,15 +54,54 @@ jobs:
         working-directory: frontend
       # Bloquea de verdad: `continue-on-error` lo hacia decorativo y ademas fallaba
       # entero (ESLint 9 sin eslint.config.js), asi que el lint no corrio nunca.
-      # El tope de avisos evita que los 49 que quedan (casi todos exhaustive-deps)
-      # se conviertan en 500 sin que nadie lo note.
+      # El tope evita que los que quedan (casi todos exhaustive-deps de deps
+      # estrechas a proposito) se conviertan en 500 sin que nadie lo note. Es un
+      # trinquete: cuando bajen, este numero baja con ellos y no vuelve a subir. Un
+      # aviso NUEVO hace 35 y falla, asi que el tope ya avisa; lo que no hace es decir
+      # cual es nuevo. Los 34 que quedan son deps estrechas a proposito (meter el
+      # objeto entero re-ejecuta el efecto en cada render o re-pide datos en cada
+      # trazo) y estan explicadas en el codigo caso por caso.
       - name: Lint
-        run: npm run lint -- --max-warnings 49
+        run: npm run lint -- --max-warnings 34
+        working-directory: frontend
+
+  # El unico camino que ningun test unitario cubre: la app real arrancando, el motor
+  # levantandose solo y un PDF abriendose de punta a punta. Estaba escrito y NO corria
+  # en el pipeline, asi que era decorativo: un motor que no arranca (token, puerto,
+  # ruta del exe) pasaba el CI entero en verde. Corre con el motor de desarrollo
+  # (venv), no con el .exe: lo que se prueba es el arranque, no el empaquetado.
+  e2e:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # El e2e arranca el motor desde `backend/venv`, igual que `npm run dev`.
+      - name: Motor de desarrollo
+        run: |
+          python -m venv backend/venv
+          backend/venv/Scripts/python.exe -m pip install --upgrade pip
+          backend/venv/Scripts/python.exe -m pip install -r backend/requirements.txt
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: npm run e2e
         working-directory: frontend
 
   release:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    needs: [backend-tests, frontend-typecheck]
+    needs: [backend-tests, frontend-typecheck, e2e]
     runs-on: windows-latest
     permissions:
       contents: write
@@ -94,25 +132,29 @@ jobs:
           if ($version -ne $esperado) {
             throw "package.json esta en $version y el tag pide $esperado. Subi la version antes de taggear."
           }
-      - name: Build pdf-engine.exe
+      # El motor es onedir, no onefile: PyInstaller deja dist/pdf-engine/ con el exe y
+      # su _internal/. Se copia el CONTENIDO de esa carpeta (el `\*`), no la carpeta,
+      # para que el motor quede en resources/backend/pdf-engine.exe y el main de
+      # Electron siga buscandolo donde siempre.
+      - name: Build del motor (onedir)
         run: |
           pip install -r backend/requirements.txt pyinstaller
           cd backend
           pyinstaller pdf-engine.spec --noconfirm --clean
-          Copy-Item dist/pdf-engine.exe ../frontend/resources/backend/pdf-engine.exe -Force
+          if (-not (Test-Path dist/pdf-engine/pdf-engine.exe)) { throw "PyInstaller no dejo dist/pdf-engine/pdf-engine.exe" }
+          Copy-Item dist/pdf-engine/* ../frontend/resources/backend/ -Recurse -Force
       # Sin motor la app instala y arranca, y muere al abrir el primer PDF: el
-      # renderer se queda esperando un 127.0.0.1:8745 que no existe. electron-builder
-      # empaqueta resources/ tal cual, asi que un PyInstaller a medias (o un copy que
-      # no paso) sale como release valido. Se mira antes de empaquetar, no despues.
-      - name: El motor entra al paquete
-        run: |
-          $exe = Get-Item frontend/resources/backend/pdf-engine.exe -ErrorAction SilentlyContinue
-          if (-not $exe) { throw "Falta frontend/resources/backend/pdf-engine.exe: PyInstaller no dejo el binario." }
-          $mb = [math]::Round($exe.Length / 1MB, 1)
-          Write-Host "pdf-engine.exe: $mb MB"
-          # El onefile con PyMuPDF+Pillow ronda los 60 MB; por debajo de 20 es un
-          # binario truncado o un stub, no un motor.
-          if ($exe.Length -lt 20MB) { throw "pdf-engine.exe pesa $mb MB: parece truncado." }
+      # renderer se queda esperando un motor que no existe. electron-builder empaqueta
+      # resources/ tal cual, asi que un PyInstaller a medias (o un copy que no paso)
+      # sale como release valido. Se mira antes de empaquetar, no despues.
+      #
+      # Mirar el tamano solo detecta un binario truncado. `verificar:motor` lo arranca
+      # y le pregunta su version por /pdf/health: eso ademas detecta el motor VIEJO,
+      # que es lo que pasaba cuando el .exe viajaba en git (quedo en 1.14.2 con el
+      # producto en 1.22.0).
+      - name: El motor entra al paquete, y es el de esta version
+        run: npm run verificar:motor
+        working-directory: frontend
       # El release se crea ACA y no lo crea electron-builder. electron-builder
       # publica cada artefacto por su cuenta (.exe, .blockmap, latest.yml) y
       # cada uno crea el release si no lo encuentra: son varios POST al mismo
@@ -131,14 +173,46 @@ jobs:
           } else {
             Write-Host "El release $env:TAG ya existe: se le suben los archivos que falten."
           }
+      # FIRMA: si estan los secretos, electron-builder firma el instalador con el
+      # certificado; si no, sale sin firmar como hasta ahora. Sin firma, SmartScreen
+      # avisa en CADA instalacion ("editor desconocido") y el instalador que baja el
+      # auto-update tampoco se puede verificar. Para activarla hay que cargar dos
+      # secretos en el repo:
+      #   WINDOWS_CERT_BASE64  -> el .pfx en base64 (`base64 -w0 cert.pfx`)
+      #   WINDOWS_CERT_PASSWORD-> su contrasena
+      # Un certificado de firma de codigo (OV o EV) se compra; con OV la reputacion
+      # de SmartScreen se acumula con las descargas, con EV es inmediata.
+      - name: Hay certificado de firma?
+        id: firma
+        run: |
+          if ("${{ secrets.WINDOWS_CERT_BASE64 }}") {
+            Write-Host "Certificado presente: el instalador se va a firmar."
+            "hay=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            Write-Warning "SIN certificado de firma: el instalador sale sin firmar y SmartScreen va a avisar."
+            "hay=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
       - name: Build installer
         env:
+          # Solo apaga el auto-descubrimiento de identidades de macOS; en Windows la
+          # firma la decide CSC_LINK.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ steps.firma.outputs.hay == 'true' && secrets.WINDOWS_CERT_BASE64 || '' }}
+          CSC_KEY_PASSWORD: ${{ steps.firma.outputs.hay == 'true' && secrets.WINDOWS_CERT_PASSWORD || '' }}
         run: |
           cd frontend
           npm ci
           npm run build
           npx electron-builder --win --publish never
+      # electron-builder no falla si la firma no se aplico: se comprueba aparte para
+      # que un certificado vencido o mal cargado no salga como release valido.
+      - name: La firma quedo aplicada
+        if: steps.firma.outputs.hay == 'true'
+        run: |
+          $exe = Get-ChildItem frontend/dist -Filter 'PDF-Master-Setup-*.exe' | Select-Object -First 1
+          $sig = Get-AuthenticodeSignature $exe.FullName
+          Write-Host "$($exe.Name): $($sig.Status) - $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "El instalador no quedo firmado ($($sig.Status))." }
       # La subida la hace gh, no electron-builder. Ademas de la carrera por
       # crear el release, electron-builder se niega a subir a uno publicado
       # hace mas de dos horas ("existing release published more than 2 hours

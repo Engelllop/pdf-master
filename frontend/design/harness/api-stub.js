@@ -30,7 +30,7 @@
     openFolder: noop,
     getFilePath: () => RUTA,
     readFileBase64: ok(null),
-    getApiToken: ok(''),
+    getApiConfig: ok({ base: 'http://localhost:8745', token: '' }),
     exportDiagnostics: ok(null),
     printPdf: ok({ success: true }),
     aiChat: noop,

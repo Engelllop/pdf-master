@@ -16,7 +16,7 @@ const api = {
   openFolder: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   getFilePath: (file: File) => webUtils.getPathForFile(file),
   readFileBase64: (path: string) => ipcRenderer.invoke('file:readBase64', path),
-  getApiToken: (): Promise<string> => ipcRenderer.invoke('api:token'),
+  getApiConfig: (): Promise<{ base: string; token: string }> => ipcRenderer.invoke('api:config'),
   /** Devuelve la ruta del informe guardado, o null si se canceló. */
   exportDiagnostics: (): Promise<string | null> => ipcRenderer.invoke('diag:export'),
   printPdf: (docId: string, opts?: { pageRanges?: string; copies?: number; landscape?: boolean }) => ipcRenderer.invoke('pdf:print', docId, opts),

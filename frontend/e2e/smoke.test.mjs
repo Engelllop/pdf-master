@@ -4,9 +4,8 @@
  * corren contra un `fetch` stubeado, así que un motor que no arranca (token, puerto,
  * ruta del exe) pasaba el CI entero en verde.
  *
- * Se corre a mano con `npm run e2e`: necesita el build (`npm run build`) y el venv
- * del motor en `backend/venv`, que en CI no existen. No está en el pipeline a
- * propósito — ver DOCUMENTATION.md, sección Tests.
+ * Corre en CI (job `e2e`) y a mano con `npm run e2e`. Necesita el build
+ * (`npm run build`) y el venv del motor en `backend/venv`.
  */
 import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
@@ -23,10 +22,10 @@ const mainJs = join(raiz, 'out', 'main', 'index.js')
 const python = join(raiz, '..', 'backend', 'venv', 'Scripts', 'python.exe')
 const ARRANQUE = 60_000
 
-/** El motor usa un puerto fijo. Si ya hay uno escuchando (la app instalada abierta,
- * o uno huérfano), el que levante este test no puede bindear y la app le habla al
- * ajeno: 403 por token distinto. Eso no es un fallo del código, así que se salta con
- * el motivo en vez de dar un rojo que no dice nada. */
+/** El motor ya NO usa un puerto fijo: si el 8745 está tomado (la app instalada
+ * abierta, o un huérfano) se muda al siguiente libre del rango, así que este test
+ * corre igual — y de paso eso es justo lo que prueba. Solo se salta si están tomados
+ * los ocho, que ahí sí no hay dónde arrancar. */
 function puertoOcupado(puerto) {
   return new Promise((listo) => {
     const sock = connect({ host: '127.0.0.1', port: puerto })
@@ -45,10 +44,14 @@ let motivoDeSalto = null
 before(async () => {
   if (!existsSync(mainJs)) throw new Error(`Falta ${mainJs}: corré "npm run build" antes del e2e.`)
   if (!existsSync(python)) throw new Error(`Falta ${python}: el e2e levanta el motor de desarrollo desde el venv.`)
-  if (await puertoOcupado(8745)) {
-    motivoDeSalto = 'el puerto 8745 ya está tomado por otro pdf-engine: cerrá PDF Master y reintentá'
+  const RANGO = Array.from({ length: 8 }, (_, i) => 8745 + i)
+  const libres = []
+  for (const p of RANGO) if (!(await puertoOcupado(p))) libres.push(p)
+  if (libres.length === 0) {
+    motivoDeSalto = `los puertos ${RANGO[0]}-${RANGO.at(-1)} están todos tomados: no hay dónde arrancar el motor`
     return
   }
+  if (libres[0] !== 8745) console.log(`  (el 8745 está tomado: el motor debería mudarse al ${libres[0]})`)
 
   const dir = mkdtempSync(join(tmpdir(), 'pdfmaster-e2e-'))
   const pdf = join(dir, 'plano-e2e.pdf')
@@ -88,6 +91,33 @@ test('la barra de estado cuenta las tres páginas', async (t) => {
   const contador = win.locator('[aria-label="Página actual"]').locator('xpath=..')
   assert.match(await contador.innerText(), /\/\s*3/)
 })
+
+// Nueve vistas y paneles pasaron a `React.lazy` para sacarlos del chunk de arranque.
+// Un `import()` que no resuelva en el renderer empaquetado (ruta del chunk, CSP,
+// file://) no rompe el arranque: rompe el panel, y solo cuando alguien lo abre. Los
+// tests de jsdom no lo ven porque ahí no hay chunks. Así que se abren de verdad.
+const paneles = [
+  { nombre: 'paleta de comandos', abrir: (w) => w.keyboard.press('Control+k'), selector: '[aria-label="Paleta de comandos"]' },
+  { nombre: 'panel de atajos', abrir: (w) => w.keyboard.press('F1'), selector: 'text=/Atajos/i' },
+  { nombre: 'ajustes', abrir: (w) => evento(w, 'app:show-settings'), selector: '[aria-label="Ajustes"]' },
+  { nombre: 'sellos y firmas', abrir: (w) => evento(w, 'app:show-stamps'), selector: 'text=/firma/i' },
+  { nombre: 'organizar páginas', abrir: (w) => evento(w, 'app:page-organizer'), selector: '[aria-label="Organizar páginas"]' },
+  { nombre: 'asistente IA', abrir: (w) => evento(w, 'app:ai-open'), selector: 'text=/Anthropic/i' },
+]
+
+const evento = (w, nombre) => w.evaluate((n) => window.dispatchEvent(new CustomEvent(n)), nombre)
+
+for (const { nombre, abrir, selector } of paneles) {
+  test(`el panel en diferido «${nombre}» abre de verdad`, async (t) => {
+    if (motivoDeSalto) return t.skip(motivoDeSalto)
+    await abrir(win)
+    await win.waitForSelector(selector, { timeout: 20_000 })
+    // Escape para no dejarlo tapando al siguiente. No se espera a que desaparezca:
+    // no todos cierran con Escape (el asistente se cierra por su botón) y esperar el
+    // timeout de los que no costaba veinte segundos por panel.
+    await win.keyboard.press('Escape')
+  })
+}
 
 test('cerrar la pestaña cierra el documento', async (t) => {
   if (motivoDeSalto) return t.skip(motivoDeSalto)

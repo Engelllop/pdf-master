@@ -3,9 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <title>PDF Master</title>
+    <!--
+      El motor ya no está siempre en el 8745: si ese puerto lo tiene un programa
+      ajeno, Electron lo muda al siguiente libre del rango (ver `enginePort.ts`).
+      Se enumeran los ocho en vez de poner `http://localhost:*` para no autorizar de
+      paso cualquier servidor local que el usuario tenga corriendo. Si
+      `PUERTOS_A_PROBAR` sube, esta lista sube con él.
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:8745; connect-src 'self' http://localhost:8745;"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:8745 http://localhost:8746 http://localhost:8747 http://localhost:8748 http://localhost:8749 http://localhost:8750 http://localhost:8751 http://localhost:8752; connect-src 'self' http://localhost:8745 http://localhost:8746 http://localhost:8747 http://localhost:8748 http://localhost:8749 http://localhost:8750 http://localhost:8751 http://localhost:8752;"
     />
   </head>
 

@@ -3,7 +3,7 @@ import { askForm } from './uiPrompt'
 import { loadRecents, removeRecent, touchRecent, updateRecentMeta } from './recents'
 import { mismaRuta } from './rutas'
 
-import { apiFetch, setDeadDocReopener } from './api'
+import { apiFetch, baseConocida, setDeadDocReopener } from './api'
 import { revokePageUrl } from './blobUrl'
 
 export interface OpenDocumentOptions {
@@ -59,11 +59,15 @@ export function motivoDeApertura(nombre: string, status: number, detalle: string
   }
   if (status === 422 || status === 413) return detalle || `No se pudo abrir «${nombre}»`
   // El motor rechaza el token: casi siempre es otro pdf-engine (otra instalación, o
-  // uno que quedó vivo) ocupando el 8745, así que la app le está hablando a un motor
-  // que no es el suyo. Sin este caso salía "No se pudo abrir" a secas y no había por
-  // dónde empezar.
+  // uno que quedó vivo) ocupando el puerto, así que la app le está hablando a un
+  // motor que no es el suyo. Sin este caso salía "No se pudo abrir" a secas y no
+  // había por dónde empezar. El puerto se pregunta y no se da por sabido: desde que
+  // hay fallback, el motor no siempre está en el 8745.
   if (status === 403) {
-    return `El motor rechazó la app: hay otro PDF Master usando el puerto 8745. Cerrá el otro y reintentá.`
+    const puerto = baseConocida().match(/:(\d+)$/)?.[1]
+    return puerto
+      ? `El motor rechazó la app: hay otro PDF Master usando el puerto ${puerto}. Cerrá el otro y reintentá.`
+      : `El motor rechazó la app: hay otro PDF Master usando su puerto. Cerrá el otro y reintentá.`
   }
   return `No se pudo abrir «${nombre}»`
 }

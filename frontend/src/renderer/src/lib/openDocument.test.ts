@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const apiFetch = vi.fn()
+let baseDelMotor = 'http://localhost:8745'
 vi.mock('./api', () => ({
   apiFetch: (p: string, i?: RequestInit) => apiFetch(p, i),
   setDeadDocReopener: () => {},
+  baseConocida: () => baseDelMotor,
 }))
 vi.mock('./uiPrompt', () => ({ askForm: vi.fn(async () => null) }))
 vi.mock('./blobUrl', () => ({ revokePageUrl: () => {} }))
@@ -44,9 +46,32 @@ describe('el motivo del fallo', () => {
   })
 
   it('el token rechazado señala al otro motor, no al PDF', () => {
-    // El 403 del middleware del token significa que hay otro pdf-engine en el 8745:
+    // El 403 del middleware del token significa que hay otro pdf-engine en el puerto:
     // con el genérico, el usuario buscaba el problema en el archivo.
     expect(motivoDeApertura('a.pdf', 403, 'unauthorized')).toContain('otro PDF Master')
+    expect(motivoDeApertura('a.pdf', 403, 'unauthorized')).toContain('8745')
+  })
+
+  it('el 403 nombra el puerto que se está usando, no el 8745 de siempre', () => {
+    // Con el fallback de puerto, decirle al usuario "el 8745" cuando el motor está en
+    // el 8748 lo manda a mirar el proceso equivocado.
+    baseDelMotor = 'http://localhost:8748'
+    try {
+      expect(motivoDeApertura('a.pdf', 403, 'unauthorized')).toContain('puerto 8748')
+    } finally {
+      baseDelMotor = 'http://localhost:8745'
+    }
+  })
+
+  it('sin base conocida todavía, el 403 no inventa un puerto', () => {
+    baseDelMotor = ''
+    try {
+      const msg = motivoDeApertura('a.pdf', 403, 'unauthorized')
+      expect(msg).toContain('otro PDF Master')
+      expect(msg).not.toMatch(/\d{4}/)
+    } finally {
+      baseDelMotor = 'http://localhost:8745'
+    }
   })
 
   it('un fallo sin explicación cae al mensaje genérico', () => {

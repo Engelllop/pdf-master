@@ -84,7 +84,7 @@ class AnnotationsMixin:
                 raw = val[1:-1] if val.startswith("(") and val.endswith(")") else val
                 return json.loads(raw)
         except Exception:
-            pass
+            logger.debug("xref=%s: /PM ilegible, la marca se importa como ajena", annot.xref, exc_info=True)
         return {}
 
     @staticmethod
@@ -112,7 +112,7 @@ class AnnotationsMixin:
                     g = max(0, min(255, int(float(m.group(1)) * 255)))
                     out["color"] = '#%02x%02x%02x' % (g, g, g)
         except Exception:
-            pass
+            logger.debug("xref=%s: /DA ilegible, el FreeText ajeno pierde tamano y color", xref, exc_info=True)
         return out
 
     @staticmethod
@@ -194,7 +194,10 @@ class AnnotationsMixin:
                         if sc and len(sc) >= 3:
                             color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
                     except Exception:
-                        pass
+                        # Cada propiedad que no se importe se PIERDE al guardar (ver el
+                        # comentario de arriba), asi que el silencio de antes no dejaba
+                        # ni con que empezar: queda el xref para poder mirar la marca.
+                        logger.debug("marca ajena xref=%s: no se pudo leer el color de trazo", a.xref, exc_info=True)
                     # Las marcas AJENAS no traen payload, así que estas propiedades hay
                     # que leerlas del propio PDF. Desde que el guardado borra la original
                     # y redibuja desde la lista de la app (ver `_quitar_marcas_gestionadas`),
@@ -207,13 +210,13 @@ class AnnotationsMixin:
                         if fc and len(fc) >= 3:
                             relleno = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in fc[:3])
                     except Exception:
-                        pass
+                        logger.debug("marca ajena xref=%s: no se pudo leer el relleno", a.xref, exc_info=True)
                     opacidad = None
                     try:
                         if a.opacity is not None and 0 <= a.opacity < 1:
                             opacidad = float(a.opacity)
                     except Exception:
-                        pass
+                        logger.debug("marca ajena xref=%s: no se pudo leer la opacidad", a.xref, exc_info=True)
                     grosor = None
                     estilo = None
                     try:
@@ -225,7 +228,7 @@ class AnnotationsMixin:
                             # Un punto es una raya muy corta; el resto, trazos.
                             estilo = 'dotted' if float(rayas[0]) <= 1.5 else 'dashed'
                     except Exception:
-                        pass
+                        logger.debug("marca ajena xref=%s: no se pudo leer el borde", a.xref, exc_info=True)
 
                     da = self._read_da(doc, a.xref) if raw == 'FreeText' else {}
                     if da.get('color') and not pm.get('color'):

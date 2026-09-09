@@ -19,29 +19,30 @@ $backendJob = Start-Job -ScriptBlock {
 
 Start-Sleep -Seconds 2
 
-# Verificar que el backend está corriendo
+# Verificar que el backend está corriendo. Se pregunta a /pdf/health, que existe justo
+# para esto: antes se mandaba un POST /pdf/open vacío esperando un 422, o sea que la
+# sonda dependía de que fallara la validación de otro endpoint.
 $backendReady = $false
-for ($i = 0; $i -lt 10; $i++) {
+$version = $null
+for ($i = 0; $i -lt 15; $i++) {
     try {
-        $response = Invoke-WebRequest -Uri "http://localhost:8745/pdf/open" -Method POST -Body '{"file_path":""}' -ContentType "application/json" -ErrorAction Stop -TimeoutSec 2
-        if ($response.StatusCode -eq 422) {
+        $salud = Invoke-RestMethod -Uri "http://localhost:8745/pdf/health" -TimeoutSec 2 -ErrorAction Stop
+        if ($salud.status -eq 'ok') {
             $backendReady = $true
+            $version = $salud.version
             break
         }
     } catch {
-        # 422 significa que el endpoint existe pero faltan datos, eso está bien
-        if ($_.Exception.Response.StatusCode.value__ -eq 422) {
-            $backendReady = $true
-            break
-        }
+        # todavía no escucha
     }
     Start-Sleep -Seconds 1
 }
 
 if ($backendReady) {
-    Write-Host "      Backend listo en http://localhost:8745" -ForegroundColor DarkGreen
+    Write-Host "      Motor $version listo en http://localhost:8745" -ForegroundColor DarkGreen
 } else {
-    Write-Host "      Advertencia: El backend puede no estar listo aún" -ForegroundColor Yellow
+    Write-Host "      Advertencia: el motor no contesto /pdf/health en 15s" -ForegroundColor Yellow
+    Write-Host "      Mira si el 8745 lo tiene otro pdf-engine (la app instalada abierta)." -ForegroundColor Yellow
 }
 
 Write-Host ""

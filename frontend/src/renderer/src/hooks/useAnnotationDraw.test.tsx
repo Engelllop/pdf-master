@@ -265,7 +265,7 @@ describe('puntos de snap tras editar la página', () => {
       llamadas.push(String(url))
       return Promise.resolve({ ok: true, json: async () => ({ points: [{ x: 1, y: 1 }] }) } as unknown as Response)
     }))
-    Object.assign(window, { api: { ...window.api, getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     return llamadas
   }
 

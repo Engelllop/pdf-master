@@ -120,7 +120,7 @@ describe('importar XFDF', () => {
         json: async () => (path.includes('import-xfdf') ? { annotations: anns } : { success: true }),
       } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
-    Object.assign(window, { api: { ...window.api, openFile: vi.fn(async () => 'C:/rev.xfdf'), getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, openFile: vi.fn(async () => 'C:/rev.xfdf'), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     return fetchMock
   }
 
@@ -259,7 +259,7 @@ describe('exportar mediciones con escalas distintas', () => {
   it('cada fila lleva la escala de SU página y el título no inventa una sola', async () => {
     const fetchMock = okFetch()
     vi.stubGlobal('fetch', fetchMock)
-    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => 'C:/takeoff.csv'), getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => 'C:/takeoff.csv'), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     const doc = docConCotas()
     const h = helpers()
     const { result } = renderHook(({ d }) => usePdfActions(d, h), { initialProps: { d: doc } })
@@ -276,7 +276,7 @@ describe('exportar mediciones con escalas distintas', () => {
   it('con una sola escala el título la dice', async () => {
     const fetchMock = okFetch()
     vi.stubGlobal('fetch', fetchMock)
-    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => 'C:/takeoff.csv'), getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => 'C:/takeoff.csv'), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     openDoc(2)
     usePdfStore.getState().addAnnotation('doc-1', { id: 'm0', type: 'measure_distance', page: 0, x: 0, y: 0, width: 100, height: 0 })
     usePdfStore.getState().setMeasurementScale('doc-1', { pixelsPerUnit: 10, unit: 'm' })
@@ -296,7 +296,7 @@ describe('exportar a Word por lotes', () => {
     const fetchMock = okFetch({ filename: 'x.docx', output_path: 'C:/salida/x.docx' })
     vi.stubGlobal('fetch', fetchMock)
     Object.assign(window, {
-      api: { ...window.api, chooseFolder: vi.fn(async () => carpeta), getApiToken: async () => '' },
+      api: { ...window.api, chooseFolder: vi.fn(async () => carpeta), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) },
     })
     return fetchMock
   }
@@ -331,7 +331,7 @@ describe('comprimir por lotes', () => {
     const fetchMock = okFetch(tamanos)
     vi.stubGlobal('fetch', fetchMock)
     Object.assign(window, {
-      api: { ...window.api, chooseFolder: vi.fn(async () => carpeta), getApiToken: async () => '' },
+      api: { ...window.api, chooseFolder: vi.fn(async () => carpeta), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) },
     })
     return fetchMock
   }
@@ -424,7 +424,7 @@ describe('escribir sobre el propio archivo desde otra operación', () => {
         json: async () => (path.includes('disk-state') ? enDisco : { success: true, size_before: 100, size_after: 90 }),
       } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
-    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => destino), getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => destino), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     return fetchMock
   }
 
@@ -478,7 +478,7 @@ describe('las otras escrituras también llevan las marcas', () => {
         json: async () => ({ success: true, size_before: 100, size_after: 90 }),
       } as unknown as Response))
     vi.stubGlobal('fetch', fetchMock)
-    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => destino), chooseFolder: vi.fn(async () => 'C:/salida'), getApiToken: async () => '' } })
+    Object.assign(window, { api: { ...window.api, saveFile: vi.fn(async () => destino), chooseFolder: vi.fn(async () => 'C:/salida'), getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
     openDoc(2)
     usePdfStore.getState().addAnnotation('doc-1', { id: 'r1', type: 'rect', page: 0, x: 10, y: 10, width: 50, height: 20 })
     return { fetchMock, doc: usePdfStore.getState().docs[0] }

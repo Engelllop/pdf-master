@@ -345,4 +345,9 @@ class DocumentsMixin:
             self._passwords.pop(doc_id, None)
             self._pending_annotations.pop(doc_id, None)
             self._lru.pop(doc_id, None)
+            # Los bitmaps y los snap-points del documento cerrado no los suelta nadie
+            # mas: quedaban en `_render_cache` (tope 150) hasta que el LRU los
+            # desplazara, o sea que abrir y cerrar planos grandes hacia crecer la RAM
+            # del motor sin documentos abiertos.
+            self._invalidate_render_cache(doc_id)
             return existed

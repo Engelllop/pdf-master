@@ -35,7 +35,7 @@ function setup() {
 beforeEach(() => {
   usePdfStore.setState(initialState, true)
   localStorage.clear()
-  Object.assign(window, { api: { getApiToken: async () => '' } })
+  Object.assign(window, { api: { getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) } })
   vi.mocked(askConfirm).mockReset()
   vi.mocked(askConfirm).mockResolvedValue(true)
 })

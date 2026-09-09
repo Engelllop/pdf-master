@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
-import { correrCola } from '../lib/batchQueue'
+import { correrLote } from '../lib/lote'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
 import {
   DRAW_BASIC_IDS, DRAW_SHAPE_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
@@ -288,19 +288,18 @@ export default function Toolbar() {
 
   useEffect(() => () => { detenerLectura() }, [])
 
-  // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
   const handleSearch = async () => {
     if (!activeDoc || !searchInput.trim()) return
-    const { startProgress, updateProgress, endProgress, isCancelRequested } = usePdfStore.getState()
+    const { startProgress, endProgress } = usePdfStore.getState()
     if (searchAllDocs) {
       // Secuencial a propósito: el motor tiene un solo worker de fitz. Buscar en 60
       // planos abiertos son minutos, y no había ni progreso ni forma de cancelar: la
-      // app se veía colgada. Se reusa la barra de las operaciones por lotes.
-      startProgress(`Buscar «${searchInput}»`, docs.length)
+      // app se veía colgada. Se reusa `correrLote`, el mismo recorrido que las
+      // operaciones por lotes (antes era una copia a mano que se desincronizó).
       let total = 0
-      let resultado
-      try {
-        resultado = await correrCola(docs, async (d) => {
+      const { ok, hechos, cancelado } = await correrLote(
+        `Buscar «${searchInput}»`, docs, (d) => d.file_name,
+        async (d) => {
           setSearchQuery(d.doc_id, searchInput)
           try {
             const res = await apiFetch(`/pdf/search/${d.doc_id}?query=${encodeURIComponent(searchInput)}&limit=500`)
@@ -311,14 +310,8 @@ export default function Toolbar() {
             if (d.doc_id === activeDoc.doc_id && results.length > 0) setPage(d.doc_id, results[0].page)
             return true
           } catch { return false }
-        }, {
-          avanzar: (n, d) => updateProgress(n, d.file_name),
-          cancelado: isCancelRequested,
-        })
-      } finally {
-        endProgress()
-      }
-      const { ok, hechos, cancelado } = resultado
+        },
+      )
       if (ok === 0 && hechos > 0) showToast('No se pudo buscar', 'error')
       else if (cancelado) showToast(`Cancelado: ${total} resultado(s) en ${hechos} de ${docs.length} documento(s)`, 'info')
       else showToast(`${total} resultado(s) en ${docs.length} documento(s)`, total > 0 ? 'success' : 'info')
