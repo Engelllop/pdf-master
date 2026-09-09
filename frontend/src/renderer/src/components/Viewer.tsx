@@ -615,9 +615,15 @@ export default function Viewer() {
   // Render annotations. Memoizado: `getAnnotationsForPage` filtra y devuelve un array
   // NUEVO en cada llamada, así que sin esto la capa de marcas se reconstruía entera en
   // cada render del visor — incluido el que dispara un simple cambio de herramienta.
+  // Extraidos a variables porque el linter no puede comprobar una expresion dentro
+  // del array de dependencias. Lo que importa es si HAY bitmap, no cual: rehacer la
+  // capa de marcas en cada reemplazo del bitmap (el afinado al hacer zoom) seria
+  // reconstruir miles de elementos por nada.
+  const hayPagina = !!pageData
+  const hayPaginaDerecha = !!pageDataRight
   const annotations = useMemo(
     () => (activeDoc && pageData ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage) : []),
-    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, !!pageData],
+    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, hayPagina],
   )
   // Marcas sobre las que actúa el menú contextual: la selección múltiple si la hay,
   // si no la única seleccionada (las dos vías coexisten en el store).
@@ -626,7 +632,7 @@ export default function Viewer() {
     : store.selectedAnnotationId ? [store.selectedAnnotationId] : []
   const annotationsRight = useMemo(
     () => (activeDoc && pageDataRight ? store.getAnnotationsForPage(activeDoc.doc_id, activeDoc.currentPage + 1) : []),
-    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, !!pageDataRight],
+    [activeDoc?.doc_id, activeDoc?.annotations, activeDoc?.currentPage, activeDoc?.hiddenLayers, hayPaginaDerecha],
   )
 
   const textDefaults = useMemo(
@@ -669,7 +675,8 @@ export default function Viewer() {
     if (!pendingNoteId) return
     setNotePopup({ annId: pendingNoteId })
     setPendingNoteId(null)
-  }, [pendingNoteId])
+    // El setter de un `useState` tiene identidad estable por contrato de React.
+  }, [pendingNoteId, setPendingNoteId])
 
   const selectedAnnLeft = store.selectedAnnotationId ? annotations.find((a) => a.id === store.selectedAnnotationId) : undefined
   const selectedAnnRight = store.selectedAnnotationId ? annotationsRight.find((a) => a.id === store.selectedAnnotationId) : undefined
@@ -789,7 +796,7 @@ export default function Viewer() {
                 )}
 
                 {/* Preview while drawing (el marcado de texto muestra su preview por línea) */}
-                {drawPreview && (drawPreview as any).type !== 'textselect' && markupRects.length === 0 &&
+                {drawPreview && drawPreview.type !== 'textselect' && markupRects.length === 0 &&
                   renderAnnotation(drawPreview as Annotation, pageData, toScreenCoords, { isPreview: true, textDefaults })}
                 {drawPreview && markupRects.map((l, i) =>
                   renderAnnotation({
@@ -825,7 +832,7 @@ export default function Viewer() {
                     </g>
                   )
                 })()}
-                {(drawPreview as any)?.type === 'textselect' && drawPreview?.width && (
+                {drawPreview?.type === 'textselect' && drawPreview?.width && (
                   <rect x={toScreenCoords(Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0)), Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))).x}
                     y={toScreenCoords(Math.min(drawPreview.x || 0, (drawPreview.x || 0) + (drawPreview.width || 0)), Math.min(drawPreview.y || 0, (drawPreview.y || 0) + (drawPreview.height || 0))).y}
                     width={Math.abs((drawPreview.width || 0) * (pageData.width / pageData.originalWidth))}

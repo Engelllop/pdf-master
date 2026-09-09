@@ -22,7 +22,14 @@ const MARKUP_TOOLS = ['highlight', 'underline', 'strikethrough']
 // todos acababan dentro del PDF al guardar.
 const MIN_DRAW_STEP_PT = 0.5
 
-export type DrawPreview = Partial<Annotation> & { type?: Annotation['type'] | 'textselect' | 'measure_calibrate' | 'measure_distance' | 'measure_area' }
+// `Omit<..., 'type'>` y no una interseccion a secas: intersecar dos tipos de objeto
+// interseca sus PROPIEDADES, asi que `Partial<Annotation> & { type?: ... }` dejaba
+// `type` en `Annotation['type']` y los extras ('textselect', 'measure_calibrate') no
+// formaban parte del tipo. El tipo mentia, y por eso el visor comparaba con
+// `(drawPreview as any).type` para poder mirar un valor que si existe en runtime.
+export type DrawPreview = Omit<Partial<Annotation>, 'type'> & {
+  type?: Annotation['type'] | 'textselect' | 'measure_calibrate'
+}
 
 const computeDistance = distance
 

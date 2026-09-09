@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { PanelLeftClose, FileText, BookOpen, Bookmark, Trash2, MessageSquare, X, Search, Tally5, Pencil, Check } from 'lucide-react'
+import { mensajeDeError } from '../lib/format'
 import { usePdfStore, type OutlineItem } from '../store/usePdfStore'
 import { useFormModal } from './FormModal'
 import ReviewPanel from './ReviewPanel'
@@ -156,7 +157,9 @@ export default function ThumbnailPanel() {
       }
     }
     loadThumbs()
-  }, [activeDoc, sidebarOpen, visibleRange.start, visibleRange.end])
+    // `addThumbnail` es una accion del store: su identidad no cambia nunca, asi que
+    // listarla es gratis y deja el linter sin nada que decir.
+  }, [activeDoc, sidebarOpen, visibleRange.start, visibleRange.end, addThumbnail])
 
   useEffect(() => {
     if (!scrollRef.current || !activeDoc) return
@@ -205,8 +208,8 @@ export default function ThumbnailPanel() {
       await deletePagesUndoable(activeDoc.doc_id, pages)
       setSelectedPages(new Set())
       showToast(`${pages.length} página(s) eliminada(s). Ctrl+Z restaura.`, 'success')
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      showToast('Error: ' + mensajeDeError(err), 'error')
     }
   }
 
@@ -216,8 +219,8 @@ export default function ThumbnailPanel() {
     try {
       await rotatePagesUndoable(activeDoc.doc_id, pages, degrees)
       showToast(`${pages.length} página(s) rotada(s) ${degrees}°. Ctrl+Z deshace.`, 'success')
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      showToast('Error: ' + mensajeDeError(err), 'error')
     }
   }
 
@@ -286,8 +289,8 @@ export default function ThumbnailPanel() {
       } else {
         showToast('Error al extraer páginas', 'error')
       }
-    } catch (err: any) {
-      showToast('Error: ' + err.message, 'error')
+    } catch (err) {
+      showToast('Error: ' + mensajeDeError(err), 'error')
     }
   }
 
@@ -298,7 +301,7 @@ export default function ThumbnailPanel() {
       await duplicatePageUndoable(activeDoc.doc_id, page)
       setSelectedPages(new Set())
       showToast('Página duplicada. Ctrl+Z deshace.', 'success')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { showToast('Error: ' + mensajeDeError(err), 'error') }
   }
 
   const handleInsertBlank = async () => {
@@ -308,7 +311,7 @@ export default function ThumbnailPanel() {
       await insertBlankUndoable(activeDoc.doc_id, index)
       setSelectedPages(new Set())
       showToast('Página en blanco insertada. Ctrl+Z deshace.', 'success')
-    } catch (err: any) { showToast('Error: ' + err.message, 'error') }
+    } catch (err) { showToast('Error: ' + mensajeDeError(err), 'error') }
   }
 
   // Rail de iconos SIEMPRE visible (estilo SwifDoo/Acrobat): un clic abre el panel en
