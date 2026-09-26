@@ -5,6 +5,9 @@ import {
   type Annotation,
   type PageCommand,
   type PageOp,
+  type PageSize,
+  type PasoDeMarcas,
+  type PasoSinGuardar,
 } from '../store/usePdfStore'
 
 /** `?pages=0&pages=1` — FastAPI lee el parámetro repetido como lista. Vacío o sin
@@ -32,6 +35,101 @@ export function remapAnnsAfterInsert(anns: Annotation[], inserted: number[]): An
   return result
 }
 
+type Punto = { x: number; y: number }
+
+/** Gira un punto con la página, en el espacio de la vista (el de PDF.js a escala 1,
+ * que ya incluye el /Rotate y es donde viven las marcas). `w`/`h`: página ANTES de girar. */
+function rotarPunto(p: Punto, deg: number, w: number, h: number): Punto {
+  if (deg === 90) return { x: h - p.y, y: p.x }
+  if (deg === 180) return { x: w - p.x, y: h - p.y }
+  return { x: p.y, y: w - p.x }
+}
+
+function rotarMarca(a: Annotation, deg: number, w: number, h: number): Annotation {
+  const R = (p: Punto) => rotarPunto(p, deg, w, h)
+  const points = a.points?.map(R)
+  const conPuntos = points ? { points } : {}
+  switch (a.type) {
+    // Segmentos: ancho/alto son el vector al otro extremo, con signo.
+    case 'arrow':
+    case 'line':
+    case 'measure_distance': {
+      const p1 = R(a)
+      const p2 = R({ x: a.x + (a.width ?? 0), y: a.y + (a.height ?? 0) })
+      return { ...a, x: p1.x, y: p1.y, width: p2.x - p1.x, height: p2.y - p1.y, ...conPuntos }
+    }
+    case 'count':
+      return { ...a, ...R(a) }
+    // Texto e imágenes no se tumban: la caja conserva su tamaño y se muda con el
+    // contenido. La imagen sí gira con la hoja (tiene `rotation` para eso); el texto
+    // queda legible.
+    case 'text':
+    case 'note':
+    case 'callout':
+    case 'image': {
+      const def = a.type === 'image' ? [200, 150] : a.type === 'note' ? [28, 28] : [0, 0]
+      const bw = a.width ?? def[0]
+      const bh = a.height ?? def[1]
+      const x0 = bw < 0 ? a.x + bw : a.x
+      const y0 = bh < 0 ? a.y + bh : a.y
+      const c = R({ x: x0 + Math.abs(bw) / 2, y: y0 + Math.abs(bh) / 2 })
+      return {
+        ...a,
+        x: c.x - Math.abs(bw) / 2,
+        y: c.y - Math.abs(bh) / 2,
+        ...(a.width != null ? { width: Math.abs(bw) } : {}),
+        ...(a.height != null ? { height: Math.abs(bh) } : {}),
+        ...(a.type === 'image' ? { rotation: ((a.rotation ?? 0) + deg) % 360 } : {}),
+        ...conPuntos,
+      }
+    }
+  }
+  // Trazos por puntos: x/y es el primer punto.
+  if (a.width == null && a.height == null) return { ...a, ...R(a), ...conPuntos }
+  // Cajas (resaltado, rectángulo, nube…): se gira la caja entera.
+  const p1 = R(a)
+  const p2 = R({ x: a.x + (a.width ?? 0), y: a.y + (a.height ?? 0) })
+  return {
+    ...a,
+    x: Math.min(p1.x, p2.x),
+    y: Math.min(p1.y, p2.y),
+    width: Math.abs(p2.x - p1.x),
+    height: Math.abs(p2.y - p1.y),
+    ...conPuntos,
+  }
+}
+
+/** Al girar una página el contenido se mueve y las marcas tienen que ir con él: sin
+ * esto quedaban clavadas en la vista y un cuadro que rodeaba un muro pasaba a rodear
+ * nada. `pageSizesBefore` es la maquetación de antes de girar (en espacio de vista). */
+export function remapAnnsAfterRotate(
+  anns: Annotation[], pages: number[] | 'all', degrees: number, pageSizesBefore: PageSize[],
+): Annotation[] {
+  const deg = ((degrees % 360) + 360) % 360
+  if (deg === 0 || deg % 90 !== 0) return anns
+  const afectadas = pages === 'all' ? null : new Set(pages)
+  return anns.map((a) => {
+    if (afectadas && !afectadas.has(a.page)) return a
+    const size = pageSizesBefore[a.page]
+    return size ? rotarMarca(a, deg, size.width, size.height) : a
+  })
+}
+
+/** Recortar mueve el origen de la vista al nuevo borde superior izquierdo: sin esto
+ * las marcas de esa página quedaban corridas lo que midiera el margen recortado, en
+ * pantalla y en el archivo. */
+export function desplazarMarcasDePagina(anns: Annotation[], page: number, dx: number, dy: number): Annotation[] {
+  if (dx === 0 && dy === 0) return anns
+  return anns.map((a) => (a.page !== page
+    ? a
+    : {
+        ...a,
+        x: a.x + dx,
+        y: a.y + dy,
+        points: a.points?.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+      }))
+}
+
 /** El índice se mantiene si esa página sigue existiendo; si no, cae en la siguiente. */
 export function remapPageIndexAfterDelete(page: number, deleted: number[]): number {
   return page - deleted.filter((p) => p < page).length
@@ -41,6 +139,68 @@ export function invertOrder(order: number[]): number[] {
   const inv = new Array(order.length)
   order.forEach((oldIdx, newIdx) => { inv[oldIdx] = newIdx })
   return inv
+}
+
+const ascendente = (xs: number[]) => [...new Set(xs)].sort((a, b) => a - b)
+
+/** Qué le hace `op` a las marcas. `anns`/`sizes`: estado JUSTO antes de aplicarla. Las
+ * operaciones que no mueven marcas (marca de agua, formularios…) dan null. */
+export function pasoDeMarcas(op: PageOp, anns: Annotation[], sizes: PageSize[]): PasoDeMarcas | null {
+  switch (op.type) {
+    case 'remove': {
+      const pages = ascendente(op.pages)
+      return { type: 'delete', pages, dropped: anns.filter((a) => pages.includes(a.page)) }
+    }
+    case 'restore':
+      return { type: 'insert', pages: ascendente(op.at) }
+    case 'reorder':
+      return { type: 'reorder', order: op.order }
+    case 'rotate':
+      return { type: 'rotate', pages: op.pages, degrees: op.degrees, sizesBefore: sizes }
+    case 'crop':
+      return { type: 'shift', page: op.page, dx: -op.left, dy: -op.top }
+    case 'replace':
+      return op.desplazar ? { type: 'shift', page: op.page, dx: op.desplazar.dx, dy: op.desplazar.dy } : null
+    default:
+      return null
+  }
+}
+
+export function anotarPaso(
+  log: PasoSinGuardar[] | undefined, cmd: PageCommand, sentido: PasoSinGuardar['sentido'], paso: PasoDeMarcas | null,
+): PasoSinGuardar[] | undefined {
+  const ultimo = log?.[log.length - 1]
+  if (ultimo && ultimo.cmd === cmd && ultimo.sentido !== sentido) return log!.slice(0, -1)
+  return paso ? [...(log ?? []), { cmd, sentido, paso }] : log
+}
+
+/** Devuelve las marcas al marco del archivo de disco revirtiendo, del último al
+ * primero, lo que cada paso de página sin guardar les hizo. Las ediciones de marcas
+ * hechas entre medio se conservan; las que caen en páginas que el disco no tiene
+ * (dibujadas en una hoja insertada) se descartan y se cuentan. */
+export function marcasEnVersionDeDisco(
+  anns: Annotation[], pasos: PasoDeMarcas[],
+): { anns: Annotation[]; descartadas: number } {
+  let res = anns
+  let descartadas = 0
+  for (const p of [...pasos].reverse()) {
+    if (p.type === 'delete') {
+      res = [...remapAnnsAfterInsert(res, p.pages), ...p.dropped]
+    } else if (p.type === 'insert') {
+      descartadas += res.filter((a) => p.pages.includes(a.page)).length
+      res = remapAnnsAfterDelete(res, p.pages)
+    } else if (p.type === 'reorder') {
+      res = res.map((a) => ({ ...a, page: p.order[a.page] }))
+    } else if (p.type === 'shift') {
+      res = desplazarMarcasDePagina(res, p.page, -p.dx, -p.dy)
+    } else {
+      const cuarto = ((p.degrees % 180) + 180) % 180 === 90
+      const sizesAfter = p.sizesBefore.map((s, i) =>
+        cuarto && (p.pages === 'all' || p.pages.includes(i)) ? { ...s, width: s.height, height: s.width } : s)
+      res = remapAnnsAfterRotate(res, p.pages, -p.degrees, sizesAfter)
+    }
+  }
+  return { anns: res, descartadas }
 }
 
 export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): Promise<void> {
@@ -332,12 +492,25 @@ export async function refreshDocLayout(docId: string): Promise<void> {
   s.incrementDocVersion(docId)
 }
 
+// Las `page_sizes` del store siguen siendo las de antes de la operación: la maquetación
+// se refresca después (reordenar ya las cambió, pero su paso no las usa).
 function commitPageCommand(cmd: Omit<PageCommand, 'kind'>, afterAnns: Annotation[]) {
+  const full: PageCommand = { ...cmd, kind: 'page' }
   usePdfStore.setState((state) => ({
     docs: state.docs.map((d) =>
-      d.doc_id === cmd.docId ? { ...d, annotations: afterAnns, dirty: true } : d,
+      d.doc_id === cmd.docId
+        ? {
+            ...d,
+            annotations: afterAnns,
+            dirty: true,
+            engineDirty: true,
+            pasosSinGuardar: anotarPaso(
+              d.pasosSinGuardar, full, 'forward', pasoDeMarcas(cmd.forward, cmd.beforeAnns, d.page_sizes),
+            ),
+          }
+        : d,
     ),
-    undoStack: [...state.undoStack, { ...cmd, kind: 'page' as const }].slice(-100),
+    undoStack: [...state.undoStack, full].slice(-100),
     redoStack: [],
   }))
 }
@@ -346,6 +519,8 @@ export async function finishPageCommand(cmd: PageCommand, dir: 'undo' | 'redo'):
   try {
     const op = dir === 'undo' ? cmd.inverse : cmd.forward
     const sibling = dir === 'undo' ? cmd.forward : cmd.inverse
+    const antes = usePdfStore.getState().docs.find((d) => d.doc_id === cmd.docId)
+    const paso = antes ? pasoDeMarcas(op, antes.annotations, antes.page_sizes) : null
     await applyPageOp(cmd.docId, op, sibling)
     if (op.type === 'reorder') {
       usePdfStore.getState().reorderPages(cmd.docId, op.order)
@@ -353,7 +528,12 @@ export async function finishPageCommand(cmd: PageCommand, dir: 'undo' | 'redo'):
     usePdfStore.setState((s) => ({
       docs: s.docs.map((d) =>
         d.doc_id === cmd.docId
-          ? { ...d, annotations: dir === 'undo' ? cmd.beforeAnns : cmd.afterAnns, dirty: true }
+          ? {
+              ...d,
+              annotations: dir === 'undo' ? cmd.beforeAnns : cmd.afterAnns,
+              dirty: true,
+              pasosSinGuardar: anotarPaso(d.pasosSinGuardar, cmd, dir === 'undo' ? 'inverse' : 'forward', paso),
+            }
           : d,
       ),
       pageUndoBusy: false,
@@ -382,14 +562,16 @@ export async function rotatePagesUndoable(docId: string, pages: number[] | 'all'
   if (pages !== 'all' && pages.length === 0) return
   const forward: PageOp = { type: 'rotate', pages, degrees }
   await applyPageOp(docId, forward)
-  const anns = usePdfStore.getState().docs.find((d) => d.doc_id === docId)?.annotations ?? []
+  const doc = usePdfStore.getState().docs.find((d) => d.doc_id === docId)
+  const beforeAnns = doc?.annotations ?? []
+  const afterAnns = remapAnnsAfterRotate(beforeAnns, pages, degrees, doc?.page_sizes ?? [])
   commitPageCommand({
     docId,
     inverse: { type: 'rotate', pages, degrees: -degrees },
     forward,
-    beforeAnns: anns,
-    afterAnns: anns,
-  }, anns)
+    beforeAnns,
+    afterAnns,
+  }, afterAnns)
   await refreshDocLayout(docId)
 }
 
@@ -459,13 +641,14 @@ export async function cropPageUndoable(
   if (!res.ok) throw new Error('No se pudo recortar')
   const data = await res.json()
   const anns = usePdfStore.getState().docs.find((d) => d.doc_id === docId)?.annotations ?? []
+  const afterAnns = desplazarMarcasDePagina(anns, page, -box.left, -box.top)
   commitPageCommand({
     docId,
-    inverse: { type: 'replace', page, stashId: data.stash_id || '' },
+    inverse: { type: 'replace', page, stashId: data.stash_id || '', desplazar: { dx: box.left, dy: box.top } },
     forward: { type: 'crop', page, ...box },
     beforeAnns: anns,
-    afterAnns: anns,
-  }, anns)
+    afterAnns,
+  }, afterAnns)
   await refreshDocLayout(docId)
 }
 

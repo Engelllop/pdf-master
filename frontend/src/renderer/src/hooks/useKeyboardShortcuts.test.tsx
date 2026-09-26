@@ -138,6 +138,51 @@ describe('ajuste fino con las flechas', () => {
     expect(teclear('ArrowRight').defaultPrevented).toBe(false)
   })
 
+  // Mover con las flechas no apilaba nada: Ctrl+Z deshacía la acción ANTERIOR (crear la
+  // marca, en este caso) y la marca se quedaba corrida.
+  it('Ctrl+Z tras mover con las flechas devuelve la marca a su sitio y no deshace lo anterior', () => {
+    const s = usePdfStore.getState()
+    const a = marca({ x: 100, y: 100 })
+    s.addAnnotation('doc-1', a)
+    act(() => { usePdfStore.getState().selectAnnotations('doc-1', [a.id]) })
+    montar()
+    teclear('ArrowRight')
+    teclear('z', { ctrlKey: true })
+    const anns = usePdfStore.getState().docs[0].annotations
+    expect(anns).toHaveLength(1)
+    expect(anns[0].x).toBe(100)
+  })
+
+  it('una ráfaga de flechas sobre la misma selección es UN paso de deshacer', () => {
+    const s = usePdfStore.getState()
+    const a = marca({ x: 100, y: 100 })
+    s.addAnnotation('doc-1', a)
+    act(() => { usePdfStore.getState().selectAnnotations('doc-1', [a.id]) })
+    montar()
+    const pasosAntes = usePdfStore.getState().undoStack.length
+    teclear('ArrowRight'); teclear('ArrowRight'); teclear('ArrowDown', { shiftKey: true })
+    expect(usePdfStore.getState().undoStack.length).toBe(pasosAntes + 1)
+    teclear('z', { ctrlKey: true })
+    expect(usePdfStore.getState().docs[0].annotations[0]).toMatchObject({ x: 100, y: 100 })
+  })
+
+  it('arrastrar (cambian las marcas) no re-suscribe el listener', () => {
+    const add = vi.spyOn(window, 'addEventListener')
+    const s = usePdfStore.getState()
+    const a = marca()
+    s.addAnnotation('doc-1', a)
+    const { rerender } = renderHook(
+      ({ doc }) => useKeyboardShortcuts(doc, null, deleteAnnotation, cancelDraw),
+      { initialProps: { doc: usePdfStore.getState().docs[0] } },
+    )
+    const suscripciones = () => add.mock.calls.filter((c) => c[0] === 'keydown').length
+    const antes = suscripciones()
+    act(() => { usePdfStore.getState().moveAnnotations('doc-1', [a.id], 5, 5) })
+    rerender({ doc: usePdfStore.getState().docs[0] })
+    expect(suscripciones()).toBe(antes)
+    add.mockRestore()
+  })
+
   it('escribiendo en un campo, las flechas mueven el cursor y no la marca', () => {
     const input = campoDeTexto()
     const s = usePdfStore.getState()

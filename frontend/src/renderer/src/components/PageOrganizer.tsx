@@ -4,7 +4,7 @@ import { PageActions } from './panelUi'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { askConfirm } from '../lib/uiPrompt'
 import { apiFetch } from '../lib/api'
-import { pushAnnotations } from '../lib/saveDocument'
+import { subirMarcasOAvisar } from '../lib/saveDocument'
 import { renderPdfThumbnail } from '../lib/pdfjs'
 import { revokePageUrl } from '../lib/blobUrl'
 import {
@@ -209,7 +209,7 @@ export default function PageOrganizer({ onClose }: { onClose: () => void }) {
     try {
       // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
       // salía con las páginas limpias, sin las marcas que se acaban de poner.
-      await pushAnnotations(doc.doc_id)
+      if (!(await subirMarcasOAvisar(doc.doc_id))) return
       const res = await apiFetch(`/pdf/split/${doc.doc_id}?output_path=${encodeURIComponent(out)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages: [...selected].sort((a, b) => a - b) }),

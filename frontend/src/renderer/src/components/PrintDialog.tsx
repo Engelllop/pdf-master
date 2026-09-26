@@ -4,7 +4,7 @@ import {
   DialogShell, DialogHeader, DialogFooter, btnPrimary, btnGhost, fieldInput, nativeAccent,
 } from './panelUi'
 import { useStoreSlice } from '../hooks/useStoreSlice'
-import { pushAnnotations } from '../lib/saveDocument'
+import { subirMarcasOAvisar } from '../lib/saveDocument'
 import { expandPageRanges, parsePageRanges } from '../lib/pageRange'
 import { esApaisado } from '../lib/printOrientation'
 
@@ -52,7 +52,7 @@ export default function PrintDialog({ docId, pageCount, currentPage, onClose }: 
     try {
       // Las marcas viven en el store hasta que se guarda; sin subirlas al motor la
       // impresión salía sin ellas (y sin avisar).
-      await pushAnnotations(docId, { excluirCapasOcultas: marcasOcultas > 0 && omitirOcultas })
+      if (!(await subirMarcasOAvisar(docId, { excluirCapasOcultas: marcasOcultas > 0 && omitirOcultas }))) return
       const res = await window.api.printPdf(docId, {
         pageRanges, copies,
         landscape: esApaisado(doc?.page_sizes || [], paginas),

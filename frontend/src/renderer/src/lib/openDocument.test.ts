@@ -10,8 +10,9 @@ vi.mock('./api', () => ({
 vi.mock('./uiPrompt', () => ({ askForm: vi.fn(async () => null) }))
 vi.mock('./blobUrl', () => ({ revokePageUrl: () => {} }))
 
-import { mensajeDeFallos, motivoDeApertura, openDocument } from './openDocument'
-import { usePdfStore } from '../store/usePdfStore'
+import { avisoDeReinicio, mensajeDeFallos, motivoDeApertura, openDocument, reopenDeadDoc } from './openDocument'
+import { deletePagesUndoable, insertBlankUndoable, reorderPagesUndoable, rotatePagesUndoable } from './pageUndo'
+import { usePdfStore, type Annotation, type PageCommand } from '../store/usePdfStore'
 import { loadRecents } from './recents'
 
 const initialState = usePdfStore.getState()
@@ -152,5 +153,201 @@ describe('el mismo archivo no abre dos pestañas', () => {
     expect(usePdfStore.getState().docs).toHaveLength(2)
     expect(usePdfStore.getState().activeDocId).toBe('doc-1')
     expect(apiFetch).not.toHaveBeenCalled()
+  })
+})
+
+// Tras un reinicio del motor se reabre el archivo de DISCO: lo que el motor muerto tenía
+// sin guardar (rotar, borrar, OCR…) se perdió. Antes se remapeaba el id sin más: el
+// store seguía con el page_count viejo, la pila de deshacer apuntaba a páginas que ya no
+// existían y el usuario no se enteraba de nada.
+describe('reabrir un documento tras un reinicio del motor', () => {
+  const paginas = (n: number) => Array.from({ length: n }, (_, i) => ({ page_num: i, width: 612, height: 792 }))
+  const pasoDePagina: PageCommand = {
+    kind: 'page', docId: 'doc-1',
+    inverse: { type: 'restore', stashId: 's', at: [3] },
+    forward: { type: 'remove', pages: [3] },
+    beforeAnns: [], afterAnns: [],
+  }
+
+  function abrirConCambiosDelMotor() {
+    const s = usePdfStore.getState()
+    s.addDoc({ doc_id: 'doc-1', file_path: 'C:/planos/a.pdf', page_count: 3, title: null, author: null, subject: null, page_sizes: paginas(3) })
+    s.addAnnotation('doc-1', { id: 'm1', type: 'rect', page: 0, x: 1, y: 1, width: 5, height: 5 })
+    usePdfStore.setState((st) => ({ undoStack: [...st.undoStack, pasoDePagina], redoStack: [{ ...pasoDePagina }] }))
+    s.incrementDocVersion('doc-1')
+    s.setPage('doc-1', 2)
+    apiFetch.mockResolvedValue({
+      ok: true, status: 200,
+      json: async () => ({ doc_id: 'doc-nuevo', page_count: 4, page_sizes: paginas(4) }),
+    } as unknown as Response)
+  }
+
+  it('toma page_count y maquetación del archivo reabierto', async () => {
+    abrirConCambiosDelMotor()
+    expect(await reopenDeadDoc('doc-1')).toBe('doc-nuevo')
+    const d = usePdfStore.getState().docs[0]
+    expect(d.doc_id).toBe('doc-nuevo')
+    expect(d.page_count).toBe(4)
+    expect(d.page_sizes).toHaveLength(4)
+    expect(d.engineDirty).toBe(false)
+  })
+
+  it('si el archivo tiene menos páginas, la página actual no queda fuera', async () => {
+    abrirConCambiosDelMotor()
+    apiFetch.mockResolvedValue({
+      ok: true, status: 200, json: async () => ({ doc_id: 'doc-nuevo', page_count: 1, page_sizes: paginas(1) }),
+    } as unknown as Response)
+    await reopenDeadDoc('doc-1')
+    expect(usePdfStore.getState().docs[0].currentPage).toBe(0)
+  })
+
+  it('tira los pasos de página de deshacer/rehacer y conserva los de marcas y las marcas', async () => {
+    abrirConCambiosDelMotor()
+    await reopenDeadDoc('doc-1')
+    const st = usePdfStore.getState()
+    expect(st.undoStack).toHaveLength(1)
+    expect(st.undoStack[0].kind).not.toBe('page')
+    expect(st.undoStack[0].docId).toBe('doc-nuevo')
+    expect(st.redoStack).toHaveLength(0)
+    expect(st.docs[0].annotations.map((a) => a.id)).toEqual(['m1'])
+  })
+
+  it('avisa, y el aviso no se va solo, si el motor tenía cambios sin guardar', async () => {
+    vi.useFakeTimers()
+    abrirConCambiosDelMotor()
+    await reopenDeadDoc('doc-1')
+    vi.advanceTimersByTime(10_000)
+    const aviso = avisos().find((m) => m.includes('El motor se reinició'))
+    expect(aviso).toContain('«a.pdf»')
+    expect(aviso).toContain('las marcas se conservan')
+  })
+
+  it('sin cambios del motor (o ya guardados) no avisa', async () => {
+    abrirConCambiosDelMotor()
+    usePdfStore.getState().setDocDirty('doc-1', false)
+    await reopenDeadDoc('doc-1')
+    expect(avisos().some((m) => m.includes('El motor se reinició'))).toBe(false)
+  })
+})
+
+// Los pasos de página sin guardar ya habían movido las marcas (borrar una hoja corre
+// las de abajo). Al reabrir el archivo de disco, las marcas quedaban corridas respecto
+// de las hojas: una cota del plano 3 aparecía en el plano 2.
+describe('las marcas vuelven a la versión de disco tras un reinicio', () => {
+  const tam = (n: number, w = 100, h = 200) => Array.from({ length: n }, (_, i) => ({ page_num: i, width: w, height: h }))
+  const nota = (id: string, page: number, x = 10, y = 10): Annotation => ({ id, type: 'note', page, x, y })
+  const ok = (body: unknown) => ({ ok: true, status: 200, json: async () => body } as unknown as Response)
+  const marcas = () => Object.fromEntries(usePdfStore.getState().docs[0].annotations.map((m) => [m.id, m.page]))
+  const aviso = () => avisos().find((m) => m.includes('El motor se reinició')) ?? ''
+
+  let paginasDelMotor = 3
+  function abrir(n = 3, anns: Annotation[] = [nota('n0', 0), nota('n1', 1), nota('n2', 2)]) {
+    paginasDelMotor = n
+    const s = usePdfStore.getState()
+    s.addDoc({ doc_id: 'doc-1', file_path: 'C:/planos/a.pdf', page_count: n, title: null, author: null, subject: null, page_sizes: tam(n) })
+    s.setAnnotations('doc-1', anns)
+    apiFetch.mockImplementation(async (p: string) => {
+      if (p.startsWith('/pdf/open')) return ok({ doc_id: 'doc-nuevo', page_count: n, page_sizes: tam(n) })
+      if (p.includes('/delete-pages/')) { paginasDelMotor--; return ok({ success: true, stash_id: 'st' }) }
+      if (p.includes('/insert-blank/') || p.includes('/restore-pages/')) paginasDelMotor++
+      if (p.includes('/info/')) return ok({ page_count: paginasDelMotor, page_sizes: tam(paginasDelMotor) })
+      return ok({ success: true })
+    })
+  }
+  const terminarDeshacer = () => vi.waitFor(() => expect(usePdfStore.getState().pageUndoBusy).toBe(false))
+
+  it('borrar y reiniciar: cada marca vuelve a su hoja, también las de la hoja borrada', async () => {
+    abrir()
+    await deletePagesUndoable('doc-1', [1])
+    expect(marcas()).toEqual({ n0: 0, n2: 1 })
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+    expect(aviso()).toContain('las marcas se reubicaron en la versión guardada.')
+    expect(usePdfStore.getState().docs[0].pasosSinGuardar).toBeUndefined()
+  })
+
+  it('insertar y reiniciar: lo dibujado en la hoja nueva se descarta y se cuenta', async () => {
+    abrir()
+    await insertBlankUndoable('doc-1', 1)
+    usePdfStore.getState().addAnnotation('doc-1', nota('nueva', 1))
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+    expect(aviso()).toContain('se descartaron 1 marca de una página que ya no existe')
+  })
+
+  it('reordenar y reiniciar: orden inverso', async () => {
+    abrir()
+    await reorderPagesUndoable('doc-1', [2, 0, 1])
+    expect(marcas()).toEqual({ n0: 1, n1: 2, n2: 0 })
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+  })
+
+  it('girar y reiniciar: la marca vuelve a su sitio de la hoja sin girar', async () => {
+    abrir(1, [{ id: 'r', type: 'rect', page: 0, x: 10, y: 20, width: 30, height: 40 }])
+    await rotatePagesUndoable('doc-1', [0], 90)
+    expect(usePdfStore.getState().docs[0].annotations[0]).toMatchObject({ x: 140, y: 10, width: 40, height: 30 })
+    await reopenDeadDoc('doc-1')
+    expect(usePdfStore.getState().docs[0].annotations[0]).toMatchObject({ x: 10, y: 20, width: 30, height: 40 })
+  })
+
+  it('una edición de marcas entre pasos de página sobrevive', async () => {
+    abrir()
+    await deletePagesUndoable('doc-1', [0])
+    const s = usePdfStore.getState()
+    s.updateAnnotation('doc-1', 'n2', { x: 50 })
+    s.addAnnotation('doc-1', nota('k', 0))
+    s.deleteAnnotation('doc-1', 'n1')
+    await reorderPagesUndoable('doc-1', [1, 0])
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, k: 1, n2: 2 })
+    expect(usePdfStore.getState().docs[0].annotations.find((m) => m.id === 'n2')?.x).toBe(50)
+  })
+
+  it('deshacer un paso antes del reinicio no lo revierte dos veces', async () => {
+    abrir()
+    await deletePagesUndoable('doc-1', [1])
+    usePdfStore.getState().undo()
+    await terminarDeshacer()
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+    expect(usePdfStore.getState().docs[0].pasosSinGuardar ?? []).toHaveLength(0)
+    usePdfStore.getState().updateAnnotation('doc-1', 'n1', { x: 77 })
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+    expect(usePdfStore.getState().docs[0].annotations.find((m) => m.id === 'n1')?.x).toBe(77)
+    expect(aviso()).not.toContain('descartaron')
+  })
+
+  it('rehacer tras deshacer vuelve a anotar el paso', async () => {
+    abrir()
+    await deletePagesUndoable('doc-1', [1])
+    usePdfStore.getState().undo()
+    await terminarDeshacer()
+    usePdfStore.getState().redo()
+    await terminarDeshacer()
+    expect(usePdfStore.getState().docs[0].pasosSinGuardar).toHaveLength(1)
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+  })
+
+  it('guardar borra lo anotado; deshacer después anota el paso contrario', async () => {
+    abrir()
+    await deletePagesUndoable('doc-1', [1])
+    usePdfStore.getState().setDocDirty('doc-1', false)
+    expect(usePdfStore.getState().docs[0].pasosSinGuardar).toBeUndefined()
+    // El disco ya no tiene la hoja 1: si se deshace el borrado y el motor muere, lo que
+    // vivía en esa hoja no tiene dónde ir.
+    usePdfStore.getState().undo()
+    await terminarDeshacer()
+    expect(marcas()).toEqual({ n0: 0, n1: 1, n2: 2 })
+    apiFetch.mockResolvedValue(ok({ doc_id: 'doc-nuevo', page_count: 2, page_sizes: tam(2) }))
+    await reopenDeadDoc('doc-1')
+    expect(marcas()).toEqual({ n0: 0, n2: 1 })
+    expect(aviso()).toContain('se descartaron 1 marca')
+  })
+
+  it('el aviso pluraliza los descartes', () => {
+    expect(avisoDeReinicio('a.pdf', true, 3)).toContain('se descartaron 3 marcas de páginas que ya no existen')
+    expect(avisoDeReinicio('a.pdf', false, 0)).toContain('las marcas se conservan')
   })
 })

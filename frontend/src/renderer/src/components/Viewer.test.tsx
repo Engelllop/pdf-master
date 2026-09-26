@@ -147,3 +147,34 @@ describe('selección de marcas', () => {
     await waitFor(() => expect(usePdfStore.getState().selectedAnnotationId).toBe(a.id))
   })
 })
+
+// Los botones flotantes («Eliminar/Reemplazar» de la imagen) son hermanos del SVG, no
+// hijos: soltar el ratón encima no llegaba a su onMouseUp y el gesto quedaba abierto
+// (la marquesina seguía pegada al cursor, el borrador sin cerrar su paso de deshacer).
+describe('un gesto que termina fuera del SVG', () => {
+  beforeEach(() => { abrir() })
+
+  const capa = (c: HTMLElement) => [...c.querySelectorAll('svg')].find((s) => s.style.zIndex === '20')!
+  const marquesina = (c: HTMLElement) => c.querySelector('rect[stroke-dasharray="3 2"]')
+
+  it('soltar sobre otro elemento cierra la marquesina', async () => {
+    const { container } = await montar()
+    act(() => { usePdfStore.getState().setActiveTool('select') })
+    fireEvent.mouseDown(capa(container), { button: 0 })
+    expect(marquesina(container)).toBeTruthy()
+
+    fireEvent.mouseUp(document.body)
+    await waitFor(() => expect(marquesina(container)).toBeNull())
+  })
+
+  it('el borrador cierra su paso de deshacer aunque se suelte fuera', async () => {
+    const { container } = await montar()
+    act(() => { usePdfStore.getState().setActiveTool('eraser') })
+    fireEvent.mouseDown(capa(container), { button: 0 })
+    // Mientras el pincel está abajo, borra lo que toca: simulamos esa pasada.
+    act(() => { usePdfStore.getState().addAnnotation('doc-1', marca()) })
+    const pasos = usePdfStore.getState().undoStack.length
+    fireEvent.mouseUp(document.body)
+    expect(usePdfStore.getState().undoStack.length).toBe(pasos + 1)
+  })
+})

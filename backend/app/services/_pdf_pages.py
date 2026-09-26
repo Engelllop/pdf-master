@@ -16,96 +16,102 @@ logger = logging.getLogger("pdfmaster")
 
 class PagesMixin:
     def rotate_page(self, doc_id: str, page_num: int, degrees: int) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return False
-        page = doc.load_page(page_num)
-        page.set_rotation((page.rotation + degrees) % 360)
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return False
+            page = doc.load_page(page_num)
+            page.set_rotation((page.rotation + degrees) % 360)
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def rotate_all_pages(self, doc_id: str, degrees: int) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            page.set_rotation((page.rotation + degrees) % 360)
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            for i in range(len(doc)):
+                page = doc.load_page(i)
+                page.set_rotation((page.rotation + degrees) % 360)
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def rotate_pages(self, doc_id: str, pages: List[int], degrees: int) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        for p in pages:
-            if 0 <= p < len(doc):
-                page = doc.load_page(p)
-                page.set_rotation((page.rotation + degrees) % 360)
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            for p in pages:
+                if 0 <= p < len(doc):
+                    page = doc.load_page(p)
+                    page.set_rotation((page.rotation + degrees) % 360)
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def reorder_pages(self, doc_id: str, new_order: List[int]) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        if len(new_order) != len(doc) or set(new_order) != set(range(len(doc))):
-            return False
-        doc.select(new_order)
-        info = self._infos.get(doc_id)
-        if info:
-            info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            if len(new_order) != len(doc) or set(new_order) != set(range(len(doc))):
+                return False
+            doc.select(new_order)
+            info = self._infos.get(doc_id)
+            if info:
+                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def delete_pages(self, doc_id: str, pages: List[int], stash: bool = True) -> Optional[str]:
         """None = falló. '' = ok sin guardar. uuid = páginas en el stash para undo."""
-        doc = self._acquire(doc_id)
-        if not doc:
-            return None
-        valid = [p for p in sorted(set(pages)) if 0 <= p < len(doc)]
-        if not valid:
-            return None
-        stash_id = self._stash_pages(doc, valid) if stash else ''
-        for p in reversed(valid):
-            doc.delete_page(p)
-        info = self._infos.get(doc_id)
-        if info:
-            info.page_count = len(doc)
-            info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return stash_id
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            valid = [p for p in sorted(set(pages)) if 0 <= p < len(doc)]
+            if not valid:
+                return None
+            stash_id = self._stash_pages(doc, valid) if stash else ''
+            for p in reversed(valid):
+                doc.delete_page(p)
+            info = self._infos.get(doc_id)
+            if info:
+                info.page_count = len(doc)
+                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return stash_id
 
     def restore_pages(self, doc_id: str, stash_id: str, at: List[int]) -> bool:
         """Reinserta las páginas del stash en los índices originales (de menor a mayor)."""
-        data = self._page_stash.get(stash_id)
-        if not data:
-            return False
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        src = fitz.open(stream=data, filetype='pdf')
-        if len(at) != len(src):
-            src.close()
-            return False
-        try:
-            for i, pos in enumerate(at):
-                idx = max(0, min(len(doc), pos))
-                doc.insert_pdf(src, from_page=i, to_page=i, start_at=idx)
-        finally:
-            src.close()
-        info = self._infos.get(doc_id)
-        if info:
-            info.page_count = len(doc)
-            info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            data = self._page_stash.get(stash_id)
+            if not data:
+                return False
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            src = fitz.open(stream=data, filetype='pdf')
+            if len(at) != len(src):
+                src.close()
+                return False
+            try:
+                for i, pos in enumerate(at):
+                    idx = max(0, min(len(doc), pos))
+                    doc.insert_pdf(src, from_page=i, to_page=i, start_at=idx)
+            finally:
+                src.close()
+            info = self._infos.get(doc_id)
+            if info:
+                info.page_count = len(doc)
+                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def stash_document_now(self, doc_id: str) -> Optional[str]:
         """Guarda una copia del documento vivo y devuelve su id, sin tocar nada.
@@ -129,6 +135,14 @@ class PagesMixin:
             if doc_id not in self._infos:
                 return False
             src = fitz.open(stream=data, filetype='pdf')
+            # El stash de un PDF protegido va cifrado (ver _stash_document): sin
+            # autenticar no se puede usar, y si la contraseña cambió desde que se tomó
+            # (guardar con otra contraseña encima del original) no se restaura — hacerlo
+            # devolvería el cifrado viejo en el próximo guardado.
+            if src.needs_pass and not src.authenticate(self._passwords.get(doc_id) or ''):
+                src.close()
+                logger.warning("restore_document: el stash %s no abre con la contraseña actual (doc %s)", stash_id, doc_id)
+                return False
             old = self._docs.get(doc_id)
             self._docs[doc_id] = src
             if old is not None:
@@ -147,23 +161,26 @@ class PagesMixin:
             return True
 
     def merge_pdf(self, doc_id: str, source_path: str) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc or not os.path.exists(source_path):
-            return False
-        try:
-            src = fitz.open(source_path)
-            doc.insert_pdf(src)
-            src.close()
-            info = self._infos.get(doc_id)
-            if info:
-                info.page_count = len(doc)
-                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-            self._dirty[doc_id] = True
-            self._invalidate_render_cache(doc_id)
-            return True
-        except Exception:
-            logger.exception("merge_pdf falló (doc %s, fuente %s)", doc_id, source_path)
-            return False
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or not os.path.exists(source_path):
+                return False
+            try:
+                src = fitz.open(source_path)
+                try:
+                    doc.insert_pdf(src)
+                finally:
+                    src.close()
+                info = self._infos.get(doc_id)
+                if info:
+                    info.page_count = len(doc)
+                    info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+                self._dirty[doc_id] = True
+                self._invalidate_render_cache(doc_id)
+                return True
+            except Exception:
+                logger.exception("merge_pdf falló (doc %s, fuente %s)", doc_id, source_path)
+                return False
 
     def split_pages(self, doc_id: str, pages: List[int], output_path: Optional[str] = None) -> Optional[str]:
         """None = falló (el router lo convierte en 400). No tenía NINGÚN try: un fallo
@@ -199,43 +216,48 @@ class PagesMixin:
 
     def crop_page(self, doc_id: str, page_num: int, top: float, right: float, bottom: float, left: float, stash: bool = True) -> Optional[str]:
         """None = falló. '' = ok sin stash. uuid = página original para undo."""
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return None
-        page = doc.load_page(page_num)
-        rect = page.rect
-        new_rect = fitz.Rect(rect.x0 + left, rect.y0 + top, rect.x1 - right, rect.y1 - bottom)
-        if new_rect.width <= 0 or new_rect.height <= 0:
-            return None
-        stash_id = self._stash_pages(doc, [page_num]) if stash else ''
-        page.set_cropbox(new_rect)
-        info = self._infos.get(doc_id)
-        if info:
-            info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return stash_id
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return None
+            page = doc.load_page(page_num)
+            rect = page.rect
+            new_rect = fitz.Rect(rect.x0 + left, rect.y0 + top, rect.x1 - right, rect.y1 - bottom)
+            if new_rect.width <= 0 or new_rect.height <= 0:
+                return None
+            # Los márgenes son los de la página tal como se ve (arriba = arriba en
+            # pantalla); el cropbox va sin girar.
+            new_rect = self._desde_vista(page, new_rect)
+            stash_id = self._stash_pages(doc, [page_num]) if stash else ''
+            page.set_cropbox(new_rect)
+            info = self._infos.get(doc_id)
+            if info:
+                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return stash_id
 
     def replace_page(self, doc_id: str, page_num: int, stash_id: str) -> bool:
         """Sustituye una página por la copia del stash (undo de recorte/redacción)."""
-        data = self._page_stash.get(stash_id)
-        if not data:
-            return False
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return False
-        src = fitz.open(stream=data, filetype='pdf')
-        try:
-            doc.delete_page(page_num)
-            doc.insert_pdf(src, from_page=0, to_page=0, start_at=page_num)
-        finally:
-            src.close()
-        info = self._infos.get(doc_id)
-        if info:
-            info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
-        self._dirty[doc_id] = True
-        self._invalidate_render_cache(doc_id)
-        return True
+        with self._lock:
+            data = self._page_stash.get(stash_id)
+            if not data:
+                return False
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return False
+            src = fitz.open(stream=data, filetype='pdf')
+            try:
+                doc.delete_page(page_num)
+                doc.insert_pdf(src, from_page=0, to_page=0, start_at=page_num)
+            finally:
+                src.close()
+            info = self._infos.get(doc_id)
+            if info:
+                info.page_sizes = [PageSize(page_num=i, width=doc.load_page(i).rect.width, height=doc.load_page(i).rect.height) for i in range(len(doc))]
+            self._dirty[doc_id] = True
+            self._invalidate_render_cache(doc_id)
+            return True
 
     def duplicate_page(self, doc_id: str, page_num: int) -> bool:
         with self._lock:

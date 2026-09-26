@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { renderHook, waitFor, act } from '@testing-library/react'
 import { usePageLoader } from './usePageLoader'
 import { usePdfStore } from '../store/usePdfStore'
 
@@ -137,6 +137,18 @@ describe('subir la resolución al acercar', () => {
     await conPaginaCargada('double')
     usePdfStore.getState().setZoom('doc-1', 3)
     await waitFor(() => expect(rendersDe(0).length).toBeGreaterThan(0), { timeout: 2000 })
+  })
+
+  // `docVersion` no estaba en las deps: si la página se editaba mientras la subida
+  // esperaba su turno, se rasterizaba la versión VIEJA y se metía en el cache.
+  it('si la página se edita durante la espera, la subida usa la versión nueva', async () => {
+    await conPaginaCargada('single')
+    // Un render entre medio: la subida ya quedó programada con la versión 0.
+    await act(async () => { usePdfStore.getState().setZoom('doc-1', 3) })
+    await act(async () => { usePdfStore.getState().incrementDocVersion('doc-1') })
+    await waitFor(() => expect(rendersDe(0).some((c) => c[3] > 1)).toBe(true), { timeout: 2000 })
+    const subidas = rendersDe(0).filter((c) => c[3] > 1)
+    expect(subidas.every((c) => c[1] === 1)).toBe(true)
   })
 
   // En vista simple no hay panel derecho: subirle la resolución a una página que no se

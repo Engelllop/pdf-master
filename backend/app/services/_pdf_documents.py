@@ -148,7 +148,8 @@ class DocumentsMixin:
         pending = self._pending_annotations.get(doc_id)
         if pending is None:
             return None
-        marked = fitz.open(stream=doc.tobytes(), filetype="pdf")
+        # Conserva el cifrado: guardar/comprimir escriben la copia con KEEP.
+        marked = self._copia_autenticada(doc_id, doc)
         self._embed_into(marked, pending)
         return marked
 
@@ -173,7 +174,8 @@ class DocumentsMixin:
                 # truncado. Ahora o está el viejo o está el nuevo.
                 self._guardar_atomico(
                     output_path, False,
-                    lambda temp: to_save.save(temp, garbage=4, deflate=True, clean=True),
+                    lambda temp: to_save.save(temp, garbage=4, deflate=True, clean=True,
+                                              encryption=fitz.PDF_ENCRYPT_KEEP),
                 )
                 return {"size_before": size_before, "size_after": os.path.getsize(output_path)}
             except Exception:
@@ -197,9 +199,11 @@ class DocumentsMixin:
                 to_save = doc if marked is None else marked
                 # El doc se abrió por stream: el motor no tiene el archivo abierto, así
                 # que os.replace sobre el original funciona sin cerrar/reabrir el handle.
+                # KEEP a propósito: el valor por defecto de PyMuPDF es SIN cifrado, y Ctrl+S
+                # sobre un PDF protegido lo dejaba en disco sin contraseña.
                 resultado = self._guardar_atomico(
                     save_path, backup,
-                    lambda temp: to_save.save(temp, garbage=4, deflate=True),
+                    lambda temp: to_save.save(temp, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_KEEP),
                 )
                 # Guardar una copia (output_path) no limpia el original: sigue sucio.
                 if not output_path:
@@ -221,31 +225,56 @@ class DocumentsMixin:
             save_path = output_path or self._doc_path(doc_id)
             if not save_path:
                 return None
-            marked = None
+            to_save = None
             try:
-                # Igual que en save(): el PDF protegido también lleva las marcas.
-                marked = self._copia_con_marcas(doc_id, doc)
-                to_save = doc if marked is None else marked
+                # Igual que en save(): el PDF protegido también lleva las marcas. Siempre
+                # sobre una COPIA: escribir el vivo con otro cifrado se lo cambia también
+                # a él, y tras «guardar copia con contraseña» el siguiente Ctrl+S ponía la
+                # contraseña nueva al original.
+                to_save = self._copia_con_marcas(doc_id, doc)
+                if to_save is None:
+                    to_save = self._copia_autenticada(doc_id, doc)
 
                 def escribir(temp: str) -> None:
                     if user_password or owner_password:
                         to_save.save(temp, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_AES_256,
                                      user_pw=user_password or '', owner_pw=owner_password or user_password or '')
                     else:
-                        to_save.save(temp, garbage=4, deflate=True)
+                        to_save.save(temp, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_NONE)
 
                 resultado = self._guardar_atomico(save_path, backup, escribir)
                 if not output_path:
                     self._dirty[doc_id] = False
+                if self._es_el_original(doc_id, save_path):
+                    self._cifrado_cambiado(doc_id, user_password or owner_password or None)
                 return resultado
-            except DocumentNotFoundError:
+            except (DocumentNotFoundError, PasswordRequiredError):
                 raise
             except Exception:
                 logger.exception("save_with_password falló (doc %s)", doc_id)
                 return None
             finally:
-                if marked is not None:
-                    marked.close()
+                if to_save is not None:
+                    to_save.close()
+
+    def _es_el_original(self, doc_id: str, save_path: str) -> bool:
+        original = self._doc_path(doc_id)
+        return bool(original) and os.path.normcase(os.path.abspath(save_path)) == os.path.normcase(os.path.abspath(original))
+
+    def _cifrado_cambiado(self, doc_id: str, password: Optional[str]) -> None:
+        """El original en disco ya tiene otro cifrado (se le puso o quitó la contraseña).
+
+        Se guarda la contraseña nueva: si no, al reabrirlo tras un desalojo del LRU se
+        autenticaba con la vieja, MuPDF devolvía el documento sin autenticar y la
+        siguiente petición reventaba con un 500. Y se suelta el documento vivo, que
+        conserva el cifrado VIEJO: con él, el próximo Ctrl+S (que guarda con KEEP)
+        devolvía la contraseña anterior. Se reabre del disco en el próximo acceso, igual
+        que tras un desalojo — el disco tiene todo lo del vivo y las marcas pendientes
+        siguen en la cola. Llamar con el lock tomado."""
+        self._passwords[doc_id] = password
+        doc = self._docs.pop(doc_id, None)
+        if doc is not None:
+            doc.close()
 
     def remove_password(self, doc_id: str, output_path: Optional[str] = None, backup: bool = False) -> Optional[ResultadoGuardado]:
         # El doc en memoria ya está desencriptado (apertura por stream); guardarlo sin
@@ -257,12 +286,16 @@ class DocumentsMixin:
             save_path = output_path or self._doc_path(doc_id)
             if not save_path:
                 return None
-            marked = None
+            to_save = None
             try:
                 # También lleva las marcas: quitarle la contraseña a un plano marcado
-                # escribía el archivo sin ellas.
-                marked = self._copia_con_marcas(doc_id, doc)
-                to_save = doc if marked is None else marked
+                # escribía el archivo sin ellas. Sobre una copia por lo mismo que en
+                # save_with_password: escribir el vivo sin cifrado se lo quita también a
+                # él, y «guardar copia sin contraseña» dejaba el original desprotegido en
+                # el siguiente Ctrl+S.
+                to_save = self._copia_con_marcas(doc_id, doc)
+                if to_save is None:
+                    to_save = self._copia_autenticada(doc_id, doc)
                 resultado = self._guardar_atomico(
                     save_path, backup,
                     lambda temp: to_save.save(temp, garbage=4, deflate=True, encryption=fitz.PDF_ENCRYPT_NONE),
@@ -272,15 +305,17 @@ class DocumentsMixin:
                 # de «sin guardar» de un archivo que nadie había guardado.
                 if not output_path:
                     self._dirty[doc_id] = False
+                if self._es_el_original(doc_id, save_path):
+                    self._cifrado_cambiado(doc_id, None)
                 return resultado
-            except DocumentNotFoundError:
+            except (DocumentNotFoundError, PasswordRequiredError):
                 raise
             except Exception:
                 logger.exception("remove_password falló (doc %s)", doc_id)
                 return None
             finally:
-                if marked is not None:
-                    marked.close()
+                if to_save is not None:
+                    to_save.close()
 
     def images_to_pdf(self, image_paths: List[str], output_path: str) -> bool:
         out = None

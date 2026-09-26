@@ -1,3 +1,5 @@
+import { randomBytes } from 'crypto'
+
 /**
  * Barrido de los PDF temporales de impresión.
  *
@@ -8,6 +10,13 @@
  * Nadie limpiaba las de sesiones anteriores.
  */
 export const PREFIJO_TEMP_IMPRESION = 'pdfmaster-print-'
+
+/** Nombre del temporal con una parte aleatoria: con solo `Date.now()` era adivinable, y
+ * otro proceso podía dejar preparado ese archivo (o un enlace) en %TEMP% antes de que
+ * se escribiera la copia del plano. */
+export function nombreTempDeImpresion(ahora = Date.now()): string {
+  return `${PREFIJO_TEMP_IMPRESION}${ahora}-${randomBytes(8).toString('hex')}.pdf`
+}
 
 /** Una hora: si el cuadro de impresión lleva más que eso abierto, el archivo ya no
  * hace falta (y el barrido corre al arrancar, no mientras se imprime). */

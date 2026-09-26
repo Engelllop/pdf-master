@@ -31,6 +31,13 @@ export default defineConfig({
     },
     plugins: [react()],
     root: resolve(__dirname, 'src/renderer'),
+    // El CORS del motor (backend/main.py) solo acepta este puerto en desarrollo: si
+    // estuviera ocupado, Vite saltaba al siguiente y el motor rechazaba todo sin que
+    // se notara por qué. Con strictPort falla al arrancar, diciendo que está ocupado.
+    server: {
+      port: 5173,
+      strictPort: true
+    },
     build: {
       // Solo bajo demanda: el sourcemap del renderer son varios MB y no tiene nada
       // que hacer dentro del instalador. `npm run analizar:bundle` lo necesita para

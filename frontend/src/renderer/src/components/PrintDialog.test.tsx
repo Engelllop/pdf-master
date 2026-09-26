@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 
-const pushAnnotations = vi.fn(async (_id: string, _opts?: { excluirCapasOcultas?: boolean }) => true)
+const subirMarcas = vi.fn(async (_id: string, _opts?: { excluirCapasOcultas?: boolean }) => true)
 vi.mock('../lib/saveDocument', () => ({
-  pushAnnotations: (id: string, opts?: { excluirCapasOcultas?: boolean }) => pushAnnotations(id, opts),
+  subirMarcasOAvisar: (id: string, opts?: { excluirCapasOcultas?: boolean }) => subirMarcas(id, opts),
 }))
 
 import PrintDialog from './PrintDialog'
@@ -32,7 +32,7 @@ const opcionesDeImpresion = () => printPdf.mock.calls[0][1] as OpcionesImpresion
 beforeEach(() => {
   usePdfStore.setState(initialState, true)
   printPdf.mockClear()
-  pushAnnotations.mockClear()
+  subirMarcas.mockClear()
   Object.assign(window, { api: { ...window.api, printPdf } })
 })
 
@@ -99,8 +99,8 @@ describe('capas apagadas', () => {
     expect(screen.getByText(/No imprimir las capas apagadas/)).toBeTruthy()
     expect(screen.getByText(/1 marca\(s\) oculta\(s\)/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: /Imprimir/ }))
-    await waitFor(() => expect(pushAnnotations).toHaveBeenCalled())
-    expect(pushAnnotations.mock.calls[0][1]).toEqual({ excluirCapasOcultas: true })
+    await waitFor(() => expect(subirMarcas).toHaveBeenCalled())
+    expect(subirMarcas.mock.calls[0][1]).toEqual({ excluirCapasOcultas: true })
   })
 
   it('desmarcándola se imprimen todas', async () => {
@@ -108,8 +108,24 @@ describe('capas apagadas', () => {
     render(<PrintDialog docId="doc-1" pageCount={n} currentPage={0} onClose={() => {}} />)
     await act(async () => { fireEvent.click(screen.getByRole('checkbox')) })
     fireEvent.click(screen.getByRole('button', { name: /Imprimir/ }))
-    await waitFor(() => expect(pushAnnotations).toHaveBeenCalled())
-    expect(pushAnnotations.mock.calls[0][1]).toEqual({ excluirCapasOcultas: false })
+    await waitFor(() => expect(subirMarcas).toHaveBeenCalled())
+    expect(subirMarcas.mock.calls[0][1]).toEqual({ excluirCapasOcultas: false })
+  })
+})
+
+// Si el motor rechaza las marcas, imprimir igual sacaba en papel un plano sin las
+// últimas marcas. `subirMarcasOAvisar` ya avisa; el diálogo tiene que cortar ahí.
+describe('si no se pueden subir las marcas', () => {
+  it('no manda nada a la impresora y el diálogo sigue abierto', async () => {
+    const n = abrir(1, 0)
+    subirMarcas.mockResolvedValueOnce(false)
+    const onClose = vi.fn()
+    render(<PrintDialog docId="doc-1" pageCount={n} currentPage={0} onClose={onClose} />)
+    fireEvent.click(screen.getByRole('button', { name: /Imprimir$/ }))
+    await waitFor(() => expect(subirMarcas).toHaveBeenCalled())
+    await waitFor(() => expect((screen.getByRole('button', { name: /Imprimir$/ }) as HTMLButtonElement).disabled).toBe(false))
+    expect(printPdf).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
   })
 })
 

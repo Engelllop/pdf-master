@@ -9,7 +9,7 @@ import CountPanel from './CountPanel'
 import { EmptyState, PageActions, PanelHeader, iconBtn, iconBtnDanger, rowIdle, rowSelected } from './panelUi'
 
 import { apiFetch } from '../lib/api'
-import { pushAnnotations } from '../lib/saveDocument'
+import { subirMarcasOAvisar } from '../lib/saveDocument'
 import { borrarEnRuta, cuantasCuelgan, renombrarEnRuta, tituloEnRuta, type RutaIndice } from '../lib/outlineTree'
 import { mismaRuta } from '../lib/rutas'
 import { renderPdfThumbnail } from '../lib/pdfjs'
@@ -234,7 +234,7 @@ export default function ThumbnailPanel() {
     })
     if (!res.ok) { showToast('No se pudo escribir el índice', 'error'); return }
     setOutline(activeDoc.doc_id, siguiente)
-    setDocDirty(activeDoc.doc_id, true)
+    setDocDirty(activeDoc.doc_id, true, true)
     showToast(aviso, 'success')
   }
 
@@ -277,7 +277,7 @@ export default function ThumbnailPanel() {
     try {
       // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
       // salía con las páginas limpias, sin las marcas que se acaban de poner.
-      await pushAnnotations(activeDoc.doc_id)
+      if (!(await subirMarcasOAvisar(activeDoc.doc_id))) return
       const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

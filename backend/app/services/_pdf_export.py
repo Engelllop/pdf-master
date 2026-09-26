@@ -65,122 +65,126 @@ class ExportMixin:
     MAX_PPTX_PX = 2000
 
     def export_pptx(self, doc_id: str, output_path: str) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        try:
-            from pptx import Presentation
-            from io import BytesIO
-            prs = Presentation()
-            blank_layout = prs.slide_layouts[6]
-            for i in range(len(doc)):
-                page = doc.load_page(i)
-                escala = self._capped_scale(page, 150 / 72, self.MAX_PPTX_PX)
-                pix = page.get_pixmap(matrix=fitz.Matrix(escala, escala))
-                img_stream = BytesIO(pix.tobytes("png"))
-                slide = prs.slides.add_slide(blank_layout)
-                # Encajada y centrada, no estirada: forzar el tamaño de la diapositiva
-                # deformaba cada lámina (un plano apaisado dentro de un 4:3 sale
-                # achatado, y con él las cotas y los textos).
-                factor = min(prs.slide_width / pix.width, prs.slide_height / pix.height)
-                ancho = int(pix.width * factor)
-                alto = int(pix.height * factor)
-                slide.shapes.add_picture(
-                    img_stream,
-                    int((prs.slide_width - ancho) / 2), int((prs.slide_height - alto) / 2),
-                    width=ancho, height=alto,
-                )
-            self._guardar_atomico(output_path, False, lambda temp: prs.save(temp))
-            return True
-        except DocumentNotFoundError:
-            raise
-        except Exception:
-            logger.exception("export_pptx falló (doc %s)", doc_id)
-            return False
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            try:
+                from pptx import Presentation
+                from io import BytesIO
+                prs = Presentation()
+                blank_layout = prs.slide_layouts[6]
+                for i in range(len(doc)):
+                    page = doc.load_page(i)
+                    escala = self._capped_scale(page, 150 / 72, self.MAX_PPTX_PX)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(escala, escala))
+                    img_stream = BytesIO(pix.tobytes("png"))
+                    slide = prs.slides.add_slide(blank_layout)
+                    # Encajada y centrada, no estirada: forzar el tamaño de la diapositiva
+                    # deformaba cada lámina (un plano apaisado dentro de un 4:3 sale
+                    # achatado, y con él las cotas y los textos).
+                    factor = min(prs.slide_width / pix.width, prs.slide_height / pix.height)
+                    ancho = int(pix.width * factor)
+                    alto = int(pix.height * factor)
+                    slide.shapes.add_picture(
+                        img_stream,
+                        int((prs.slide_width - ancho) / 2), int((prs.slide_height - alto) / 2),
+                        width=ancho, height=alto,
+                    )
+                self._guardar_atomico(output_path, False, lambda temp: prs.save(temp))
+                return True
+            except DocumentNotFoundError:
+                raise
+            except Exception:
+                logger.exception("export_pptx falló (doc %s)", doc_id)
+                return False
 
     def export_txt(self, doc_id: str, output_path: str) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        try:
-            def escribir(temp: str) -> None:
-                with open(temp, 'w', encoding='utf-8') as f:
-                    for i in range(len(doc)):
-                        f.write(doc.load_page(i).get_text())
-                        if i < len(doc) - 1:
-                            f.write('\n\f\n')  # form feed entre páginas
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            try:
+                def escribir(temp: str) -> None:
+                    with open(temp, 'w', encoding='utf-8') as f:
+                        for i in range(len(doc)):
+                            f.write(doc.load_page(i).get_text())
+                            if i < len(doc) - 1:
+                                f.write('\n\f\n')  # form feed entre páginas
 
-            # `open(output_path, 'w')` truncaba el archivo del usuario ANTES de escribir
-            # una sola letra: si fallaba en la página 1, donde había un documento
-            # quedaba un archivo vacío.
-            self._guardar_atomico(output_path, False, escribir)
-            return True
-        except DocumentNotFoundError:
-            raise
-        except Exception:
-            logger.exception("export_txt falló (doc %s)", doc_id)
-            return False
+                # `open(output_path, 'w')` truncaba el archivo del usuario ANTES de escribir
+                # una sola letra: si fallaba en la página 1, donde había un documento
+                # quedaba un archivo vacío.
+                self._guardar_atomico(output_path, False, escribir)
+                return True
+            except DocumentNotFoundError:
+                raise
+            except Exception:
+                logger.exception("export_txt falló (doc %s)", doc_id)
+                return False
 
     def export_html(self, doc_id: str, output_path: str) -> bool:
-        doc = self._acquire(doc_id)
-        if not doc:
-            return False
-        try:
-            parts = ['<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>']
-            for i in range(len(doc)):
-                parts.append(doc.load_page(i).get_text("html"))
-            parts.append('</body></html>')
-            def escribir(temp: str) -> None:
-                with open(temp, 'w', encoding='utf-8') as f:
-                    f.write('\n'.join(parts))
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return False
+            try:
+                parts = ['<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>']
+                for i in range(len(doc)):
+                    parts.append(doc.load_page(i).get_text("html"))
+                parts.append('</body></html>')
+                def escribir(temp: str) -> None:
+                    with open(temp, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(parts))
 
-            self._guardar_atomico(output_path, False, escribir)
-            return True
-        except DocumentNotFoundError:
-            raise
-        except Exception:
-            logger.exception("export_html falló (doc %s)", doc_id)
-            return False
+                self._guardar_atomico(output_path, False, escribir)
+                return True
+            except DocumentNotFoundError:
+                raise
+            except Exception:
+                logger.exception("export_html falló (doc %s)", doc_id)
+                return False
 
     def export_word(self, doc_id: str, output_path: Optional[str] = None) -> Optional[dict]:
         """Con output_path escribe donde el usuario eligió (como Excel y PowerPoint);
         sin él devuelve base64, como antes."""
-        doc = self._acquire(doc_id)
-        if not doc:
-            return None
-        try:
-            from docx import Document
-            from docx.shared import Pt
-            import io
-            import base64
-            document = Document()
-            for page_num in range(len(doc)):
-                page = doc.load_page(page_num)
-                text = page.get_text()
-                if text.strip():
-                    for line in text.split('\n'):
-                        if line.strip():
-                            p = document.add_paragraph(line.strip())
-                            p.style.font.size = Pt(11)
-                if page_num < len(doc) - 1:
-                    document.add_page_break()
-            filename = os.path.basename(self._doc_path(doc_id)).replace('.pdf', '.docx')
-            if output_path:
-                self._guardar_atomico(output_path, False, lambda temp: document.save(temp))
-                return {"filename": filename, "output_path": output_path}
-            buffer = io.BytesIO()
-            document.save(buffer)
-            buffer.seek(0)
-            data = buffer.read()
-            return {
-                "filename": filename,
-                "data_base64": base64.b64encode(data).decode('utf-8'),
-            }
-        except DocumentNotFoundError:
-            raise
-        except Exception:
-            logger.exception("export_word falló (doc %s)", doc_id)
-            return None
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return None
+            try:
+                from docx import Document
+                from docx.shared import Pt
+                import io
+                import base64
+                document = Document()
+                for page_num in range(len(doc)):
+                    page = doc.load_page(page_num)
+                    text = page.get_text()
+                    if text.strip():
+                        for line in text.split('\n'):
+                            if line.strip():
+                                p = document.add_paragraph(line.strip())
+                                p.style.font.size = Pt(11)
+                    if page_num < len(doc) - 1:
+                        document.add_page_break()
+                filename = os.path.basename(self._doc_path(doc_id)).replace('.pdf', '.docx')
+                if output_path:
+                    self._guardar_atomico(output_path, False, lambda temp: document.save(temp))
+                    return {"filename": filename, "output_path": output_path}
+                buffer = io.BytesIO()
+                document.save(buffer)
+                buffer.seek(0)
+                data = buffer.read()
+                return {
+                    "filename": filename,
+                    "data_base64": base64.b64encode(data).decode('utf-8'),
+                }
+            except DocumentNotFoundError:
+                raise
+            except Exception:
+                logger.exception("export_word falló (doc %s)", doc_id)
+                return None
 
     def export_measurements(self, rows: List[dict], output_path: str, title: str = "") -> bool:
         """Tabla de mediciones/conteos a CSV o XLSX. No toca fitz (sin lock)."""

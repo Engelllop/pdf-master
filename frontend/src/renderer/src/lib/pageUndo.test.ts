@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { remapAnnsAfterDelete, remapAnnsAfterInsert, remapPageIndexAfterDelete, deletePagesUndoable, invertOrder, reorderPagesUndoable, cropPageUndoable, watermarkUndoable, mergePdfUndoable, replaceTextUndoable, metadataUndoable, makeSearchableUndoable, formFieldUndoable, addFormFieldUndoable, transformFormFieldUndoable } from './pageUndo'
-import { usePdfStore, type Annotation } from '../store/usePdfStore'
+import { anotarPaso, marcasEnVersionDeDisco, pasoDeMarcas, remapAnnsAfterDelete, remapAnnsAfterInsert, remapAnnsAfterRotate, rotatePagesUndoable, remapPageIndexAfterDelete, deletePagesUndoable, invertOrder, reorderPagesUndoable, cropPageUndoable, watermarkUndoable, mergePdfUndoable, replaceTextUndoable, metadataUndoable, makeSearchableUndoable, formFieldUndoable, addFormFieldUndoable, transformFormFieldUndoable } from './pageUndo'
+import { usePdfStore, type Annotation, type PageCommand } from '../store/usePdfStore'
 
 const initial = usePdfStore.getState()
 
@@ -143,8 +143,33 @@ describe('cropPageUndoable', () => {
     const last = usePdfStore.getState().undoStack.at(-1)
     expect(last?.kind).toBe('page')
     if (last && last.kind === 'page') {
-      expect(last.inverse).toEqual({ type: 'replace', page: 0, stashId: 'crop-1' })
+      expect(last.inverse).toEqual({ type: 'replace', page: 0, stashId: 'crop-1', desplazar: { dx: 10, dy: 10 } })
     }
+    vi.unstubAllGlobals()
+  })
+
+  it('mueve las marcas de la página al nuevo origen y deshacer las devuelve', async () => {
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1',
+      file_path: 'C:\\a.pdf',
+      page_count: 2,
+      title: null, author: null, subject: null,
+      page_sizes: [{ page_num: 0, width: 100, height: 100 }, { page_num: 1, width: 100, height: 100 }],
+    })
+    const antes: Annotation[] = [
+      { id: 'r', type: 'rect', page: 0, x: 40, y: 50, width: 10, height: 10 },
+      { id: 'd', type: 'draw', page: 0, x: 40, y: 50, points: [{ x: 40, y: 50 }, { x: 45, y: 55 }] },
+      { id: 'otra', type: 'rect', page: 1, x: 40, y: 50, width: 10, height: 10 },
+    ]
+    usePdfStore.getState().setAnnotations('doc-1', antes)
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({ ok: true, json: async () => ({ success: true, stash_id: 's' }) })))
+    await cropPageUndoable('doc-1', 0, { top: 20, right: 0, bottom: 0, left: 30 })
+    const anns = usePdfStore.getState().docs[0].annotations
+    expect(anns.find((m) => m.id === 'r')).toMatchObject({ x: 10, y: 30 })
+    expect(anns.find((m) => m.id === 'd')?.points).toEqual([{ x: 10, y: 30 }, { x: 15, y: 35 }])
+    expect(anns.find((m) => m.id === 'otra')).toMatchObject({ x: 40, y: 50 })
+    const last = usePdfStore.getState().undoStack.at(-1)
+    expect(last?.kind === 'page' && last.beforeAnns).toEqual(antes)
     vi.unstubAllGlobals()
   })
 })
@@ -462,5 +487,151 @@ describe('transformFormFieldUndoable', () => {
       expect(last.forward).toEqual({ type: 'transformFormField', page: 0, xref: 11, delete: true })
     }
     vi.unstubAllGlobals()
+  })
+})
+
+// Las marcas viven en el espacio de la VISTA (viewport de PDF.js a escala 1, que ya
+// incluye el /Rotate): al girar la página el contenido se mueve y las marcas tienen que
+// ir con él. Antes se quedaban clavadas y un cuadro sobre un muro pasaba a no rodear nada.
+describe('remapAnnsAfterRotate', () => {
+  // Página apaisada 600×400 (en la vista): girar 90° la deja 400×600.
+  const sizes = [{ page_num: 0, width: 600, height: 400 }, { page_num: 1, width: 300, height: 200 }]
+  const caja: Annotation = { id: 'r', type: 'rect', page: 0, x: 10, y: 20, width: 100, height: 50 }
+  const geo = (x: Annotation) => ({ x: x.x, y: x.y, width: x.width, height: x.height })
+
+  it('90°: la esquina de arriba a la izquierda pasa a arriba a la derecha', () => {
+    const [r] = remapAnnsAfterRotate([caja], [0], 90, sizes)
+    expect(geo(r)).toEqual({ x: 330, y: 10, width: 50, height: 100 })
+  })
+
+  it('180°: queda en la esquina opuesta con el mismo tamaño', () => {
+    const [r] = remapAnnsAfterRotate([caja], [0], 180, sizes)
+    expect(geo(r)).toEqual({ x: 490, y: 330, width: 100, height: 50 })
+  })
+
+  it('270° (y -90°, que es el inverso de deshacer)', () => {
+    expect(geo(remapAnnsAfterRotate([caja], [0], 270, sizes)[0])).toEqual({ x: 20, y: 490, width: 50, height: 100 })
+    expect(geo(remapAnnsAfterRotate([caja], [0], -90, sizes)[0])).toEqual({ x: 20, y: 490, width: 50, height: 100 })
+  })
+
+  it('90° y luego -90° devuelve la marca a su sitio', () => {
+    const girada = remapAnnsAfterRotate([caja], [0], 90, sizes)
+    const vuelta = remapAnnsAfterRotate(girada, [0], -90, [{ page_num: 0, width: 400, height: 600 }, sizes[1]])
+    expect(geo(vuelta[0])).toEqual(geo(caja))
+  })
+
+  it('líneas: el vector al otro extremo gira con signo; los puntos también', () => {
+    const linea: Annotation = { id: 'l', type: 'line', page: 0, x: 10, y: 20, width: 100, height: 50 }
+    const trazo: Annotation = { id: 'd', type: 'draw', page: 0, x: 10, y: 20, points: [{ x: 10, y: 20 }, { x: 110, y: 70 }] }
+    const [l, d] = remapAnnsAfterRotate([linea, trazo], [0], 90, sizes)
+    expect(geo(l)).toEqual({ x: 380, y: 10, width: -50, height: 100 })
+    expect(d.points).toEqual([{ x: 380, y: 10 }, { x: 330, y: 110 }])
+    expect({ x: d.x, y: d.y }).toEqual({ x: 380, y: 10 })
+  })
+
+  it('texto e imagen conservan su caja y se mudan con el centro; la imagen gira', () => {
+    const img: Annotation = { id: 'i', type: 'image', page: 0, x: 10, y: 20, width: 100, height: 50 }
+    const txt: Annotation = { id: 't', type: 'text', page: 0, x: 10, y: 20, width: 100, height: 50, text: 'hola' }
+    const [i, t] = remapAnnsAfterRotate([img, txt], [0], 90, sizes)
+    expect(geo(i)).toEqual({ x: 305, y: 35, width: 100, height: 50 })
+    expect(i.rotation).toBe(90)
+    expect(geo(t)).toEqual({ x: 305, y: 35, width: 100, height: 50 })
+    expect(t.rotation).toBeUndefined()
+  })
+
+  it("'all' gira todas las páginas, cada una con su tamaño; una lista solo las suyas", () => {
+    const otra: Annotation = { ...caja, id: 'r1', page: 1 }
+    const todas = remapAnnsAfterRotate([caja, otra], 'all', 90, sizes)
+    expect(geo(todas[0])).toEqual({ x: 330, y: 10, width: 50, height: 100 })
+    expect(geo(todas[1])).toEqual({ x: 130, y: 10, width: 50, height: 100 })
+    const soloLa1 = remapAnnsAfterRotate([caja, otra], [1], 90, sizes)
+    expect(soloLa1[0]).toBe(caja)
+    expect(geo(soloLa1[1])).toEqual({ x: 130, y: 10, width: 50, height: 100 })
+  })
+})
+
+describe('rotatePagesUndoable', () => {
+  it('gira las marcas con la página y deshacer las devuelve a su sitio', async () => {
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1', file_path: 'C:/a.pdf', page_count: 1,
+      title: null, author: null, subject: null,
+      page_sizes: [{ page_num: 0, width: 600, height: 400 }],
+    })
+    const original: Annotation = { id: 'r', type: 'rect', page: 0, x: 10, y: 20, width: 100, height: 50 }
+    usePdfStore.getState().addAnnotation('doc-1', original)
+    let girada = false
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
+      const path = String(url)
+      if (path.includes('/rotate/')) girada = !girada
+      if (path.includes('/info/')) {
+        const s = girada ? { width: 400, height: 600 } : { width: 600, height: 400 }
+        return Promise.resolve({ ok: true, json: async () => ({ page_count: 1, page_sizes: [{ page_num: 0, ...s }] }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ success: true }) })
+    }))
+
+    await rotatePagesUndoable('doc-1', [0], 90)
+    const tras = usePdfStore.getState().docs[0].annotations[0]
+    expect({ x: tras.x, y: tras.y, width: tras.width, height: tras.height }).toEqual({ x: 330, y: 10, width: 50, height: 100 })
+
+    usePdfStore.getState().undo()
+    await vi.waitFor(() => expect(usePdfStore.getState().pageUndoBusy).toBe(false))
+    await vi.waitFor(() => expect(usePdfStore.getState().docs[0].page_sizes[0].width).toBe(600))
+    const deshecha = usePdfStore.getState().docs[0].annotations[0]
+    expect({ x: deshecha.x, y: deshecha.y, width: deshecha.width, height: deshecha.height })
+      .toEqual({ x: 10, y: 20, width: 100, height: 50 })
+
+    usePdfStore.getState().redo()
+    await vi.waitFor(() => expect(usePdfStore.getState().docs[0].page_sizes[0].width).toBe(400))
+    expect(usePdfStore.getState().docs[0].annotations[0].x).toBe(330)
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('marcasEnVersionDeDisco', () => {
+  const tam = (n: number) => Array.from({ length: n }, (_, i) => ({ page_num: i, width: 100, height: 200 }))
+
+  it('borrar varias hojas: re-inserta en su lugar y devuelve las marcas de las borradas', () => {
+    const antes = [a(0), a(1), a(2), a(3), a(4)]
+    const paso = pasoDeMarcas({ type: 'remove', pages: [3, 1] }, antes, tam(5))!
+    const despues = remapAnnsAfterDelete(antes, [1, 3])
+    const r = marcasEnVersionDeDisco(despues, [paso])
+    expect(r.anns.map((m) => `${m.id}@${m.page}`).sort()).toEqual(['p0@0', 'p1@1', 'p2@2', 'p3@3', 'p4@4'])
+    expect(r.descartadas).toBe(0)
+  })
+
+  it('girar todo 90° y revertir deja cada marca donde estaba', () => {
+    const antes: Annotation[] = [{ id: 'l', type: 'line', page: 1, x: 5, y: 7, width: 20, height: -3 }]
+    const paso = pasoDeMarcas({ type: 'rotate', pages: 'all', degrees: 90 }, antes, tam(2))!
+    const girado = remapAnnsAfterRotate(antes, 'all', 90, tam(2))
+    expect(marcasEnVersionDeDisco(girado, [paso]).anns).toEqual(antes)
+  })
+
+  it('las operaciones que no mueven marcas no anotan nada', () => {
+    expect(pasoDeMarcas({ type: 'watermark', text: 'X' }, [a(0)], tam(1))).toBeNull()
+    expect(pasoDeMarcas({ type: 'replace', page: 0, stashId: 's' }, [a(0)], tam(1))).toBeNull()
+  })
+
+  it('recortar y revertir devuelve las marcas a su origen, también tras deshacer', () => {
+    const antes: Annotation[] = [{ id: 'r', type: 'rect', page: 0, x: 40, y: 50, width: 10, height: 10 }]
+    const recorte = pasoDeMarcas({ type: 'crop', page: 0, top: 20, right: 0, bottom: 0, left: 30 }, antes, tam(1))!
+    const recortado = marcasEnVersionDeDisco(antes, []).anns.map((m) => ({ ...m, x: m.x - 30, y: m.y - 20 }))
+    expect(marcasEnVersionDeDisco(recortado, [recorte]).anns).toEqual(antes)
+    const deshacer = pasoDeMarcas({ type: 'replace', page: 0, stashId: 's', desplazar: { dx: 30, dy: 20 } }, recortado, tam(1))!
+    expect(marcasEnVersionDeDisco(antes, [deshacer]).anns).toEqual(recortado)
+  })
+})
+
+describe('anotarPaso', () => {
+  const cmd = { kind: 'page', docId: 'd' } as PageCommand
+  const paso = { type: 'insert' as const, pages: [0] }
+
+  it('deshacer el último paso anotado lo cancela', () => {
+    const log = anotarPaso(undefined, cmd, 'forward', paso)
+    expect(anotarPaso(log, cmd, 'inverse', { type: 'delete', pages: [0], dropped: [] })).toEqual([])
+  })
+
+  it('deshacer un paso de antes del guardado anota el contrario', () => {
+    expect(anotarPaso(undefined, cmd, 'inverse', paso)).toEqual([{ cmd, sentido: 'inverse', paso }])
   })
 })

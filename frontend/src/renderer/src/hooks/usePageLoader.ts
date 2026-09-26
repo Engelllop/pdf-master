@@ -66,7 +66,8 @@ function useZoomUpgrade(
     if (page >= doc.page_count) return
     const desired = renderZoomFor(doc.zoom)
     const current = data.originalWidth > 0 ? data.width / data.originalWidth : 0
-    const key = `${docId}:${page}`
+    // Con la versión en la clave, editar la página no deja la subida anterior como «ya hecha».
+    const key = `${docId}:${version}:${page}`
     if (Math.abs(desired - current) < 0.5) return
     if (ultimo.current.key === key && Math.abs(ultimo.current.rz - desired) < 0.01) return
 
@@ -85,7 +86,7 @@ function useZoomUpgrade(
         .catch(() => {})
     }, 250)
     return () => { clearTimeout(t); controller.abort() }
-  }, [doc?.zoom, doc?.currentPage, doc?.doc_id, data?.width, activo])
+  }, [doc?.zoom, doc?.currentPage, doc?.doc_id, doc?.docVersion, data?.width, activo])
 }
 
 export function usePageLoader() {

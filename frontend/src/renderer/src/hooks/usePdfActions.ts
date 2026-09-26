@@ -5,7 +5,7 @@ import { type Field, type FormValues } from '../components/FormModal'
 import { apiFetch } from '../lib/api'
 import { parsePageRanges, parsePagesField } from '../lib/pageRange'
 import { correrLote } from '../lib/lote'
-import { avisarSiFallóLaCopia, confirmarEscrituraEn, confirmarSobrescritura, pushAnnotations, refrescarEstadoEnDisco } from '../lib/saveDocument'
+import { avisarSiFallóLaCopia, confirmarEscrituraEn, confirmarSobrescritura, pushAnnotations, refrescarEstadoEnDisco, subirMarcasOAvisar } from '../lib/saveDocument'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
@@ -428,7 +428,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     try {
       // Comprimir escribe un PDF completo: sin subir las marcas del store el archivo
       // salía sin ellas (y comprimiendo encima del original, se perdían).
-      await pushAnnotations(activeDoc.doc_id)
+      if (!(await subirMarcasOAvisar(activeDoc.doc_id))) return
       const res = await withProgress('Comprimiendo…', () => apiFetch(`/pdf/compress/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' }))
       if (!res.ok) { showToast('Error al comprimir', 'error'); return }
       if (eraElOriginal) await refrescarEstadoEnDisco(activeDoc.doc_id)
@@ -453,8 +453,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   }
 
   // --- Por lotes: aplica una operación a TODOS los documentos abiertos ---
-  const runBatch = async (label: string, op: (d: typeof docs[number]) => Promise<void>) => {
-    if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
+  /** Devuelve si se completaron todos, para que quien llama no cante victoria encima
+   * de un «2/5 completado(s)». */
+  const runBatch = async (label: string, op: (d: typeof docs[number]) => Promise<void>): Promise<boolean> => {
+    if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return false }
     const { ok, cancelado } = await correrLote(label, docs, (d) => d.file_name, async (d) => {
       try { await op(d); return true } catch (err) {
         window.api.logError(`[batch] ${String(err)}`).catch(() => {})
@@ -465,6 +467,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       cancelado ? `${label}: cancelado tras ${ok} documento(s)` : `${label}: ${ok}/${docs.length} completado(s)`,
       cancelado ? 'info' : ok === docs.length ? 'success' : 'error',
     )
+    return !cancelado && ok === docs.length
   }
 
   /** Envuelve una operación de un solo documento que tarda (OCR, exportar, comprimir)
@@ -492,7 +495,9 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     let peores = 0
     await runBatch('Comprimir', async (d) => {
       const salida = `${carpeta}\\${d.file_name.replace(/\.pdf$/i, '')}_comprimido.pdf`
-      await pushAnnotations(d.doc_id)
+      // Sin las marcas, ese documento cuenta como fallido en el resumen del lote: un
+      // aviso por documento taparía la pantalla.
+      if (!(await pushAnnotations(d.doc_id))) throw new Error('embed ' + d.file_name)
       const res = await apiFetch(`/pdf/compress/${d.doc_id}?output_path=${encodeURIComponent(salida)}`, { method: 'POST' })
       if (!res.ok) throw new Error('compress ' + d.file_name)
       const { size_before: a, size_after: b } = await res.json()
@@ -532,12 +537,12 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     if (docs.length === 0) { showToast('No hay documentos abiertos', 'info'); return }
     const carpeta = await window.api.chooseFolder()
     if (!carpeta) return
-    await runBatch('Exportar a Word', async (d) => {
+    const todos = await runBatch('Exportar a Word', async (d) => {
       const salida = `${carpeta}\\${d.file_name.replace(/\.pdf$/i, '')}.docx`
       const res = await apiFetch(`/pdf/export-word/${d.doc_id}?output_path=${encodeURIComponent(salida)}`)
       if (!res.ok) throw new Error('word ' + d.file_name)
     })
-    showToast(`Documentos exportados a ${carpeta}`, 'info')
+    if (todos) showToast(`Documentos exportados a ${carpeta}`, 'info')
   }
 
   const handleSplit = async (mode: 'even' | 'odd' | 'range' | 'from-current') => {
@@ -582,7 +587,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     try {
       // El extracto es un PDF que se manda a alguien: sin subir las marcas del store
       // salía con las páginas limpias, sin las marcas que se acaban de poner.
-      await pushAnnotations(activeDoc.doc_id)
+      if (!(await subirMarcasOAvisar(activeDoc.doc_id))) return
       const res = await apiFetch(`/pdf/split/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pages }),
@@ -719,10 +724,16 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     const { seguir, eraElOriginal } = await confirmarEscrituraEn(activeDoc.doc_id, outputPath)
     if (!seguir) return
     try {
-      await pushAnnotations(activeDoc.doc_id)
-      const res = await apiFetch(`/pdf/remove-password/${activeDoc.doc_id}?output_path=${encodeURIComponent(outputPath)}`, { method: 'POST' })
+      if (!(await subirMarcasOAvisar(activeDoc.doc_id))) return
+      const params = new URLSearchParams({ output_path: outputPath })
+      // Como «Guardar con contraseña»: si pisa el original, es donde la copia .bak hace
+      // falta. A otra ruta es una copia y el original queda intacto.
+      if (eraElOriginal && usePdfStore.getState().backupOnSave) params.set('backup', 'true')
+      const res = await apiFetch(`/pdf/remove-password/${activeDoc.doc_id}?${params}`, { method: 'POST' })
       showToast(res.ok ? 'PDF guardado sin contraseña' : 'Error al quitar contraseña', res.ok ? 'success' : 'error')
-      if (res.ok && eraElOriginal) await refrescarEstadoEnDisco(activeDoc.doc_id)
+      if (!res.ok) return
+      await avisarSiFallóLaCopia(res)
+      if (eraElOriginal) await refrescarEstadoEnDisco(activeDoc.doc_id)
     } catch (err) { toastActionError(err) }
   }
 
@@ -814,7 +825,15 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       if (!res.ok) { showToast('No se pudieron importar las marcas', 'error'); return }
       const data = await res.json()
       const imported: Annotation[] = data.annotations || []
-      if (imported.length === 0) { showToast('Ese archivo no tiene marcas compatibles', 'info'); return }
+      // Marcas que el motor no supo traducir (tipos XFDF que la app no maneja): callarlas
+      // dejaba creer que el archivo se importó entero.
+      const ignoradas = typeof data.skipped === 'number' && data.skipped > 0 ? data.skipped : 0
+      if (imported.length === 0) {
+        showToast(ignoradas > 0
+          ? `Ese archivo no tiene marcas compatibles (${ignoradas} ignorada(s) por formato no compatible)`
+          : 'Ese archivo no tiene marcas compatibles', 'info')
+        return
+      }
       // Un XFDF de otro documento puede traer marcas de páginas que aquí no existen:
       // se colaban invisibles y luego viajaban al PDF al guardar.
       const dentro = imported.filter((a) => a.page >= 0 && a.page < activeDoc.page_count)
@@ -844,7 +863,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       const partes = [`${nuevas} marca(s) nuevas`]
       if (actualizadas > 0) partes.push(`${actualizadas} actualizada(s)`)
       if (fuera > 0) partes.push(`${fuera} de páginas inexistentes descartada(s)`)
-      showToast(partes.join(', '), fuera > 0 ? 'info' : 'success')
+      if (ignoradas > 0) partes.push(`${ignoradas} ignorada(s) por formato no compatible`)
+      showToast(partes.join(', '), fuera > 0 || ignoradas > 0 ? 'info' : 'success')
     } catch (err) { toastActionError(err) }
   }
 

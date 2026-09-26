@@ -27,7 +27,7 @@ vi.mock('../store/usePdfStore', () => ({
   },
 }))
 
-import { mismaRuta, pushAnnotations, saveDocument } from './saveDocument'
+import { confirmarSobrescritura, mismaRuta, pushAnnotations, saveDocument, subirMarcasOAvisar } from './saveDocument'
 
 const rutas = (): string[] => apiFetch.mock.calls.map((c) => c[0])
 
@@ -70,7 +70,11 @@ describe('guardar', () => {
   })
 
   it('un guardado normal no avisa nada', async () => {
-    const okConCuerpo = { ok: true, clone: () => ({ json: async () => ({ success: true, backup_failed: false }) }) }
+    docActual = { ...docActual, diskState: { mtime: 1000, size: 500 } }
+    const okConCuerpo = {
+      ok: true, json: async () => ({ mtime: 1000, size: 500 }),
+      clone: () => ({ json: async () => ({ success: true, backup_failed: false }) }),
+    }
     apiFetch.mockImplementation(async () => okConCuerpo as unknown as Response)
     expect(await saveDocument('d1')).toBe(true)
     expect(showToast).not.toHaveBeenCalled()
@@ -215,5 +219,45 @@ describe('subir marcas al motor con capas apagadas', () => {
     conCapas()
     expect(await saveDocument('d1')).toBe(true)
     expect(marcasEnviadas()).toEqual(['a1', 'a2', 'a3'])
+  })
+})
+
+// Comprimir, extraer, quitar la contraseña e imprimir seguían adelante aunque el motor
+// rechazara las marcas: salía un PDF sin las últimas marcas y con aviso de éxito.
+describe('subir marcas antes de escribir o imprimir', () => {
+  it('si el motor las acepta, sigue sin avisar', async () => {
+    expect(await subirMarcasOAvisar('d1')).toBe(true)
+    expect(showToast).not.toHaveBeenCalled()
+  })
+
+  it('si el motor las rechaza, avisa y corta', async () => {
+    apiFetch.mockImplementation(async () => ({ ok: false, status: 500 }) as unknown as Response)
+    expect(await subirMarcasOAvisar('d1')).toBe(false)
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('No se pudieron incluir las marcas'), 'error')
+  })
+})
+
+// Si /pdf/disk-state falla, la protección contra pisar cambios externos se apagaba en
+// silencio. Se sigue guardando (no bloquear), pero se dice — una vez por documento.
+describe('no se pudo comprobar el disco', () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+  it('avisa una sola vez por documento y no bloquea el guardado', async () => {
+    docActual = { doc_id: 'd-sin-disco', file_name: 'plano.pdf', annotations: [], diskState: { mtime: 1000, size: 500 } }
+    apiFetch.mockImplementation(async (path: string) =>
+      (path.startsWith('/pdf/disk-state/') ? { ok: false, status: 500 } : { ok: true }) as unknown as Response)
+    expect(await confirmarSobrescritura('d-sin-disco')).toBe(true)
+    expect(await confirmarSobrescritura('d-sin-disco')).toBe(true)
+    const avisos = showToast.mock.calls.filter((c) => String(c[0]).includes('No se pudo comprobar'))
+    expect(avisos.length).toBe(1)
+    expect(askConfirm).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('con la comprobación funcionando no avisa nada', async () => {
+    docActual = { doc_id: 'd-con-disco', file_name: 'plano.pdf', annotations: [], diskState: { mtime: 1000, size: 500 } }
+    apiFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ mtime: 1000, size: 500 }) }) as unknown as Response)
+    expect(await confirmarSobrescritura('d-con-disco')).toBe(true)
+    expect(showToast).not.toHaveBeenCalled()
   })
 })

@@ -44,9 +44,11 @@ class RenderMixin:
             # Sin cambios y sin cifrado, el documento en memoria es el archivo: leerlo
             # de disco evita re-comprimir decenas de MB (con el lock y el único worker
             # tomados) cada vez que PDF.js pide el PDF de un plano recién abierto.
-            ruta = self._doc_path(doc_id) if (not self._dirty.get(doc_id) and not doc.is_encrypted) else None
+            # `needs_pass` y no `is_encrypted`: tras autenticar, is_encrypted es False y
+            # a PDF.js le llegaba el archivo de disco CIFRADO de un plano protegido.
+            ruta = self._doc_path(doc_id) if (not self._dirty.get(doc_id) and not doc.needs_pass) else None
             if not ruta:
-                return doc.tobytes(garbage=0, deflate=True)
+                return self._bytes_en_claro(doc_id, doc, garbage=0, deflate=True)
 
         # El read() va FUERA del lock: son decenas o cientos de MB de disco y mientras
         # tanto ninguna otra petición (medir, buscar, guardar otro plano) podía entrar.
@@ -59,7 +61,7 @@ class RenderMixin:
             pass
         with self._lock:
             doc = self._acquire(doc_id)
-            return doc.tobytes(garbage=0, deflate=True) if doc else None
+            return self._bytes_en_claro(doc_id, doc, garbage=0, deflate=True) if doc else None
 
     def get_pdf_bytes_with_marks(self, doc_id: str) -> Optional[bytes]:
         """Como get_pdf_bytes pero con las marcas pendientes dibujadas encima, sobre una
@@ -73,10 +75,10 @@ class RenderMixin:
                 return None
             pending = self._pending_annotations.get(doc_id)
             if not pending:
-                return doc.tobytes(garbage=0, deflate=True)
+                return self._bytes_en_claro(doc_id, doc, garbage=0, deflate=True)
             marked = None
             try:
-                marked = fitz.open(stream=doc.tobytes(), filetype="pdf")
+                marked = self._copia_autenticada(doc_id, doc)
                 self._embed_into(marked, pending)
                 return marked.tobytes(garbage=0, deflate=True)
             finally:

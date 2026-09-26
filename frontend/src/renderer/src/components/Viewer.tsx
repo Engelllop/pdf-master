@@ -538,6 +538,19 @@ export default function Viewer() {
     handleDrawMouseUp()
   }
 
+  // Los botones «Eliminar/Reemplazar» flotan sobre el SVG pero no son hijos suyos:
+  // soltar encima no llegaba a su onMouseUp y el gesto (imagen, borrador, marquesina)
+  // quedaba abierto. Si el SVG ya lo cerró, los refs están vacíos y esto no hace nada.
+  const finDeGestoRef = useRef(handleMouseUp)
+  finDeGestoRef.current = handleMouseUp
+  useEffect(() => {
+    const onUp = () => {
+      if (eraserAntesRef.current || marqueeStartRef.current || imgModeRef.current) finDeGestoRef.current()
+    }
+    window.addEventListener('mouseup', onUp)
+    return () => window.removeEventListener('mouseup', onUp)
+  }, [imgModeRef])
+
   // Inline text edit
   const [editingTextAnn, setEditingTextAnn] = useState<string | null>(null)
   const [editTextValue, setEditTextValue] = useState('')

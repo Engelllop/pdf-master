@@ -157,6 +157,12 @@ export interface PdfDoc {
    * ya tomadas en las otras. Lo que no tenga entrada usa `measurementScale`. */
   pageScales?: Record<number, MeasurementScale>
   docVersion: number
+  /** El documento vivo del motor tiene cambios (rotar, borrar, OCR, formularios…) que
+   * no están en disco. Aparte de `dirty`, que también cubre las marcas: las marcas viven
+   * en la app y sobreviven a un reinicio del motor; estos cambios no. */
+  engineDirty?: boolean
+  /** Pasos de página que movieron marcas desde el último guardado, en orden. */
+  pasosSinGuardar?: PasoSinGuardar[]
   /** Fecha y tamaño del archivo cuando se abrió (o cuando se guardó por última vez).
    * Sirve para detectar que alguien más lo tocó antes de sobrescribirlo. */
   diskState?: { mtime: number; size: number }
@@ -187,7 +193,8 @@ export type PageOp =
   | { type: 'restore'; stashId: string; at: number[] }
   | { type: 'remove'; pages: number[] }
   | { type: 'reorder'; order: number[] }
-  | { type: 'replace'; page: number; stashId: string }
+  // `desplazar`: al deshacer un recorte, las marcas de la página vuelven a su origen.
+  | { type: 'replace'; page: number; stashId: string; desplazar?: { dx: number; dy: number } }
   | { type: 'crop'; page: number; top: number; right: number; bottom: number; left: number }
   | { type: 'redact'; page: number; x: number; y: number; width: number; height: number }
   | { type: 'restoreDoc'; stashId: string }
@@ -224,6 +231,23 @@ export interface PageCommand {
   forward: PageOp
   beforeAnns: Annotation[]
   afterAnns: Annotation[]
+}
+
+/** Cómo movió un paso de página las marcas. Si el motor se reinicia se reabre el
+ * archivo de disco, y con esto las marcas se devuelven a sus páginas de entonces. */
+export type PasoDeMarcas =
+  | { type: 'delete'; pages: number[]; dropped: Annotation[] }
+  | { type: 'insert'; pages: number[] }
+  | { type: 'reorder'; order: number[] }
+  | { type: 'rotate'; pages: number[] | 'all'; degrees: number; sizesBefore: PageSize[] }
+  | { type: 'shift'; page: number; dx: number; dy: number }
+
+/** `sentido`: se aplicó `cmd.forward` o `cmd.inverse`. Deshacer un paso anotado se
+ * cancela con él en vez de apilar su contrario, que al revertir lo desharía dos veces. */
+export interface PasoSinGuardar {
+  cmd: PageCommand
+  sentido: 'forward' | 'inverse'
+  paso: PasoDeMarcas
 }
 
 export type UndoCommand = AnnCommand | PageCommand
@@ -365,7 +389,7 @@ export interface PdfState {
   setAnnotations: (docId: string, anns: Annotation[]) => void
   getAnnotationsForPage: (docId: string, page: number) => Annotation[]
   toggleLayerVisible: (docId: string, layer: string) => void
-  setDocDirty: (docId: string, dirty: boolean) => void
+  setDocDirty: (docId: string, dirty: boolean, motor?: boolean) => void
   setDiskState: (docId: string, estado: { mtime: number; size: number }) => void
   updateDocPageCount: (docId: string, count: number) => void
   updateDocPageSizes: (docId: string, sizes: PageSize[]) => void
@@ -375,6 +399,7 @@ export interface PdfState {
   selectAnnotations: (docId: string, ids: string[]) => void
   toggleAnnotationSelection: (docId: string, annId: string) => void
   moveAnnotations: (docId: string, ids: string[], dx: number, dy: number) => void
+  nudgeAnnotations: (docId: string, ids: string[], dx: number, dy: number) => void
   deleteAnnotations: (docId: string, ids: string[]) => void
   annotationClipboard: Annotation[]
   copyAnnotations: (docId: string, ids: string[]) => number
@@ -395,7 +420,7 @@ export interface PdfState {
   redo: () => void
 
   // Toasts
-  showToast: (message: string, type?: Toast['type']) => void
+  showToast: (message: string, type?: Toast['type'], persistente?: boolean) => void
   removeToast: (id: string) => void
   setSaveStatus: (status: 'idle' | 'saving' | 'saved') => void
   setCompareDoc: (docId: string | null) => void
@@ -1130,9 +1155,12 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     }))
   },
 
-  setDocDirty: (docId, dirty) => {
+  // Limpiar solo pasa al guardar, y guardar escribe también lo que el motor tenía.
+  // `motor`: el cambio vive en el documento del motor y no pasa por incrementDocVersion
+  // (p.ej. el índice), así que un reinicio del motor lo perdería.
+  setDocDirty: (docId, dirty, motor = false) => {
     set((state) => ({
-      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, dirty } : d)),
+      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, dirty, ...(dirty ? (motor ? { engineDirty: true } : {}) : { engineDirty: false, pasosSinGuardar: undefined }) } : d)),
       saveStatus: dirty ? 'idle' : state.saveStatus,
     }))
   },
@@ -1272,9 +1300,10 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     }))
   },
 
+  // Solo se llama tras editar el documento en el motor, así que también lo marca.
   incrementDocVersion: (docId) => {
     set((state) => ({
-      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, docVersion: d.docVersion + 1 } : d)),
+      docs: state.docs.map((d) => (d.doc_id === docId ? { ...d, docVersion: d.docVersion + 1, engineDirty: true } : d)),
     }))
   },
 
@@ -1525,6 +1554,17 @@ export const usePdfStore = create<PdfState>((set, get) => ({
     })
   },
 
+  // Las flechas mueven sin gesto de ratón que cierre el paso: se apila cada toque y
+  // los seguidos sobre la misma selección se fusionan (mantener la flecha pulsada es
+  // un solo Ctrl+Z, no uno por punto).
+  nudgeAnnotations: (docId, ids, dx, dy) => {
+    const before = get().docs.find((d) => d.doc_id === docId)?.annotations
+    get().moveAnnotations(docId, ids, dx, dy)
+    const after = get().docs.find((d) => d.doc_id === docId)?.annotations
+    if (!before || !after || after === before) return
+    set((state) => apilarEdicion(state.undoStack, docId, before, after, `nudge:${[...ids].sort().join('+')}`, Date.now()))
+  },
+
   deleteAnnotations: (docId, ids) => {
     set((state) => {
       const doc = state.docs.find((d) => d.doc_id === docId)
@@ -1643,10 +1683,10 @@ export const usePdfStore = create<PdfState>((set, get) => ({
   // su hueco en colapsar; el desvanecido es más corto y termina antes): antes entraba
   // animado y desaparecía de golpe, y con solo desvanecerlo el hueco seguía ocupado
   // hasta el final y los avisos de abajo daban un salto seco.
-  showToast: (message, type = 'info') => {
+  showToast: (message, type = 'info', persistente = false) => {
     const id = crypto.randomUUID()
     set((state) => ({ toasts: [...state.toasts, { id, message, type }] }))
-    setTimeout(() => get().removeToast(id), 3000)
+    if (!persistente) setTimeout(() => get().removeToast(id), 3000)
   },
 
   removeToast: (id) => {

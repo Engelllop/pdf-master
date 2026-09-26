@@ -4,6 +4,24 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-09-26 — v1.24.0
+
+**Segunda auditoría, arreglada entera.** Esta vez sí cambia lo que el usuario ve: había datos que se perdían sin aviso.
+
+- **Guardar un PDF protegido le quitaba la contraseña.** `save` y `compress` no pasaban `encryption=`, y el default de PyMuPDF es «sin cifrado»: abrir un plano con clave, rotar una página y Ctrl+S lo dejaba abierto para cualquiera. Peor: cualquier `tobytes()`/`save()` sobre el documento vivo le quitaba el cifrado **en memoria** (el `/raw` de PDF.js, el stash de deshacer, `_copia_con_marcas`). Ahora las copias en claro salen de `_copia_autenticada`/`_bytes_en_claro` y el guardado usa `PDF_ENCRYPT_KEEP`, que conserva la contraseña de propietario aunque no se conozca, los permisos y el método. Proteger o desproteger sobrescribiendo el original actualiza la contraseña guardada (antes, tras salir del LRU, el documento quedaba inutilizable con 500 en todo).
+- **Las marcas en páginas giradas salían corridas en el archivo.** El renderer trabaja en la página girada (el viewport de PDF.js incluye `/Rotate`) y PyMuPDF espera coordenadas sin girar. Ahora el motor convierte en las dos direcciones al incrustar y al leer marcas ajenas, y lo mismo en búsqueda, spans, snap, redactar, recortar, insertar imagen, marca de agua, encabezado/pie, numeración, imágenes, editar texto y **formularios** (los campos nuevos llevan `/MK /R` para que el texto se lea derecho). Rotar una página mueve sus marcas con ella, con deshacer.
+- **Recortar corría las marcas** lo que midiera el margen, en pantalla y en el archivo: el origen de la vista pasa al nuevo borde. Ahora se desplazan con el recorte y deshacerlo las devuelve.
+- **Un reinicio del motor perdía en silencio los cambios de página sin guardar.** Ahora sale un aviso persistente, se refresca la maquetación, se limpian del deshacer los pasos que el motor ya no tiene y las marcas se devuelven al marco del archivo de disco (revirtiendo borrar, insertar, reordenar, girar y recortar), conservando lo editado después.
+- **Comprimir, extraer, quitar contraseña e imprimir decían «✓» aunque las marcas no hubieran llegado al motor.** Ahora se cancelan con aviso (`subirMarcasOAvisar`); en lote, ese documento cuenta como fallido.
+- **Mover una marca con las flechas no se podía deshacer.** Ahora es un paso (las ráfagas seguidas se funden en uno).
+- **Seguridad del motor:** el token se saltaba en cualquier ruta que terminara en `/health` (ahora ruta exacta y `hmac.compare_digest`); CORS solo acepta `null` y el puerto de desarrollo, que queda fijo (`5173`, `strictPort`); `save_page_image` y `export_xfdf` escriben atómico; fuera el `POST /pdf/annotations`, que ya nadie usaba y escribía el sidecar; todos los accesos a PyMuPDF bajo el lock.
+- **Avisos que faltaban:** marcas XFDF ignoradas al importar, archivos de la sesión que no se pudieron reabrir, cuota de `localStorage` llena, «no se pudo comprobar si el archivo cambió en disco», la `.bak` al quitar contraseña, y el toast de éxito de Word en lote que tapaba los fallos.
+- **Menores:** el temporal de impresión lleva un sufijo aleatorio, `merge_pdf` cierra la fuente si falla, el estilo de marcas que no se aplica queda en el log, `useZoomUpgrade` depende de `docVersion`, los atajos de teclado dejan de re-suscribirse en cada mousemove, y soltar un gesto fuera del lienzo lo cierra.
+- **CI y dependencias:** actions fijadas por SHA y en versiones Node 24; Electron 43.0.0 → 43.7.5.
+- **Tests: 749 → 807 frontend, 260 → 491 motor.**
+
+---
+
 ## Sesión 2026-09-09 — v1.23.0
 
 **Auditoría del proyecto, arreglada entera.** Casi nada de esto cambia lo que la app hace; cambia lo que pasa cuando algo va mal. Con una excepción, que resultó ser un bug de verdad:

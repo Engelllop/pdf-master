@@ -546,3 +546,159 @@ describe('las otras escrituras también llevan las marcas', () => {
     vi.unstubAllGlobals()
   })
 })
+
+const apiLocal = { getApiConfig: async () => ({ base: 'http://localhost:8745', token: '' }) }
+const avisos = () => usePdfStore.getState().toasts.map((t) => t.message)
+
+// Si el motor rechaza las marcas (POST /pdf/embed falla), seguir escribía un PDF sin
+// las últimas marcas y encima avisaba de éxito.
+describe('si no se pueden subir las marcas, no se escribe', () => {
+  function embedFalla(destino = 'C:/planos/copia.pdf') {
+    const fetchMock = vi.fn((path: string) => {
+      const esEmbed = path.includes('/pdf/embed/')
+      return Promise.resolve({
+        ok: !esEmbed, status: esEmbed ? 500 : 200, text: async () => '',
+        json: async () => ({ success: true, size_before: 100, size_after: 90 }),
+      } as unknown as Response)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    Object.assign(window, { api: { ...window.api, ...apiLocal, saveFile: vi.fn(async () => destino), chooseFolder: vi.fn(async () => 'C:/salida') } })
+    openDoc(2)
+    usePdfStore.getState().addAnnotation('doc-1', { id: 'r1', type: 'rect', page: 0, x: 10, y: 10, width: 50, height: 20 })
+    return { fetchMock, doc: usePdfStore.getState().docs[0] }
+  }
+  const escribio = (fetchMock: { mock: { calls: unknown[][] } }, op: string) =>
+    fetchMock.mock.calls.some((c) => String(c[0]).includes(op))
+
+  it('comprimir avisa y no comprime', async () => {
+    const { fetchMock, doc } = embedFalla()
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleCompress() })
+    expect(escribio(fetchMock, '/compress/')).toBe(false)
+    expect(avisos().some((m) => m.includes('No se pudieron incluir las marcas'))).toBe(true)
+    expect(avisos().some((m) => m.startsWith('Comprimido'))).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('comprimir por lotes salta ese documento y lo cuenta como fallido', async () => {
+    const { fetchMock, doc } = embedFalla()
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleBatchCompress() })
+    expect(escribio(fetchMock, '/compress/')).toBe(false)
+    expect(avisos()).toContain('Comprimir: 0/1 completado(s)')
+    vi.unstubAllGlobals()
+  })
+
+  it('extraer páginas avisa y no escribe', async () => {
+    const { fetchMock, doc } = embedFalla()
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleSplit('even') })
+    expect(escribio(fetchMock, '/split/')).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('quitar la contraseña avisa y no escribe', async () => {
+    const { fetchMock, doc } = embedFalla()
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleRemovePassword() })
+    expect(escribio(fetchMock, '/remove-password/')).toBe(false)
+    vi.unstubAllGlobals()
+  })
+})
+
+// Quitar la contraseña encima del original es tan sobrescritura como «Guardar con
+// contraseña», pero no pedía la copia .bak ni avisaba si el motor no la pudo crear.
+describe('quitar la contraseña y la copia .bak', () => {
+  function conRespuesta(destino: string, cuerpo: object) {
+    const fetchMock = vi.fn((path: string) =>
+      Promise.resolve({
+        ok: true, status: 200, text: async () => '',
+        json: async () => (path.includes('disk-state') ? { mtime: 1000, size: 500 } : cuerpo),
+        clone: () => ({ json: async () => cuerpo }),
+      } as unknown as Response))
+    vi.stubGlobal('fetch', fetchMock)
+    Object.assign(window, { api: { ...window.api, ...apiLocal, saveFile: vi.fn(async () => destino) } })
+    openDoc()
+    usePdfStore.getState().setDiskState('doc-1', { mtime: 1000, size: 500 })
+    usePdfStore.setState({ backupOnSave: true })
+    return { fetchMock, doc: usePdfStore.getState().docs[0] }
+  }
+  const urlQuitar = (fetchMock: { mock: { calls: unknown[][] } }) =>
+    String(fetchMock.mock.calls.find((c) => String(c[0]).includes('/remove-password/'))![0])
+
+  it('sobre el original pide la copia y avisa si falló', async () => {
+    const { fetchMock, doc } = conRespuesta('C:/planos/a.pdf', { success: true, backup_failed: true })
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleRemovePassword() })
+    expect(urlQuitar(fetchMock)).toContain('backup=true')
+    expect(avisos()).toContain('Guardado, pero no se pudo crear la copia .bak')
+    vi.unstubAllGlobals()
+  })
+
+  it('a otra ruta no pide copia: el original queda intacto', async () => {
+    const { fetchMock, doc } = conRespuesta('C:/planos/sin_clave.pdf', { success: true })
+    const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
+    await act(async () => { await result.current.handleRemovePassword() })
+    expect(urlQuitar(fetchMock)).not.toContain('backup=')
+    vi.unstubAllGlobals()
+  })
+})
+
+// `runBatch` ya dice «X/Y completado(s)»; encima salía siempre «Documentos exportados a
+// …», también cuando habían fallado todos.
+describe('exportar a Word por lotes con fallos', () => {
+  it('no dice «exportados» si alguno falló', async () => {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({ ok: false, status: 500, json: async () => ({}), text: async () => '' } as unknown as Response)))
+    Object.assign(window, { api: { ...window.api, ...apiLocal, chooseFolder: vi.fn(async () => 'C:/salida') } })
+    const { result } = setup()
+    await act(async () => { await result.current.handleBatchExportWord() })
+    expect(avisos()).toContain('Exportar a Word: 0/1 completado(s)')
+    expect(avisos().some((m) => m.startsWith('Documentos exportados'))).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('si salieron todos, dice dónde', async () => {
+    vi.stubGlobal('fetch', okFetch({}))
+    Object.assign(window, { api: { ...window.api, ...apiLocal, chooseFolder: vi.fn(async () => 'C:/salida') } })
+    const { result } = setup()
+    await act(async () => { await result.current.handleBatchExportWord() })
+    expect(avisos()).toContain('Documentos exportados a C:/salida')
+    vi.unstubAllGlobals()
+  })
+})
+
+// El motor informa cuántas marcas del XFDF no supo traducir: callarlo dejaba creer que
+// el archivo se había importado entero.
+describe('importar XFDF con marcas ignoradas', () => {
+  function conRespuesta(cuerpo: object) {
+    vi.stubGlobal('fetch', vi.fn(() =>
+      Promise.resolve({ ok: true, status: 200, text: async () => '', json: async () => cuerpo } as unknown as Response)))
+    Object.assign(window, { api: { ...window.api, ...apiLocal, openFile: vi.fn(async () => 'C:/rev.xfdf') } })
+  }
+  const marca = { id: 'h1', type: 'highlight', page: 0, x: 10, y: 10, width: 50, height: 12 }
+
+  it('dice cuántas se ignoraron', async () => {
+    conRespuesta({ annotations: [marca], skipped: 2 })
+    const { result } = setup()
+    await act(async () => { await result.current.handleImportXfdf() })
+    expect(avisos().some((m) => m.includes('1 marca(s) nuevas') && m.includes('2 ignorada(s) por formato no compatible'))).toBe(true)
+    vi.unstubAllGlobals()
+  })
+
+  it('sin el campo `skipped` no menciona ignoradas', async () => {
+    conRespuesta({ annotations: [marca] })
+    const { result } = setup()
+    await act(async () => { await result.current.handleImportXfdf() })
+    expect(avisos().some((m) => m.includes('ignorada'))).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('si no entró ninguna, dice que había marcas incompatibles', async () => {
+    conRespuesta({ annotations: [], skipped: 3 })
+    const { result } = setup()
+    await act(async () => { await result.current.handleImportXfdf() })
+    expect(avisos().some((m) => m.includes('3 ignorada(s) por formato no compatible'))).toBe(true)
+    vi.unstubAllGlobals()
+  })
+})

@@ -25,6 +25,27 @@ export function loadLastSession(): SessionSnapshot | null {
   return leer(LAST_KEY)
 }
 
+/** localStorage lleno: el único fallo de persistencia que el usuario puede arreglar
+ * (y que hace perder la sesión en el próximo arranque sin decir nada). */
+export function esErrorDeCuota(err: unknown): boolean {
+  return err instanceof DOMException
+    && (err.name === 'QuotaExceededError' || err.name === 'NS_ERROR_DOM_QUOTA_REACHED' || err.code === 22)
+}
+
+function nombreDeArchivo(ruta: string): string {
+  return ruta.split(/[\\/]/).pop() || ruta
+}
+
+/** Aviso único tras restaurar en silencio: sin él, los archivos movidos o borrados
+ * simplemente desaparecían de la sesión y el usuario no sabía qué faltaba. */
+export function avisoDeNoReabiertos(rutas: string[]): string | null {
+  if (!rutas.length) return null
+  const nombres = rutas.slice(0, 3).map(nombreDeArchivo).join(', ')
+  const resto = rutas.length > 3 ? ` y ${rutas.length - 3} más` : ''
+  return `No se pudieron reabrir ${rutas.length} documento(s) de la sesión anterior`
+    + ` (¿movidos o borrados?): ${nombres}${resto}`
+}
+
 function esModoDeAjuste(v: string): v is FitMode {
   return v === 'fit-width' || v === 'fit-page'
 }
@@ -46,9 +67,10 @@ export async function reabrirSesion(
   if (!snapshot?.docs?.length) return 0
   const { setPage, setZoom, setFitMode, setActiveDoc } = usePdfStore.getState()
   const idByPath: Record<string, string> = {}
+  const fallidos: string[] = []
   for (const d of snapshot.docs) {
     const id = await openDocument(d.file_path, { activate: false, silent: opts.silent })
-    if (!id) continue
+    if (!id) { fallidos.push(d.file_path); continue }
     idByPath[d.file_path] = id
     setPage(id, d.currentPage || 0)
     if (esModoDeAjuste(d.fitMode)) {
@@ -59,6 +81,9 @@ export async function reabrirSesion(
     }
   }
   if (snapshot.activeFile && idByPath[snapshot.activeFile]) setActiveDoc(idByPath[snapshot.activeFile])
+  // Sin `silent`, openDocument ya avisó de cada fallo por su cuenta.
+  const aviso = opts.silent ? avisoDeNoReabiertos(fallidos) : null
+  if (aviso) usePdfStore.getState().showToast(aviso, 'error')
   return Object.keys(idByPath).length
 }
 

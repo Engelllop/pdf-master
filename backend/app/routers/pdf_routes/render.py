@@ -49,8 +49,14 @@ def save_page_image(doc_id: str, page_num: int, output_path: str = Query(...),
     img_bytes = pdf_service.get_page_image_bytes(doc_id, page_num, zoom)
     if not img_bytes:
         raise HTTPException(status_code=404, detail="Page not found")
-    with open(output_path, 'wb') as fh:
-        fh.write(img_bytes)
+
+    def escribir(temp: str) -> None:
+        with open(temp, 'wb') as fh:
+            fh.write(img_bytes)
+
+    # Atómico como toda escritura del motor: el cuadro de guardar deja elegir un PNG
+    # que ya existe, y un fallo a mitad lo dejaba truncado.
+    pdf_service._guardar_atomico(output_path, False, escribir)
     return SaveResult(success=True, path=output_path)
 
 @router.get("/tile/{doc_id}/{page_num}")

@@ -49,28 +49,31 @@ class FormsMixin:
         widget.update()
 
     def get_form_fields(self, doc_id: str, page_num: int) -> List[dict]:
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return []
-        page = doc.load_page(page_num)
-        widgets = page.widgets()
-        results = []
-        for widget in widgets:
-            results.append({
-                "xref": widget.xref,
-                "field_name": widget.field_name,
-                "field_type": widget.field_type_string,
-                "field_flags": widget.field_flags,
-                "rect": {
-                    "x": widget.rect.x0,
-                    "y": widget.rect.y0,
-                    "width": widget.rect.width,
-                    "height": widget.rect.height,
-                },
-                "value": widget.field_value or "",
-                "options": widget.choice_values or [],
-            })
-        return results
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return []
+            page = doc.load_page(page_num)
+            widgets = page.widgets()
+            results = []
+            for widget in widgets:
+                # El visor trabaja en la página girada; widget.rect viene sin girar.
+                rect = self._a_vista(page, widget.rect)
+                results.append({
+                    "xref": widget.xref,
+                    "field_name": widget.field_name,
+                    "field_type": widget.field_type_string,
+                    "field_flags": widget.field_flags,
+                    "rect": {
+                        "x": rect.x0,
+                        "y": rect.y0,
+                        "width": rect.width,
+                        "height": rect.height,
+                    },
+                    "value": widget.field_value or "",
+                    "options": widget.choice_values or [],
+                })
+            return results
 
     def set_form_field(self, doc_id: str, page_num: int, field_name: str, value: str, stash: bool = True):
         """None = no existe. Si ok, (previous, stash_id, stash_page). PyMuPDF no limpia
@@ -178,7 +181,6 @@ class FormsMixin:
             if kind in ("checkbox", "radio"):
                 w = max(10.0, w)
                 h = max(10.0, h)
-            rect = fitz.Rect(x, y, x + w, y + h)
             used = self._used_field_names(doc)
             base = (field_name or "").strip() or {
                 "text": "texto",
@@ -188,8 +190,9 @@ class FormsMixin:
             }[kind]
             name = base if kind == "radio" else self._unique_field_name(used, base)
             stash_id = self._stash_pages(doc, [page_num]) if stash else ""
+            page = doc.load_page(page_num)
             widget = fitz.Widget()
-            widget.rect = rect
+            widget.rect = self._desde_vista(page, fitz.Rect(x, y, x + w, y + h))
             widget.field_name = name
             widget.border_color = (0.2, 0.45, 0.85)
             widget.border_width = 0.8
@@ -220,8 +223,12 @@ class FormsMixin:
                 widget.field_value = choices[0]
                 widget.text_fontsize = min(11, max(8, h * 0.55))
             try:
-                page = doc.load_page(page_num)
-                page.add_widget(widget)
+                annot = page.add_widget(widget)
+                if page.rotation:
+                    # /MK /R gira la apariencia con la página: sin él, en una página con
+                    # /Rotate el texto del campo se veía de lado o cabeza abajo.
+                    doc.xref_set_key(annot.xref, "MK/R", str(page.rotation))
+                    widget.update()
             except Exception:
                 logger.exception("add_form_field falló (doc %s, página %s, tipo %s)", doc_id, page_num, kind)
                 return None
@@ -265,12 +272,13 @@ class FormsMixin:
                 if delete:
                     page.delete_widget(target)
                 else:
-                    rect = target.rect
+                    # Todo en el espacio del visor; el /MK /R del widget no se toca.
+                    rect = self._a_vista(page, target.rect)
                     nx = rect.x0 if x is None else float(x)
                     ny = rect.y0 if y is None else float(y)
                     nw = max(4.0, rect.width if width is None else float(width))
                     nh = max(4.0, rect.height if height is None else float(height))
-                    target.rect = fitz.Rect(nx, ny, nx + nw, ny + nh)
+                    target.rect = self._desde_vista(page, fitz.Rect(nx, ny, nx + nw, ny + nh))
                     target.update()
             except Exception:
                 logger.exception("transform_form_field falló (doc %s, xref %s)", doc_id, xref)

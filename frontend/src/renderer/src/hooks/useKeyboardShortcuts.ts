@@ -1,6 +1,5 @@
-import { useEffect } from 'react'
-import { type PdfState } from '../store/usePdfStore'
-import { useStoreSlice } from './useStoreSlice'
+import { useEffect, useRef } from 'react'
+import { usePdfStore, type PdfState } from '../store/usePdfStore'
 
 const NUDGE_PT = 1
 const NUDGE_BIG_PT = 10
@@ -11,15 +10,19 @@ export function useKeyboardShortcuts(
   deleteAnnotation: (docId: string, annId: string) => void,
   cancelDraw: () => void,
 ) {
-  const store = useStoreSlice(
-    'setActiveTool', 'undo', 'redo', 'selectedAnnotationIds', 'selectAnnotations',
-    'selectAnnotation', 'deleteAnnotations', 'moveAnnotations', 'copyAnnotations',
-    'pasteAnnotations', 'annotationClipboard', 'showToast', 'getAnnotationsForPage',
-  )
+  // El listener se suscribe una vez por documento: con `activeDoc` en las deps se
+  // re-suscribía en cada mousemove de un arrastre (cada paso cambia las marcas). Todo
+  // lo demás se lee vivo: el store por getState() y los props por este ref.
+  const docId = activeDoc?.doc_id
+  const vivo = useRef({ selectedAnnotationId, deleteAnnotation, cancelDraw })
+  vivo.current = { selectedAnnotationId, deleteAnnotation, cancelDraw }
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      const store = usePdfStore.getState()
+      const activeDoc = store.docs.find((d) => d.doc_id === docId)
       if (!activeDoc) return
+      const { selectedAnnotationId, deleteAnnotation, cancelDraw } = vivo.current
       const target = e.target as HTMLElement
       const isEditing = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable
       const ids = store.selectedAnnotationIds
@@ -48,7 +51,7 @@ export function useKeyboardShortcuts(
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
         if (dx || dy) {
           e.preventDefault()
-          store.moveAnnotations(activeDoc.doc_id, ids, dx, dy)
+          store.nudgeAnnotations(activeDoc.doc_id, ids, dx, dy)
         }
         return
       }
@@ -110,5 +113,5 @@ export function useKeyboardShortcuts(
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [activeDoc, selectedAnnotationId, deleteAnnotation, cancelDraw, store])
+  }, [docId])
 }

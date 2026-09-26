@@ -1,3 +1,4 @@
+import hmac
 import logging
 import os
 import tempfile
@@ -87,12 +88,16 @@ app = FastAPI(title="PDF Master Engine", version=ENGINE_VERSION, lifespan=lifesp
 # de desarrollo. Con token, cualquier otro proceso local no puede leer PDFs.
 _API_TOKEN = os.environ.get("PDFMASTER_API_TOKEN", "")
 
+# Ruta exacta y no `endswith("/health")`: con el sufijo, cualquier ruta con un
+# parámetro libre al final (`/pdf/info/health`) se saltaba el token.
+_HEALTH_PATH = "/pdf/health"
+
 
 @app.middleware("http")
 async def require_local_token(request: Request, call_next):
-    if not _API_TOKEN or request.url.path.endswith("/health"):
+    if not _API_TOKEN or request.url.path == _HEALTH_PATH:
         return await call_next(request)
-    if request.headers.get("x-pdfmaster-token") != _API_TOKEN:
+    if not hmac.compare_digest(request.headers.get("x-pdfmaster-token", "").encode(), _API_TOKEN.encode()):
         # 403 y no 401: el 401 ya significa "este PDF pide contrasena" (lo levanta
         # PasswordRequiredError) y el visor lo trata como tal. Con los dos en 401,
         # hablarle al motor equivocado —otra instalacion tomando el 8745— se veia en
@@ -101,10 +106,12 @@ async def require_local_token(request: Request, call_next):
     return await call_next(request)
 
 # Solo el renderer de Electron: file:// manda Origin "null" en producción y
-# http://localhost:<puerto> en dev (electron-vite). Antes era allow_origins=["*"].
+# http://localhost:5173 en dev (electron-vite; frontend/electron.vite.config.ts lo fija
+# con strictPort). Antes aceptaba cualquier puerto de localhost, o sea cualquier
+# servidor de desarrollo o página local abierta en el navegador.
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"^(http://localhost:\d+|http://127\.0\.0\.1:\d+|null)$",
+    allow_origin_regex=r"^(http://localhost:5173|http://127\.0\.0\.1:5173|null)$",
     allow_credentials=False,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
@@ -125,7 +132,7 @@ SLOW_REQUEST_S = 2.0
 async def track_inflight_request(request: Request, call_next):
     # El health-check corre en el event loop y se repite cada 10 s: no aporta y
     # pisaría la miga de pan de la petición que sí está tocando MuPDF.
-    if request.url.path.endswith("/health"):
+    if request.url.path == _HEALTH_PATH:
         return await call_next(request)
     rid = uuid.uuid4().hex[:8]
     etiqueta = f"{request.method} {request.url.path}?{request.url.query}"

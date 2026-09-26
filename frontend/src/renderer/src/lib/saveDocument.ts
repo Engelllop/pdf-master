@@ -36,6 +36,18 @@ export async function pushAnnotations(
   return res.ok
 }
 
+/** `pushAnnotations` para las operaciones que escriben o imprimen un PDF: si el motor
+ * rechaza las marcas, avisa y devuelve false para que la operación se corte. Seguir
+ * producía un archivo (o un papel) sin las últimas marcas y encima con aviso de éxito. */
+export async function subirMarcasOAvisar(
+  docId: string,
+  opts: { excluirCapasOcultas?: boolean } = {},
+): Promise<boolean> {
+  if (await pushAnnotations(docId, opts)) return true
+  usePdfStore.getState().showToast('No se pudieron incluir las marcas: se canceló para no generar un PDF sin ellas', 'error')
+  return false
+}
+
 /**
  * Compara el archivo en disco con el estado que tenía al abrirlo. Si cambió, pregunta:
  * un cliente de sincronización (Drive, OneDrive) o otro programa pueden haberlo
@@ -47,15 +59,22 @@ async function elDiscoCambio(docId: string): Promise<'igual' | 'cambio' | 'desco
   if (!doc?.diskState) return 'desconocido'
   try {
     const res = await apiFetch(`/pdf/disk-state/${docId}`)
-    if (!res.ok) return 'desconocido'
+    if (!res.ok) {
+      console.warn(`[disk-state] el motor respondió ${res.status} para ${docId}`)
+      return 'desconocido'
+    }
     const ahora = await res.json()
     if (ahora.missing) return 'igual' // archivo movido/borrado: guardar lo vuelve a crear
     const igual = Math.abs(ahora.mtime - doc.diskState.mtime) < 1 && ahora.size === doc.diskState.size
     return igual ? 'igual' : 'cambio'
-  } catch {
+  } catch (err) {
+    console.warn('[disk-state] no se pudo comprobar el archivo en disco', err)
     return 'desconocido'
   }
 }
+
+// Un aviso por documento: repetirlo en cada Ctrl+S enseña a ignorarlo.
+const avisadosSinComprobar = new Set<string>()
 
 export { mismaRuta }
 
@@ -67,7 +86,17 @@ export { mismaRuta }
 export async function confirmarSobrescritura(docId: string): Promise<boolean> {
   const doc = usePdfStore.getState().docs.find((d) => d.doc_id === docId)
   if (!doc) return false
-  if ((await elDiscoCambio(docId)) !== 'cambio') return true
+  const estado = await elDiscoCambio(docId)
+  if (estado === 'desconocido') {
+    // Se guarda igual (no bloquear por un fallo de la comprobación), pero sin decirlo
+    // la protección contra pisar cambios externos se apagaba en silencio.
+    if (!avisadosSinComprobar.has(docId)) {
+      avisadosSinComprobar.add(docId)
+      usePdfStore.getState().showToast(`No se pudo comprobar si «${doc.file_name}» cambió en disco`, 'info')
+    }
+    return true
+  }
+  if (estado !== 'cambio') return true
   return askConfirm(
     'El archivo cambió en disco',
     `«${doc.file_name}» fue modificado por otro programa (o por un cliente de`
@@ -88,7 +117,10 @@ export async function refrescarEstadoEnDisco(docId: string): Promise<void> {
     if (!estado.missing) {
       usePdfStore.getState().setDiskState(docId, { mtime: estado.mtime, size: estado.size })
     }
-  } catch { /* si no se puede leer, el próximo guardado preguntará de más, no de menos */ }
+  } catch (err) {
+    // El próximo guardado preguntará de más, no de menos.
+    console.warn('[disk-state] no se pudo refrescar tras escribir', err)
+  }
 }
 
 /**

@@ -8,7 +8,7 @@ vi.mock('./openDocument', () => ({
   }),
 }))
 
-import { reabrirSesion, loadLastSession, restoreLiveSession, type SessionSnapshot } from './session'
+import { avisoDeNoReabiertos, esErrorDeCuota, reabrirSesion, loadLastSession, restoreLiveSession, type SessionSnapshot } from './session'
 import { usePdfStore } from '../store/usePdfStore'
 
 const initial = usePdfStore.getState()
@@ -79,10 +79,52 @@ describe('reabrir una sesión', () => {
     expect(abiertos).toEqual([{ path: 'a.pdf', silent: true }])
   })
 
+  // En silencio, los archivos movidos o borrados simplemente desaparecían de la sesión.
+  it('al arrancar dice cuáles no se pudieron reabrir, en un solo aviso', async () => {
+    localStorage.setItem('pdfmaster_session', JSON.stringify(snapshot([
+      { file_path: 'C:\\planos\\borrado-1.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' },
+      { file_path: 'a.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' },
+      { file_path: 'D:/obra/borrado-2.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' },
+    ])))
+    expect(await restoreLiveSession()).toBe(1)
+    const avisos = usePdfStore.getState().toasts
+    expect(avisos.length).toBe(1)
+    expect(avisos[0].type).toBe('error')
+    expect(avisos[0].message).toContain('No se pudieron reabrir 2 documento(s)')
+    expect(avisos[0].message).toContain('borrado-1.pdf, borrado-2.pdf')
+  })
+
+  it('si se reabrieron todos, no avisa nada', async () => {
+    await reabrirSesion(snapshot([{ file_path: 'a.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' }]), { silent: true })
+    expect(usePdfStore.getState().toasts.length).toBe(0)
+  })
+
+  // Sin `silent`, openDocument ya avisa de cada archivo: un resumen encima sería doble.
+  it('sin silent no agrega un segundo aviso', async () => {
+    await reabrirSesion(snapshot([{ file_path: 'borrado.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' }]))
+    expect(usePdfStore.getState().toasts.length).toBe(0)
+  })
+
+  it('con muchos fallidos resume el resto', () => {
+    const msg = avisoDeNoReabiertos(['a.pdf', 'b.pdf', 'c.pdf', 'd.pdf', 'e.pdf'])!
+    expect(msg).toContain('5 documento(s)')
+    expect(msg).toContain('a.pdf, b.pdf, c.pdf y 2 más')
+    expect(avisoDeNoReabiertos([])).toBeNull()
+  })
+
   it('«reabrir última sesión» lee su propia clave', () => {
     expect(loadLastSession()).toBeNull()
     localStorage.setItem('pdfmaster_session_last', JSON.stringify(
       snapshot([{ file_path: 'b.pdf', currentPage: 0, zoom: 1, fitMode: 'custom' }])))
     expect(loadLastSession()?.docs[0].file_path).toBe('b.pdf')
+  })
+})
+
+// App.tsx persiste la sesión en cada cambio; solo el almacenamiento lleno merece aviso.
+describe('error de cuota', () => {
+  it('reconoce el QuotaExceededError y nada más', () => {
+    expect(esErrorDeCuota(new DOMException('lleno', 'QuotaExceededError'))).toBe(true)
+    expect(esErrorDeCuota(new DOMException('otro', 'SecurityError'))).toBe(false)
+    expect(esErrorDeCuota(new Error('QuotaExceededError'))).toBe(false)
   })
 })

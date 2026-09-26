@@ -9,7 +9,7 @@ import { release, tmpdir, userInfo } from 'os'
 import { dirtyWindowCount, forgetWindow, isWindowDirty, setWindowDirty } from './dirtyWindows'
 import { createAiStreamParser } from './aiStream'
 import { avisoActualizacionLista, respuestaEsReiniciar } from './updatePrompt'
-import { debeBorrarse, esTempDeImpresion } from './tempSweep'
+import { debeBorrarse, esTempDeImpresion, nombreTempDeImpresion } from './tempSweep'
 import { rutaCarpetaAbrible, rutaDePdfArrastrado, rutaImagenLegible, rutaParaMostrarEnCarpeta } from './safePaths'
 import { comandoMatarArbol, comandoMotoresDeEstaInstalacion, comandoTasklist, esNuestroMotor, pidGuardado, pidsDeLaSalida } from './enginePid'
 import { PUERTOS_A_PROBAR, PUERTO_PREFERIDO, primerPuertoLibre, rangoDePuertos } from './enginePort'
@@ -733,8 +733,12 @@ app.whenReady().then(async () => {
       const res = await engineFetch(`/pdf/raw/${docId}?marks=1`)
       if (!res.ok) throw new Error(`raw fetch ${res.status}`)
       const buf = Buffer.from(await res.arrayBuffer())
-      tempPath = join(tmpdir(), `pdfmaster-print-${Date.now()}.pdf`)
-      writeFileSync(tempPath, buf)
+      const ruta = join(tmpdir(), nombreTempDeImpresion())
+      // 'wx': si el archivo ya existe (preparado por otro proceso) falla en vez de
+      // escribir la copia del plano a través de él. `tempPath` se asigna después para
+      // que el catch no borre un archivo que no es nuestro.
+      writeFileSync(ruta, buf, { flag: 'wx' })
+      tempPath = ruta
 
       printWin = new BrowserWindow({
         show: false,

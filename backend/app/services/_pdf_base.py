@@ -93,9 +93,14 @@ class PdfServiceBase:
         return stash_id
 
     def _stash_document(self, doc: fitz.Document) -> str:
-        """Copia el PDF entero al stash (marca de agua, redacción masiva, etc.)."""
+        """Copia el PDF entero al stash (marca de agua, redacción masiva, etc.).
+
+        Con KEEP y no con el tobytes() pelado: en un PDF protegido, serializarlo sin
+        cifrado le arranca el cifrado AL DOCUMENTO VIVO (MuPDF se queda con el último
+        modo de escritura), y el siguiente Ctrl+S lo escribía sin contraseña. Además
+        restore_document pone esta copia en lugar del vivo: tiene que seguir cifrada."""
         stash_id = uuid.uuid4().hex
-        self._page_stash[stash_id] = doc.tobytes()
+        self._page_stash[stash_id] = doc.tobytes(encryption=fitz.PDF_ENCRYPT_KEEP)
         while len(self._page_stash) > self._page_stash_max:
             self._page_stash.popitem(last=False)
         return stash_id
@@ -108,6 +113,30 @@ class PdfServiceBase:
         with open(file_path, "rb") as fh:
             data = fh.read()
         return fitz.open(stream=data, filetype="pdf")
+
+    def _copia_autenticada(self, doc_id: str, doc: fitz.Document) -> fitz.Document:
+        """Copia en memoria del documento vivo que CONSERVA su cifrado (y con él la
+        contraseña de propietario y los permisos originales, que la app puede no
+        conocer si el usuario abrió con la de usuario), ya autenticada.
+
+        Nunca `doc.tobytes()` sin más sobre un PDF protegido: además de salir sin
+        cifrar, le quita el cifrado al propio documento vivo."""
+        copia = fitz.open(stream=doc.tobytes(encryption=fitz.PDF_ENCRYPT_KEEP), filetype="pdf")
+        if copia.needs_pass and not copia.authenticate(self._passwords.get(doc_id) or ''):
+            copia.close()
+            raise PasswordRequiredError("Password required")
+        return copia
+
+    def _bytes_en_claro(self, doc_id: str, doc: fitz.Document, **opciones) -> bytes:
+        """El documento vivo serializado SIN cifrado (para PDF.js y la impresión), sin
+        tocar el cifrado del vivo: en un PDF protegido se pasa por una copia."""
+        if not doc.metadata.get("encryption"):
+            return doc.tobytes(**opciones)
+        copia = self._copia_autenticada(doc_id, doc)
+        try:
+            return copia.tobytes(**opciones)
+        finally:
+            copia.close()
 
     def _doc_path(self, doc_id: str) -> str:
         """file_path original del doc (doc.name queda vacío al abrir por stream)."""
@@ -130,8 +159,12 @@ class PdfServiceBase:
                     logger.exception("No se pudo reabrir %s desde %s", doc_id, info.file_path)
                     raise DocumentNotFoundError(f"File no longer available: {info.file_path}")
                 pw = self._passwords.get(doc_id)
-                if doc.needs_pass and pw:
-                    doc.authenticate(pw)
+                # Sin autenticar, MuPDF devuelve un documento que revienta con ValueError
+                # en la primera página (un 500). Un 401 dice lo que pasa: el archivo en
+                # disco pide una contraseña que el motor no tiene (lo cambiaron por fuera).
+                if doc.needs_pass and not (pw and doc.authenticate(pw)):
+                    doc.close()
+                    raise PasswordRequiredError("Document requires a password")
                 self._docs[doc_id] = doc
                 self._dirty.setdefault(doc_id, False)
             self._lru.pop(doc_id, None)
@@ -159,6 +192,19 @@ class PdfServiceBase:
                 except Exception:
                     pass
             self._lru.pop(did, None)
+
+    # El visor trabaja en la página GIRADA (el viewport de PDF.js aplica /Rotate y
+    # page_sizes es page.rect), pero PyMuPDF da y pide coordenadas SIN girar: texto,
+    # dibujos, recortes, redacciones e imágenes. Sin rotación no se transforma nada.
+    @staticmethod
+    def _a_vista(page, geom):
+        """De coordenadas de PyMuPDF (página sin girar) a las del visor."""
+        return geom * page.rotation_matrix if page.rotation else geom
+
+    @staticmethod
+    def _desde_vista(page, geom):
+        """De coordenadas del visor a las que espera PyMuPDF."""
+        return geom * page.derotation_matrix if page.rotation else geom
 
     @staticmethod
     def _capped_scale(page, desired_scale: float, max_px: int) -> float:

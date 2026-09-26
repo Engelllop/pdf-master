@@ -90,6 +90,11 @@ class Annotation(BaseModel):
 class AnnotationList(BaseModel):
     annotations: List[Annotation]
 
+class ImportXfdfResult(AnnotationList):
+    # Marcas del XFDF que no se pudieron leer y se saltaron: antes solo quedaban en
+    # el log y el usuario creía haber importado la revisión entera.
+    skipped: int = 0
+
 class RotateRequest(BaseModel):
     page_num: int
     degrees: int

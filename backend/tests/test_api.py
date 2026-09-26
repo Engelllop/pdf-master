@@ -8,6 +8,13 @@ from app.core.config import ENGINE_VERSION
 from app.services.pdf_service import pdf_service
 
 
+def _escribir_sidecar(pdf_path, anns):
+    """El sidecar como lo dejaban las versiones viejas: el motor ya no lo escribe
+    (desde la 1.14.2 las marcas viajan en el PDF), solo lo lee."""
+    with open(pdf_path + ".pdfmaster.json", "w", encoding="utf-8") as f:
+        json.dump({"version": 1, **anns}, f)
+
+
 class TestOpenAndRender:
     def test_open_returns_info(self, open_doc):
         info = open_doc(pages=3)
@@ -133,17 +140,23 @@ class TestLru:
 
 
 class TestAnnotations:
-    def test_save_and_load_roundtrip(self, client, open_doc):
+    def test_sidecar_viejo_se_lee(self, client, open_doc):
         info = open_doc()
         anns = {"annotations": [{
             "id": "a1", "type": "rect", "page": 0,
             "x": 10, "y": 20, "width": 100, "height": 50, "color": "#ff0000",
         }]}
-        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 200
-        sidecar = info["file_path"] + ".pdfmaster.json"
-        assert os.path.exists(sidecar)
+        _escribir_sidecar(info["file_path"], anns)
         loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()
         assert loaded["annotations"][0]["id"] == "a1"
+
+    def test_el_motor_ya_no_escribe_el_sidecar(self, client, open_doc):
+        """El POST escribía el sidecar sin pasar por el guardado atómico, y el visor no
+        lo llama desde la 1.14.2: se quitó. La lectura del sidecar viejo sigue."""
+        info = open_doc()
+        anns = {"annotations": [{"id": "a1", "type": "rect", "page": 0, "x": 1, "y": 2}]}
+        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 405
+        assert not os.path.exists(info["file_path"] + ".pdfmaster.json")
 
     def test_save_with_backup_keeps_a_copy(self, client, open_doc):
         info = open_doc()
@@ -168,7 +181,7 @@ class TestAnnotations:
             "author": "Engell", "createdAt": 1785000000000, "status": "resolved",
             "replies": [{"id": "r1", "author": "Otro", "text": "Revisar cota", "at": 1785000100000}],
         }]}
-        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 200
+        _escribir_sidecar(info["file_path"], anns)
         loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
         assert loaded["author"] == "Engell"
         assert loaded["status"] == "resolved"
@@ -362,8 +375,7 @@ class TestAnnotations:
         info = open_doc()
         ann = {"id": "t1", "type": "text", "page": 0, "x": 1, "y": 2, "text": "x",
                "bold": True, "italic": True, "align": "center", "lineHeight": 2.0, "listStyle": "bullet"}
-        resp = client.post(f"/pdf/annotations/{info['doc_id']}", json={"annotations": [ann]})
-        assert resp.status_code == 200
+        _escribir_sidecar(info["file_path"], {"annotations": [ann]})
         loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
         for k in ("bold", "italic", "align", "lineHeight", "listStyle"):
             assert loaded[k] == ann[k]
@@ -559,7 +571,7 @@ class TestAnnotations:
             "color": "#ff0000", "lineWidth": 5, "lineStyle": "dotted", "opacity": 0.4,
             "fillColor": "#123456", "fillOpacity": 0.2, "rotation": 45,
         }]}
-        assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 200
+        _escribir_sidecar(info["file_path"], anns)
         loaded = client.get(f"/pdf/annotations/{info['doc_id']}").json()["annotations"][0]
         assert loaded["lineStyle"] == "dotted"
         assert loaded["lineWidth"] == 5

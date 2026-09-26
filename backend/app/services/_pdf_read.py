@@ -79,7 +79,8 @@ class ReadMixin:
                 for rect in rects:
                     if len(results) >= limit:
                         break
-                    band = fitz.Rect(0, rect.y0 - 1, page.rect.width, rect.y1 + 1)
+                    rect = self._a_vista(page, rect)
+                    band = self._desde_vista(page, fitz.Rect(0, rect.y0 - 1, page.rect.width, rect.y1 + 1))
                     snippet = page.get_textbox(band).replace("\n", " ").strip()
                     if len(snippet) > 160:
                         snippet = snippet[:160] + "…"
@@ -104,7 +105,8 @@ class ReadMixin:
             blocks = []
             try:
                 for b in page.get_text("blocks"):
-                    x0, y0, x1, y1, text, *_ = b
+                    x0, y0, x1, y1 = self._a_vista(page, fitz.Rect(b[:4]))
+                    text = b[4]
                     blocks.append({"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0, "text": text.strip()})
             except Exception:
                 blocks = []
@@ -125,7 +127,7 @@ class ReadMixin:
                         text = sp.get("text", "")
                         if not text.strip():
                             continue
-                        x0, y0, x1, y1 = sp["bbox"]
+                        x0, y0, x1, y1 = self._a_vista(page, fitz.Rect(sp["bbox"]))
                         spans.append({
                             "text": text,
                             "x0": x0, "y0": y0, "x1": x1, "y1": y1,
@@ -136,12 +138,13 @@ class ReadMixin:
             return spans
 
     def get_text_clip(self, doc_id: str, page_num: int, x: float, y: float, w: float, h: float) -> str:
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return ""
-        page = doc.load_page(page_num)
-        rect = fitz.Rect(x, y, x + w, y + h)
-        return page.get_text("text", clip=rect)
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return ""
+            page = doc.load_page(page_num)
+            rect = self._desde_vista(page, fitz.Rect(x, y, x + w, y + h))
+            return page.get_text("text", clip=rect)
 
     def get_snap_points(self, doc_id: str, page_num: int) -> Optional[List[dict]]:
         """Puntos de ajuste para mediciones: extremos y puntos medios de líneas,
@@ -161,6 +164,8 @@ class ReadMixin:
             seen = set()
 
             def add(x: float, y: float):
+                if page.rotation:
+                    x, y = self._a_vista(page, fitz.Point(x, y))
                 key = (round(x, 1), round(y, 1))
                 if key not in seen:
                     seen.add(key)
@@ -278,17 +283,18 @@ class ReadMixin:
             return total, stash_id, stash_page
 
     def ocr_page(self, doc_id: str, page_num: int) -> Optional[str]:
-        doc = self._acquire(doc_id)
-        if not doc or page_num < 0 or page_num >= len(doc):
-            return None
-        try:
-            page = doc.load_page(page_num)
-            pix = page.get_pixmap(dpi=300)
-            from io import BytesIO
-            from PIL import Image
-            import pytesseract
-            img = Image.open(BytesIO(pix.tobytes("png")))
-            return pytesseract.image_to_string(img, lang='spa+eng')
-        except Exception:
-            logger.exception("ocr_page falló (doc %s, página %s)", doc_id, page_num)
-            return None
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return None
+            try:
+                page = doc.load_page(page_num)
+                pix = page.get_pixmap(dpi=300)
+                from io import BytesIO
+                from PIL import Image
+                import pytesseract
+                img = Image.open(BytesIO(pix.tobytes("png")))
+                return pytesseract.image_to_string(img, lang='spa+eng')
+            except Exception:
+                logger.exception("ocr_page falló (doc %s, página %s)", doc_id, page_num)
+                return None

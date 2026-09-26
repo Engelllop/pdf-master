@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { debeBorrarse, esTempDeImpresion, EDAD_MAXIMA_MS } from './tempSweep'
+import { debeBorrarse, esTempDeImpresion, nombreTempDeImpresion, EDAD_MAXIMA_MS } from './tempSweep'
 
 const AHORA = 1_700_000_000_000
 
@@ -24,5 +24,18 @@ describe('barrido de temporales de impresión', () => {
 
   it('una fecha futura (reloj adelantado) no borra nada', () => {
     expect(debeBorrarse('pdfmaster-print-1.pdf', AHORA + 5_000_000, AHORA)).toBe(false)
+  })
+})
+
+// Con solo `Date.now()` el nombre era adivinable: otro proceso podía dejar preparado ese
+// archivo (o un enlace) en %TEMP% antes de que se escribiera la copia del plano.
+describe('nombre del temporal de impresión', () => {
+  it('lleva una parte aleatoria y el barrido lo sigue reconociendo', () => {
+    const a = nombreTempDeImpresion(AHORA)
+    const b = nombreTempDeImpresion(AHORA)
+    expect(a).not.toBe(b)
+    expect(a).toMatch(/^pdfmaster-print-\d+-[0-9a-f]{16}\.pdf$/)
+    expect(esTempDeImpresion(a)).toBe(true)
+    expect(debeBorrarse(a, AHORA - EDAD_MAXIMA_MS - 1, AHORA)).toBe(true)
   })
 })

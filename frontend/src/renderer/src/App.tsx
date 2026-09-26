@@ -11,7 +11,7 @@ import Toasts from './components/Toasts'
 import { useFormModal } from './components/FormModal'
 import { registerPromptHandler } from './lib/uiPrompt'
 import { reopenDeadDoc } from './lib/openDocument'
-import { restoreLiveSession } from './lib/session'
+import { esErrorDeCuota, restoreLiveSession } from './lib/session'
 import { requestCloseDoc } from './lib/closeDocument'
 import { updateRecentMeta } from './lib/recents'
 import { TOOL_KEYS } from './lib/tools'
@@ -154,6 +154,7 @@ function App() {
   // que son escrituras síncronas. Comparar contra lo último escrito lo deja en cero
   // durante el marcado, que es cuando más molesta.
   const ultimaSesionRef = useRef('')
+  const avisoDeCuotaRef = useRef(false)
   useEffect(() => {
     try {
       const session = {
@@ -172,7 +173,16 @@ function App() {
       // Snapshot de la última sesión con documentos, para "Reabrir última sesión"
       // (pdfmaster_session queda vacía al cerrar todas las pestañas).
       if (session.docs.length > 0) localStorage.setItem('pdfmaster_session_last', serializada)
-    } catch {}
+    } catch (err) {
+      // Sin esto la sesión dejaba de guardarse sin rastro y el próximo arranque abría
+      // vacío. Solo la cuota llena merece aviso (el usuario puede liberar espacio), y
+      // una vez: el efecto corre en cada cambio de pestaña o página.
+      console.warn('[sesión] no se pudo guardar la sesión', err)
+      if (esErrorDeCuota(err) && !avisoDeCuotaRef.current) {
+        avisoDeCuotaRef.current = true
+        usePdfStore.getState().showToast('No se pudo guardar la sesión: el almacenamiento local está lleno', 'error')
+      }
+    }
   }, [store.docs, store.activeDocId])
 
   // Al salir de la app, guarda la última página leída de cada doc abierto

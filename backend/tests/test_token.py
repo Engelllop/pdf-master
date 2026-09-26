@@ -27,3 +27,11 @@ def test_el_health_sigue_abierto(client, monkeypatch):
     token, un motor ajeno se veria como motor caido en vez de como conflicto."""
     monkeypatch.setattr(engine, "_API_TOKEN", "secreto")
     assert client.get("/pdf/health").status_code == 200
+
+
+def test_una_ruta_que_termina_en_health_no_se_salta_el_token(client, monkeypatch):
+    """El middleware comparaba con `endswith("/health")`: `/pdf/info/health` (la ruta
+    de info con doc_id="health") pasaba sin token."""
+    monkeypatch.setattr(engine, "_API_TOKEN", "secreto")
+    assert client.get("/pdf/info/health").status_code == 403
+    assert client.get("/pdf/dirty/health").status_code == 403

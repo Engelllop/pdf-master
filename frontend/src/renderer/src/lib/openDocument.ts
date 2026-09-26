@@ -1,7 +1,8 @@
-import { usePdfStore } from '../store/usePdfStore'
+import { usePdfStore, isPageCommand, type PageSize } from '../store/usePdfStore'
 import { askForm } from './uiPrompt'
 import { loadRecents, removeRecent, touchRecent, updateRecentMeta } from './recents'
 import { mismaRuta } from './rutas'
+import { marcasEnVersionDeDisco } from './pageUndo'
 
 import { apiFetch, baseConocida, setDeadDocReopener } from './api'
 import { revokePageUrl } from './blobUrl'
@@ -89,9 +90,46 @@ function olvidarRecienteQueYaNoEsta(filePath: string): void {
   if (entrada && !entrada.pinned) removeRecent(filePath)
 }
 
-// Reabre un documento cuyo doc_id murió (el motor se reinició pero el health-check
-// nunca falló, p.ej. otro proceso lo reemplazó) y remapea el id conservando el
-// estado local. Se dispara al detectar un 404 en page-info/page-image.
+/** Lo reabierto es el archivo de DISCO: lo que el motor muerto tenía sin guardar
+ * (rotar, borrar, OCR…) ya no está. Se toma su maquetación y se tiran los pasos de
+ * página de las pilas de deshacer, que operarían sobre páginas que ya no existen. Los
+ * pasos de marcas se quedan: son fotos de la lista de marcas, que sigue en la app. Las
+ * marcas que esos pasos de página habían movido vuelven a sus páginas del disco. */
+function adoptarDocReabierto(
+  docId: string, info: { page_count: number; page_sizes: PageSize[] },
+): { reubicadas: boolean; descartadas: number } {
+  const doc = usePdfStore.getState().docs.find((d) => d.doc_id === docId)
+  const pasos = (doc?.pasosSinGuardar ?? []).map((p) => p.paso)
+  const { anns, descartadas } = marcasEnVersionDeDisco(doc?.annotations ?? [], pasos)
+  usePdfStore.setState((s) => ({
+    docs: s.docs.map((d) => (d.doc_id === docId
+      ? {
+          ...d,
+          page_count: info.page_count,
+          page_sizes: info.page_sizes || d.page_sizes,
+          currentPage: Math.max(0, Math.min(d.currentPage, info.page_count - 1)),
+          engineDirty: false,
+          ...(pasos.length ? { annotations: anns } : {}),
+          pasosSinGuardar: undefined,
+        }
+      : d)),
+    undoStack: s.undoStack.filter((c) => !(c.docId === docId && isPageCommand(c))),
+    redoStack: s.redoStack.filter((c) => !(c.docId === docId && isPageCommand(c))),
+  }))
+  return { reubicadas: pasos.length > 0, descartadas }
+}
+
+/** Aviso tras reabrir un documento cuyo motor tenía cambios sin guardar. */
+export function avisoDeReinicio(nombre: string, reubicadas: boolean, descartadas: number): string {
+  const base = `El motor se reinició: los cambios de página sin guardar de «${nombre}» se perdieron`
+  if (!reubicadas) return `${base}; las marcas se conservan.`
+  if (descartadas === 0) return `${base}; las marcas se reubicaron en la versión guardada.`
+  const n = descartadas === 1 ? '1 marca de una página que ya no existe' : `${descartadas} marcas de páginas que ya no existen`
+  return `${base}; las marcas se reubicaron en la versión guardada y se descartaron ${n}.`
+}
+
+// Reabre un documento cuyo doc_id murió (el motor se reinició: health-check fallido o
+// un 404 en cualquier llamada) y remapea el id conservando el estado local.
 const reopening = new Set<string>()
 export async function reopenDeadDoc(docId: string): Promise<string | null> {
   const { docs, remapDocId } = usePdfStore.getState()
@@ -106,7 +144,12 @@ export async function reopenDeadDoc(docId: string): Promise<string | null> {
     })
     if (!res.ok) return null
     const data = await res.json()
+    const perdioCambios = !!usePdfStore.getState().docs.find((d) => d.doc_id === docId)?.engineDirty
     remapDocId(docId, data.doc_id)
+    const { reubicadas, descartadas } = adoptarDocReabierto(data.doc_id, data)
+    if (perdioCambios) {
+      usePdfStore.getState().showToast(avisoDeReinicio(doc.file_name, reubicadas, descartadas), 'error', true)
+    }
     return data.doc_id
   } catch {
     return null

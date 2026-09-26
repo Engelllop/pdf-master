@@ -682,6 +682,16 @@ describe('dirty / saveStatus', () => {
     expect(usePdfStore.getState().saveStatus).toBe('idle')
     expect(usePdfStore.getState().docs[0].dirty).toBe(true)
   })
+
+  it('setDocDirty con motor marca engineDirty y guardar lo limpia', () => {
+    usePdfStore.getState().addDoc(docInfo())
+    usePdfStore.getState().setDocDirty('doc-1', true)
+    expect(usePdfStore.getState().docs[0].engineDirty).toBeFalsy()
+    usePdfStore.getState().setDocDirty('doc-1', true, true)
+    expect(usePdfStore.getState().docs[0].engineDirty).toBe(true)
+    usePdfStore.getState().setDocDirty('doc-1', false)
+    expect(usePdfStore.getState().docs[0].engineDirty).toBe(false)
+  })
 })
 
 describe('bitmaps de página (blob URLs)', () => {

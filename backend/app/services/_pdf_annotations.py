@@ -7,7 +7,7 @@ import json
 import os
 import re
 from datetime import datetime
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Tuple
 from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation, Reply
 from app.core.config import settings
@@ -145,186 +145,181 @@ class AnnotationsMixin:
         """Como `import_native_annotations`, pero además dice si alguna de las marcas
         venía de PDF Master (trae su payload o el nombre `pdfmaster:<id>`). Lo necesita
         `load_annotations` para decidir si el sidecar viejo aporta algo o duplica."""
-        doc = self._acquire(doc_id)
-        if not doc:
-            return [], False
-        hay_propias = False
-        type_map = {
-            'Highlight': 'highlight', 'Underline': 'underline', 'StrikeOut': 'strikethrough',
-            'Text': 'note', 'FreeText': 'text', 'Square': 'rect', 'Circle': 'circle',
-            'Line': 'line', 'Ink': 'draw', 'PolyLine': 'draw', 'Polygon': 'polygon',
-        }
-        by_xref: Dict[int, Annotation] = {}
-        replies: List[tuple] = []
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            annots = page.annots()
-            if not annots:
-                continue
-            for a in annots:
-                try:
-                    info = a.info or {}
-                    pm = self._read_pm(doc, a)
-                    if a.irt_xref:
-                        replies.append((a.irt_xref, Reply(
-                            id=str(pm.get('id') or uuid.uuid4()),
-                            author=info.get('title') or None,
-                            text=info.get('content') or '',
-                            at=float(pm.get('at') or 0),
-                        )))
-                        continue
-                    raw = a.type[1] if a.type else ''
-                    mapped = pm.get('type') or type_map.get(raw)
-                    if not mapped:
-                        continue
-                    # Una `Line` ajena con punta de flecha es una flecha, no una línea.
-                    flecha = self._flecha_de(a) if (raw == 'Line' and not pm.get('type')) else None
-                    if flecha:
-                        mapped = 'arrow'
-                    # La tinta AJENA de varios trazos se dejaría plana al importarla
-                    # (ver `_es_tinta_multitrazo`): se deja como está en el PDF. La
-                    # propia sí, porque su payload trae el tipo y la geometría reales.
-                    propia = bool(pm.get('id')) or (info.get('name') or '').startswith('pdfmaster:')
-                    if self._es_tinta_multitrazo(a) and not propia:
-                        continue
-                    r = a.rect
-                    color = None
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc:
+                return [], False
+            hay_propias = False
+            type_map = {
+                'Highlight': 'highlight', 'Underline': 'underline', 'StrikeOut': 'strikethrough',
+                'Text': 'note', 'FreeText': 'text', 'Square': 'rect', 'Circle': 'circle',
+                'Line': 'line', 'Ink': 'draw', 'PolyLine': 'draw', 'Polygon': 'polygon',
+            }
+            by_xref: Dict[int, Annotation] = {}
+            replies: List[tuple] = []
+            for i in range(len(doc)):
+                page = doc.load_page(i)
+                annots = page.annots()
+                if not annots:
+                    continue
+                # PyMuPDF da rect y vértices SIN girar; la app trabaja en la página girada
+                # (ver `_embed_into`). Las propias traen su geometría en el payload, que ya
+                # está en ese espacio: solo se gira lo que se lee del PDF.
+                girar = page.rotation_matrix if page.rotation else None
+                for a in annots:
                     try:
-                        sc = (a.colors or {}).get('stroke')
-                        if sc and len(sc) >= 3:
-                            color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
-                    except Exception:
-                        # Cada propiedad que no se importe se PIERDE al guardar (ver el
-                        # comentario de arriba), asi que el silencio de antes no dejaba
-                        # ni con que empezar: queda el xref para poder mirar la marca.
-                        logger.debug("marca ajena xref=%s: no se pudo leer el color de trazo", a.xref, exc_info=True)
-                    # Las marcas AJENAS no traen payload, así que estas propiedades hay
-                    # que leerlas del propio PDF. Desde que el guardado borra la original
-                    # y redibuja desde la lista de la app (ver `_quitar_marcas_gestionadas`),
-                    # lo que no se importe aquí se PIERDE: un recuadro azul semitransparente
-                    # de Bluebeam volvía sin relleno, opaco, con el borde por defecto y
-                    # sólido aunque fuera de trazos.
-                    relleno = None
-                    try:
-                        fc = (a.colors or {}).get('fill')
-                        if fc and len(fc) >= 3:
-                            relleno = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in fc[:3])
-                    except Exception:
-                        logger.debug("marca ajena xref=%s: no se pudo leer el relleno", a.xref, exc_info=True)
-                    opacidad = None
-                    try:
-                        if a.opacity is not None and 0 <= a.opacity < 1:
-                            opacidad = float(a.opacity)
-                    except Exception:
-                        logger.debug("marca ajena xref=%s: no se pudo leer la opacidad", a.xref, exc_info=True)
-                    grosor = None
-                    estilo = None
-                    try:
-                        borde = a.border or {}
-                        if borde.get('width') is not None and float(borde['width']) > 0:
-                            grosor = float(borde['width'])
-                        rayas = borde.get('dashes') or ()
-                        if len(rayas) > 0:
-                            # Un punto es una raya muy corta; el resto, trazos.
-                            estilo = 'dotted' if float(rayas[0]) <= 1.5 else 'dashed'
-                    except Exception:
-                        logger.debug("marca ajena xref=%s: no se pudo leer el borde", a.xref, exc_info=True)
+                        info = a.info or {}
+                        pm = self._read_pm(doc, a)
+                        if a.irt_xref:
+                            replies.append((a.irt_xref, Reply(
+                                id=str(pm.get('id') or uuid.uuid4()),
+                                author=info.get('title') or None,
+                                text=info.get('content') or '',
+                                at=float(pm.get('at') or 0),
+                            )))
+                            continue
+                        raw = a.type[1] if a.type else ''
+                        mapped = pm.get('type') or type_map.get(raw)
+                        if not mapped:
+                            continue
+                        # Una `Line` ajena con punta de flecha es una flecha, no una línea.
+                        flecha = self._flecha_de(a) if (raw == 'Line' and not pm.get('type')) else None
+                        if flecha:
+                            mapped = 'arrow'
+                        # La tinta AJENA de varios trazos se dejaría plana al importarla
+                        # (ver `_es_tinta_multitrazo`): se deja como está en el PDF. La
+                        # propia sí, porque su payload trae el tipo y la geometría reales.
+                        propia = bool(pm.get('id')) or (info.get('name') or '').startswith('pdfmaster:')
+                        if self._es_tinta_multitrazo(a) and not propia:
+                            continue
+                        r = a.rect if girar is None else a.rect * girar
+                        color = None
+                        try:
+                            sc = (a.colors or {}).get('stroke')
+                            if sc and len(sc) >= 3:
+                                color = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in sc[:3])
+                        except Exception:
+                            # Cada propiedad que no se importe se PIERDE al guardar (ver el
+                            # comentario de arriba), asi que el silencio de antes no dejaba
+                            # ni con que empezar: queda el xref para poder mirar la marca.
+                            logger.debug("marca ajena xref=%s: no se pudo leer el color de trazo", a.xref, exc_info=True)
+                        # Las marcas AJENAS no traen payload, así que estas propiedades hay
+                        # que leerlas del propio PDF. Desde que el guardado borra la original
+                        # y redibuja desde la lista de la app (ver `_quitar_marcas_gestionadas`),
+                        # lo que no se importe aquí se PIERDE: un recuadro azul semitransparente
+                        # de Bluebeam volvía sin relleno, opaco, con el borde por defecto y
+                        # sólido aunque fuera de trazos.
+                        relleno = None
+                        try:
+                            fc = (a.colors or {}).get('fill')
+                            if fc and len(fc) >= 3:
+                                relleno = '#%02x%02x%02x' % tuple(max(0, min(255, int(c * 255))) for c in fc[:3])
+                        except Exception:
+                            logger.debug("marca ajena xref=%s: no se pudo leer el relleno", a.xref, exc_info=True)
+                        opacidad = None
+                        try:
+                            if a.opacity is not None and 0 <= a.opacity < 1:
+                                opacidad = float(a.opacity)
+                        except Exception:
+                            logger.debug("marca ajena xref=%s: no se pudo leer la opacidad", a.xref, exc_info=True)
+                        grosor = None
+                        estilo = None
+                        try:
+                            borde = a.border or {}
+                            if borde.get('width') is not None and float(borde['width']) > 0:
+                                grosor = float(borde['width'])
+                            rayas = borde.get('dashes') or ()
+                            if len(rayas) > 0:
+                                # Un punto es una raya muy corta; el resto, trazos.
+                                estilo = 'dotted' if float(rayas[0]) <= 1.5 else 'dashed'
+                        except Exception:
+                            logger.debug("marca ajena xref=%s: no se pudo leer el borde", a.xref, exc_info=True)
 
-                    da = self._read_da(doc, a.xref) if raw == 'FreeText' else {}
-                    if da.get('color') and not pm.get('color'):
-                        color = da['color']
-                    text = pm.get('text') if pm.get('text') is not None else (info.get('content') or None)
-                    points = pm.get('points')
-                    if not points and mapped in ('draw', 'polygon', 'line', 'signature', 'check', 'cross',
-                                                 'measure_perimeter', 'measure_area', 'arrow') and getattr(a, 'vertices', None):
-                        points = self._vertices_to_points(a.vertices) or None
-                    name = info.get('name') or ''
-                    propia = bool(pm.get('id')) or name.startswith('pdfmaster:')
-                    if propia:
-                        hay_propias = True
-                    ann_id = pm.get('id') or (name.split(':', 1)[1] if propia else str(uuid.uuid4()))
-                    color = pm.get('color') or color
-                    if mapped == 'count':
-                        cx = float(pm['x']) if 'x' in pm else float(r.x0 + r.width / 2)
-                        cy = float(pm['y']) if 'y' in pm else float(r.y0 + r.height / 2)
+                        da = self._read_da(doc, a.xref) if raw == 'FreeText' else {}
+                        if da.get('color') and not pm.get('color'):
+                            color = da['color']
+                        text = pm.get('text') if pm.get('text') is not None else (info.get('content') or None)
+                        points = pm.get('points')
+                        if not points and mapped in ('draw', 'polygon', 'line', 'signature', 'check', 'cross',
+                                                     'measure_perimeter', 'measure_area', 'arrow') and getattr(a, 'vertices', None):
+                            points = self._vertices_to_points(a.vertices) or None
+                            if points and girar is not None:
+                                points = [{'x': q.x, 'y': q.y} for q in
+                                          (fitz.Point(pt['x'], pt['y']) * girar for pt in points)]
+                        name = info.get('name') or ''
+                        propia = bool(pm.get('id')) or name.startswith('pdfmaster:')
+                        if propia:
+                            hay_propias = True
+                        ann_id = pm.get('id') or (name.split(':', 1)[1] if propia else str(uuid.uuid4()))
+                        color = pm.get('color') or color
+                        if mapped == 'count':
+                            cx = float(pm['x']) if 'x' in pm else float(r.x0 + r.width / 2)
+                            cy = float(pm['y']) if 'y' in pm else float(r.y0 + r.height / 2)
+                            by_xref[a.xref] = Annotation(
+                                id=ann_id, type='count', page=i, x=cx, y=cy, color=color,
+                                text=text or (info.get('subject') or '').split(':', 1)[-1].strip() or None,
+                                author=info.get('title') or None, status=pm.get('status'),
+                                layer=pm.get('layer') or None,
+                                symbol=pm.get('symbol'),
+                                # El diametro se recupera del propio circulo: sin esto,
+                                # guardar y reabrir devolvia todas las burbujas al tamano
+                                # por defecto.
+                                # El rect del circulo incluye el borde (PyMuPDF lo
+                                # expande w/2 por lado), asi que sin descontarlo una
+                                # burbuja vieja crecia 2 pt en CADA guardado.
+                                width=(float(pm['width']) if pm.get('width')
+                                       else max(1.0, float(r.width) - float(pm.get('lineWidth') or 2))),
+                                createdAt=pm.get('createdAt'),
+                            )
+                            continue
+                        if mapped in ('line', 'arrow', 'measure_distance') and 'x' not in pm and points and len(points) >= 2:
+                            extremos = list(reversed(points)) if flecha == 'inicio' else points
+                            x0, y0 = extremos[0]['x'], extremos[0]['y']
+                            x1, y1 = extremos[-1]['x'], extremos[-1]['y']
+                            by_xref[a.xref] = Annotation(
+                                id=ann_id, type=mapped, page=i, x=x0, y=y0,
+                                width=x1 - x0, height=y1 - y0, color=color, text=text,
+                                author=info.get('title') or None, status=pm.get('status'),
+                                layer=pm.get('layer') or info.get('subject') or None,
+                                measurement=pm.get('measurement'),
+                                createdAt=pm.get('createdAt'),
+                            )
+                            continue
                         by_xref[a.xref] = Annotation(
-                            id=ann_id, type='count', page=i, x=cx, y=cy, color=color,
-                            text=text or (info.get('subject') or '').split(':', 1)[-1].strip() or None,
-                            author=info.get('title') or None, status=pm.get('status'),
-                            layer=pm.get('layer') or None,
+                            id=ann_id, type=mapped, page=i,
+                            x=float(pm['x']) if 'x' in pm else float(r.x0),
+                            y=float(pm['y']) if 'y' in pm else float(r.y0),
+                            width=pm.get('width', float(r.width)),
+                            height=pm.get('height', float(r.height)),
+                            color=color, text=text, points=points,
+                            author=info.get('title') or None,
+                            status=pm.get('status'),
+                            layer=pm.get('layer') or (None if (info.get('subject') or '').startswith('Count:') else info.get('subject')) or None,
                             symbol=pm.get('symbol'),
-                            # El diametro se recupera del propio circulo: sin esto,
-                            # guardar y reabrir devolvia todas las burbujas al tamano
-                            # por defecto.
-                            # El rect del circulo incluye el borde (PyMuPDF lo
-                            # expande w/2 por lado), asi que sin descontarlo una
-                            # burbuja vieja crecia 2 pt en CADA guardado.
-                            width=(float(pm['width']) if pm.get('width')
-                                   else max(1.0, float(r.width) - float(pm.get('lineWidth') or 2))),
-                            createdAt=pm.get('createdAt'),
-                        )
-                        continue
-                    if mapped in ('line', 'arrow', 'measure_distance') and 'x' not in pm and points and len(points) >= 2:
-                        extremos = list(reversed(points)) if flecha == 'inicio' else points
-                        x0, y0 = extremos[0]['x'], extremos[0]['y']
-                        x1, y1 = extremos[-1]['x'], extremos[-1]['y']
-                        by_xref[a.xref] = Annotation(
-                            id=ann_id, type=mapped, page=i, x=x0, y=y0,
-                            width=x1 - x0, height=y1 - y0, color=color, text=text,
-                            author=info.get('title') or None, status=pm.get('status'),
-                            layer=pm.get('layer') or info.get('subject') or None,
+                            fontSize=pm.get('fontSize') or da.get('fontSize'),
+                            fontFamily=pm.get('fontFamily'),
+                            bold=pm.get('bold'),
+                            italic=pm.get('italic'),
+                            align=pm.get('align'),
+                            lineHeight=pm.get('lineHeight'),
+                            listStyle=pm.get('listStyle'),
+                            lineWidth=pm.get('lineWidth') or grosor,
+                            lineStyle=pm.get('lineStyle') or estilo,
+                            opacity=pm.get('opacity') if pm.get('opacity') is not None else opacidad,
+                            fillColor=pm.get('fillColor') or relleno,
+                            fillOpacity=pm.get('fillOpacity'),
                             measurement=pm.get('measurement'),
                             createdAt=pm.get('createdAt'),
+                            modifiedAt=pm.get('modifiedAt'),
                         )
-                        continue
-                    by_xref[a.xref] = Annotation(
-                        id=ann_id, type=mapped, page=i,
-                        x=float(pm['x']) if 'x' in pm else float(r.x0),
-                        y=float(pm['y']) if 'y' in pm else float(r.y0),
-                        width=pm.get('width', float(r.width)),
-                        height=pm.get('height', float(r.height)),
-                        color=color, text=text, points=points,
-                        author=info.get('title') or None,
-                        status=pm.get('status'),
-                        layer=pm.get('layer') or (None if (info.get('subject') or '').startswith('Count:') else info.get('subject')) or None,
-                        symbol=pm.get('symbol'),
-                        fontSize=pm.get('fontSize') or da.get('fontSize'),
-                        fontFamily=pm.get('fontFamily'),
-                        bold=pm.get('bold'),
-                        italic=pm.get('italic'),
-                        align=pm.get('align'),
-                        lineHeight=pm.get('lineHeight'),
-                        listStyle=pm.get('listStyle'),
-                        lineWidth=pm.get('lineWidth') or grosor,
-                        lineStyle=pm.get('lineStyle') or estilo,
-                        opacity=pm.get('opacity') if pm.get('opacity') is not None else opacidad,
-                        fillColor=pm.get('fillColor') or relleno,
-                        fillOpacity=pm.get('fillOpacity'),
-                        measurement=pm.get('measurement'),
-                        createdAt=pm.get('createdAt'),
-                        modifiedAt=pm.get('modifiedAt'),
-                    )
-                except Exception:
-                    logger.exception("No se pudo importar una anotación nativa (pág %s)", i)
-        for irt, reply in replies:
-            parent = by_xref.get(irt)
-            if parent is None:
-                continue
-            parent.replies = (parent.replies or []) + [reply]
-        return list(by_xref.values()), hay_propias
-
-    def save_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
-        info = self._infos.get(doc_id)
-        if not info:
-            return False
-        path = self._get_annotations_path(info.file_path)
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                json.dump({"version": 1, "annotations": [ann.model_dump() for ann in annotations]}, f, indent=2)
-            return True
-        except Exception:
-            logger.exception("No se pudo escribir el sidecar %s", path)
-            return False
+                    except Exception:
+                        logger.exception("No se pudo importar una anotación nativa (pág %s)", i)
+            for irt, reply in replies:
+                parent = by_xref.get(irt)
+                if parent is None:
+                    continue
+                parent.replies = (parent.replies or []) + [reply]
+            return list(by_xref.values()), hay_propias
 
     def _style_annot(self, annot, ann: Annotation, color, fill=None):
         if not annot:
@@ -332,7 +327,7 @@ class AnnotationsMixin:
         try:
             annot.set_colors(stroke=color, fill=fill)
         except Exception:
-            pass
+            logger.warning("Marca %s (%s): no se pudo poner el color", ann.id, ann.type, exc_info=True)
         lw = ann.lineWidth or 1
         dashes = None
         if ann.lineStyle == 'dashed':
@@ -343,12 +338,12 @@ class AnnotationsMixin:
             try:
                 annot.set_border(width=lw, dashes=dashes)
             except Exception:
-                pass
+                logger.warning("Marca %s (%s): no se pudo poner el borde", ann.id, ann.type, exc_info=True)
         if ann.opacity is not None:
             try:
                 annot.set_opacity(float(ann.opacity))
             except Exception:
-                pass
+                logger.warning("Marca %s (%s): no se pudo poner la opacidad", ann.id, ann.type, exc_info=True)
 
     def _stamp_markup(self, annot, ann: Annotation):
         """Autor, id, capa, estado y respuestas viajan en el PDF (Acrobat/Bluebeam)."""
@@ -368,11 +363,11 @@ class AnnotationsMixin:
             # este lado; lo que cambia es lo que ven los demás.
             annot.set_info(content=texto_estampable(content), title=ann.author or "", subject=subject)
         except Exception:
-            pass
+            logger.warning("Marca %s (%s): no se pudo escribir autor/contenido", ann.id, ann.type, exc_info=True)
         try:
             annot.set_name(f"pdfmaster:{ann.id}")
         except Exception:
-            pass
+            logger.warning("Marca %s (%s): no se pudo poner el nombre", ann.id, ann.type, exc_info=True)
         payload = {
             "id": ann.id,
             "type": ann.type,
@@ -414,14 +409,15 @@ class AnnotationsMixin:
             if doc is not None:
                 doc.xref_set_key(annot.xref, "PM", fitz.get_pdf_str(json.dumps(payload, ensure_ascii=True)))
         except Exception:
-            pass
+            # Sin /PM la marca se relee como ajena al reabrir: que quede en el log.
+            logger.warning("Marca %s (%s): no se pudo escribir el payload /PM", ann.id, ann.type, exc_info=True)
         for reply in ann.replies or []:
             try:
                 page = annot.parent
                 if page is None:
                     break
                 rann = page.add_text_annot(
-                    fitz.Point((ann.x or 0) + 8, (ann.y or 0) + 8),
+                    self._desde_vista(page, fitz.Point((ann.x or 0) + 8, (ann.y or 0) + 8)),
                     reply.text or "",
                 )
                 if rann:
@@ -434,14 +430,14 @@ class AnnotationsMixin:
                             fitz.get_pdf_str(json.dumps({"id": reply.id, "at": reply.at}, ensure_ascii=False)),
                         )
                     except Exception:
-                        pass
+                        logger.warning("Respuesta %s de la marca %s: no se pudo escribir /PM", reply.id, ann.id, exc_info=True)
                     rann.update()
             except Exception:
                 logger.exception("No se pudo incrustar una respuesta (ann %s)", ann.id)
         try:
             annot.update()
         except Exception:
-            pass
+            logger.warning("Marca %s (%s): no se pudo regenerar la apariencia", ann.id, ann.type, exc_info=True)
 
     def embed_annotations(self, doc_id: str, annotations: List[Annotation]) -> bool:
         """Deja las marcas en cola para el próximo guardado. NO toca el documento
@@ -449,8 +445,8 @@ class AnnotationsMixin:
         incrustar y los resaltados salían apilados (1 → 2 → 3…). El guardado las
         aplica sobre una copia limpia, así el resultado no depende de cuántas veces
         se haya guardado."""
-        self._acquire(doc_id)  # valida que el doc existe (404 si no)
         with self._lock:
+            self._acquire(doc_id)  # valida que el doc existe (404 si no)
             self._pending_annotations[doc_id] = list(annotations or [])
             self._dirty[doc_id] = True
         # Sin invalidar el cache de render a propósito: las marcas quedan PENDIENTES,
@@ -592,6 +588,30 @@ class AnnotationsMixin:
         def stroke_op(ann: Annotation) -> float:
             return ann.opacity if ann.opacity is not None else 1.0
 
+        # Las marcas llegan en el espacio de la página GIRADA (el viewport de PDF.js ya
+        # aplica /Rotate, y page_sizes es page.rect), pero PyMuPDF espera coordenadas SIN
+        # girar: en una página con /Rotate 90 la marca se guardaba en otro sitio que
+        # donde el usuario la dibujó. Sin rotación no se toca nada.
+        def punto(page, x, y):
+            pt = fitz.Point(x, y)
+            return pt * page.derotation_matrix if page.rotation else pt
+
+        def puntos(page, pts):
+            return [punto(page, q.x, q.y) for q in pts] if page.rotation else pts
+
+        def trazo(page, pares):
+            return [tuple(punto(page, x, y)) for x, y in pares] if page.rotation else pares
+
+        def caja(page, x0, y0, x1, y1):
+            r = fitz.Rect(x0, y0, x1, y1)
+            return r.normalize() * page.derotation_matrix if page.rotation else r
+
+        def zona_de_texto(page, x0, y0, x1, y1):
+            # Quad y no rect: el subrayado/tachado se dibuja sobre un lado concreto del
+            # quad, y girando el rect se pierde cuál es el «de abajo» visualmente.
+            r = fitz.Rect(x0, y0, x1, y1)
+            return r.normalize().quad * page.derotation_matrix if page.rotation else r
+
         for ann in annotations:
             if ann.page < 0 or ann.page >= len(doc):
                 continue
@@ -599,33 +619,28 @@ class AnnotationsMixin:
             color = hex_to_rgb(ann.color)
             
             if ann.type == 'highlight':
-                rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                annot = page.add_highlight_annot(rect)
+                annot = page.add_highlight_annot(zona_de_texto(page, ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0)))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'underline':
-                rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                annot = page.add_underline_annot(rect)
+                annot = page.add_underline_annot(zona_de_texto(page, ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0)))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'strikethrough':
-                rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                annot = page.add_strikeout_annot(rect)
+                annot = page.add_strikeout_annot(zona_de_texto(page, ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0)))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'rect':
-                rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                annot = page.add_rect_annot(rect)
+                annot = page.add_rect_annot(caja(page, ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0)))
                 self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'circle':
-                rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
-                annot = page.add_circle_annot(rect)
+                annot = page.add_circle_annot(caja(page, ann.x, ann.y, ann.x + (ann.width or 0), ann.y + (ann.height or 0)))
                 self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
                 self._stamp_markup(annot, ann)
             elif ann.type in ('arrow', 'line', 'measure_distance'):
-                p1 = fitz.Point(ann.x, ann.y)
-                p2 = fitz.Point(ann.x + (ann.width or 0), ann.y + (ann.height or 0))
+                p1 = punto(page, ann.x, ann.y)
+                p2 = punto(page, ann.x + (ann.width or 0), ann.y + (ann.height or 0))
                 annot = page.add_line_annot(p1, p2)
                 self._style_annot(annot, ann, color)
                 if annot and ann.type == 'arrow':
@@ -643,7 +658,7 @@ class AnnotationsMixin:
                     tx, ty = float(tip.get('x', 0)), float(tip.get('y', 0))
                     anchor_x = box.x0 if tx < box.x0 else box.x1 if tx > box.x1 else (box.x0 + box.x1) / 2
                     anchor_y = box.y0 if ty < box.y0 else box.y1 if ty > box.y1 else (box.y0 + box.y1) / 2
-                    callout = [fitz.Point(tx, ty), fitz.Point(anchor_x, anchor_y), fitz.Point(anchor_x, anchor_y)]
+                    callout = puntos(page, [fitz.Point(tx, ty), fitz.Point(anchor_x, anchor_y), fitz.Point(anchor_x, anchor_y)])
                 # Sin `border_color`: PyMuPDF 1.28 lo rechaza salvo en richtext
                 # ("cannot set border_color if rich_text is False") y la excepción
                 # tumbaba el guardado ENTERO — un solo globo dejaba el documento sin
@@ -653,11 +668,13 @@ class AnnotationsMixin:
                 # silencio). El original se conserva: `_stamp_markup` lo vuelve a poner
                 # en `content` y en el payload, así que al reabrir la app lo restaura
                 # exacto — lo que cambia es lo que ven otros visores y el papel.
+                # `rotate` = el giro de la página: el texto se lee igual que en pantalla.
                 annot = page.add_freetext_annot(
-                    box, texto_estampable(ann.text or ''), fontsize=ann.fontSize or 12,
+                    caja(page, box.x0, box.y0, box.x1, box.y1), texto_estampable(ann.text or ''),
+                    fontsize=ann.fontSize or 12,
                     text_color=color, fill_color=hex_to_rgb(ann.fillColor) if ann.fillColor else (1, 1, 1),
                     border_width=ann.lineWidth or 1,
-                    callout=callout, opacity=stroke_op(ann),
+                    callout=callout, opacity=stroke_op(ann), rotate=page.rotation,
                 )
                 self._stamp_markup(annot, ann)
             elif ann.type == 'check':
@@ -665,7 +682,7 @@ class AnnotationsMixin:
                 pts = [fitz.Point(ann.x + w * 0.12, ann.y + h * 0.55),
                        fitz.Point(ann.x + w * 0.42, ann.y + h * 0.85),
                        fitz.Point(ann.x + w * 0.88, ann.y + h * 0.15)]
-                annot = page.add_polyline_annot(pts)
+                annot = page.add_polyline_annot(puntos(page, pts))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'cross':
@@ -676,7 +693,7 @@ class AnnotationsMixin:
                     [(ann.x + w * 0.85, ann.y + h * 0.15),
                      (ann.x + w * 0.15, ann.y + h * 0.85)],
                 ]
-                annot = page.add_ink_annot(strokes)
+                annot = page.add_ink_annot([trazo(page, s) for s in strokes])
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'star':
@@ -690,7 +707,7 @@ class AnnotationsMixin:
                 # Anotación, no `new_shape()`: dibujarla en el contenido la horneaba
                 # en la página — al reabrir no volvía como marca editable y, con el
                 # sidecar, se veía dos veces (la horneada + la del overlay).
-                annot = page.add_polygon_annot(pts)
+                annot = page.add_polygon_annot(puntos(page, pts))
                 self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'cloud':
@@ -722,19 +739,19 @@ class AnnotationsMixin:
                                 u * u * a.y + 2 * u * t * ctrl.y + t * t * b.y,
                             ))
                 if len(outline) >= 3:
-                    annot = page.add_polygon_annot(outline)
+                    annot = page.add_polygon_annot(puntos(page, outline))
                     self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
                     self._stamp_markup(annot, ann)
             elif ann.type in ('polygon', 'measure_area'):
                 if ann.points and len(ann.points) >= 3:
-                    pts = [fitz.Point(p["x"], p["y"]) for p in ann.points]
+                    pts = [punto(page, p["x"], p["y"]) for p in ann.points]
                     annot = page.add_polygon_annot(pts)
                     self._style_annot(annot, ann, color, hex_to_rgb(ann.fillColor) if ann.fillColor else None)
                     self._stamp_markup(annot, ann)
             elif ann.type in ('draw', 'signature'):
                 if ann.points and len(ann.points) > 1:
                     pts = [(float(p["x"]), float(p["y"])) for p in ann.points]
-                    annot = page.add_ink_annot([pts])
+                    annot = page.add_ink_annot([trazo(page, pts)])
                     ink_color = (0, 0, 0) if ann.type == 'signature' and not ann.color else color
                     self._style_annot(annot, ann, ink_color)
                     if ann.type == 'signature' and annot:
@@ -754,22 +771,24 @@ class AnnotationsMixin:
                 body = '\n'.join(lines)
                 w = ann.width or 200
                 h = ann.height or max(fs * lh * max(len(lines), 1) + 6, fs + 6)
-                box = fitz.Rect(ann.x, ann.y, ann.x + w, ann.y + h)
+                box = caja(page, ann.x, ann.y, ann.x + w, ann.y + h)
                 align = {'center': 1, 'right': 2}.get(ann.align or '', 0)
                 annot = page.add_freetext_annot(
                     box, texto_estampable(body), fontsize=fs, text_color=color,
                     fill_color=None, border_width=0, opacity=stroke_op(ann), align=align,
+                    rotate=page.rotation,
                 )
                 self._stamp_markup(annot, ann)
             elif ann.type == 'note':
-                annot = page.add_text_annot(fitz.Point(ann.x, ann.y), texto_estampable(ann.text or 'Nota'))
+                # El icono de nota es NoRotate: se ancla por su esquina y queda derecho.
+                annot = page.add_text_annot(punto(page, ann.x, ann.y), texto_estampable(ann.text or 'Nota'))
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'image':
                 if ann.imageData and ',' in ann.imageData:
                     try:
                         img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
-                        rect = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
+                        rect = caja(page, ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
                         angle = float(ann.rotation or 0)
                         rotate = 0
                         if abs(angle) > 0.5:
@@ -783,7 +802,10 @@ class AnnotationsMixin:
                                 buf = BytesIO()
                                 im.save(buf, format='PNG')
                                 img_bytes = buf.getvalue()
-                        page.insert_image(rect, stream=img_bytes, rotate=rotate, keep_proportion=False)
+                        # insert_image gira la imagen con la página: se compensa para que
+                        # quede como el usuario la ve.
+                        page.insert_image(rect, stream=img_bytes, rotate=(rotate + page.rotation) % 360,
+                                          keep_proportion=False)
                     except Exception:
                         logger.exception("embed image falló (ann %s)", ann.id)
             elif ann.type == 'count':
@@ -791,11 +813,11 @@ class AnnotationsMixin:
                 # de que el tamano fuera elegible no lo llevan: para esas vale el 18
                 # que estaba escrito a mano, para que no cambien de tamano al abrirlas.
                 r = (ann.width if ann.width and ann.width > 0 else 18.0) / 2
-                annot = page.add_circle_annot(fitz.Rect(ann.x - r, ann.y - r, ann.x + r, ann.y + r))
+                annot = page.add_circle_annot(caja(page, ann.x - r, ann.y - r, ann.x + r, ann.y + r))
                 self._style_annot(annot, ann, color, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'measure_perimeter':
-                pts = [fitz.Point(p['x'], p['y']) for p in (ann.points or [])]
+                pts = [punto(page, p['x'], p['y']) for p in (ann.points or [])]
                 if len(pts) >= 2:
                     annot = page.add_polyline_annot(pts)
                     self._style_annot(annot, ann, color)
@@ -1091,13 +1113,18 @@ class AnnotationsMixin:
         if info:
             f_el.set("href", os.path.basename(info.file_path))
         try:
-            ET.ElementTree(root).write(output_path, encoding="utf-8", xml_declaration=True)
+            self._guardar_atomico(
+                output_path, False,
+                lambda temp: ET.ElementTree(root).write(temp, encoding="utf-8", xml_declaration=True),
+            )
             return True
         except Exception:
             logger.exception("export_xfdf falló (%s)", output_path)
             return False
 
-    def import_xfdf(self, doc_id: str, file_path: str) -> Optional[List[Annotation]]:
+    def import_xfdf(self, doc_id: str, file_path: str) -> Optional[Tuple[List[Annotation], int]]:
+        """(marcas, cuántas del archivo se saltaron por ilegibles), o None si el XML no
+        se puede leer."""
         import xml.etree.ElementTree as ET
         heights = self._page_heights(doc_id)
         if heights is None:
@@ -1121,7 +1148,7 @@ class AnnotationsMixin:
                 annots_el = child
                 break
         if annots_el is None:
-            return []
+            return [], 0
 
         out: List[Annotation] = []
         # Las respuestas pueden venir antes que su marca: se juntan y se enganchan al
@@ -1129,6 +1156,7 @@ class AnnotationsMixin:
         # importar una revisión de Bluebeam con hilos llenaba el plano de notas.
         respuestas: List[tuple] = []
         estados: List[tuple] = []
+        saltadas = 0
         for el in annots_el:
             tag = local(el.tag)
             try:
@@ -1228,6 +1256,7 @@ class AnnotationsMixin:
                 elif tag == "freetext":
                     out.append(Annotation(type="text", x=x, y=y, width=w, height=h, text=contents, **common))
             except Exception:
+                saltadas += 1
                 logger.exception("import_xfdf: anotación <%s> ignorada", tag)
         por_id = {a.id: a for a in out}
         for padre, reply in respuestas:
@@ -1242,4 +1271,4 @@ class AnnotationsMixin:
             if marca is None:
                 continue
             marca.status = "resolved" if estado.lower() in ("completed", "accepted") else "open"
-        return out
+        return out, saltadas
