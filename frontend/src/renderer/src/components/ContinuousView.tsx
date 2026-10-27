@@ -179,7 +179,7 @@ function ContinuousPageOverlay({
       store.updateAnnotation(vivo.doc_id, redim.id, geometriaRedimensionada(
         ann, redim.corner,
         (local.x - redim.startX) * aPuntos.x, (local.y - redim.startY) * aPuntos.y,
-        inicio,
+        inicio, { proporcionLibre: e.shiftKey },
       ))
     }
     const soltar = () => {

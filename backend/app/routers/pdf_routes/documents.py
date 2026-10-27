@@ -85,6 +85,19 @@ def disk_state(doc_id: str):
         raise HTTPException(status_code=404, detail="Document not found")
     return estado
 
+@router.get("/backups")
+def backups_dir():
+    """Dónde quedan los respaldos del original (para el botón de Ajustes)."""
+    import os
+    from app.services._pdf_respaldos import DIAS_QUE_SE_GUARDAN, carpeta_respaldos
+    carpeta = carpeta_respaldos()
+    # Se crea al preguntar: si nunca se respaldó nada, «Abrir» no tenía qué abrir.
+    try:
+        os.makedirs(carpeta, exist_ok=True)
+    except OSError:
+        pass
+    return {"dir": carpeta, "days": DIAS_QUE_SE_GUARDAN}
+
 @router.post("/save/{doc_id}", response_model=SaveResult)
 def save_pdf(doc_id: str, output_path: Optional[str] = Query(None), backup: bool = Query(False)):
     if output_path:

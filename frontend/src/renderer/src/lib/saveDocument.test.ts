@@ -60,12 +60,12 @@ describe('guardar', () => {
 
   // El motor guarda igual si no pudo escribir el .bak; callarlo deja al usuario
   // creyendo que tiene respaldo del archivo que acaba de sobrescribir.
-  it('avisa cuando el motor no pudo crear la copia .bak', async () => {
+  it('avisa cuando el motor no pudo respaldar el original', async () => {
     const conFallo = { ok: true, clone: () => ({ json: async () => ({ success: true, backup_failed: true }) }) }
     apiFetch.mockImplementation(async (path: string) =>
       (path.startsWith('/pdf/save/') ? conFallo : { ok: true }) as unknown as Response)
     expect(await saveDocument('d1')).toBe(true)
-    expect(showToast).toHaveBeenCalledWith('Guardado, pero no se pudo crear la copia .bak', 'error')
+    expect(showToast).toHaveBeenCalledWith('Guardado, pero no se pudo respaldar el original', 'error')
     apiFetch.mockImplementation(async () => ({ ok: true }) as unknown as Response)
   })
 

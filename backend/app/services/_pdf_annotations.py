@@ -37,6 +37,29 @@ def _fecha_xfdf(valor: Optional[str]) -> Optional[float]:
         return None
 
 
+def caja_de_imagen(x: float, y: float, w: float, h: float,
+                   ancho_px: float, alto_px: float, grados: float) -> Tuple[float, float, fitz.Rect]:
+    """Geometría de una marca de imagen en el PDF, la MISMA que dibuja la pantalla
+    (`annotationRender.tsx`): la imagen se encaja sin deformar y centrada en la caja
+    (`preserveAspectRatio="xMidYMid meet"`) y después se gira sobre el centro de la caja.
+
+    Devuelve el tamaño de la imagen encajada (sin girar) y el rectángulo que ocupa ya
+    girada, en coordenadas de la vista. Antes el PDF la ESTIRABA a la caja (en pantalla
+    se veía proporcionada y en el papel deformada) y, con un giro libre, Pillow agrandaba
+    el lienzo y el resultado se volvía a meter en la caja original: a 30° una imagen de
+    200×100 quedaba encogida en 100×100 cuando girada ocupa ~223×187."""
+    x0, x1 = sorted((x, x + w))
+    y0, y1 = sorted((y, y + h))
+    w, h = x1 - x0, y1 - y0
+    escala = min(w / ancho_px, h / alto_px)
+    fw, fh = ancho_px * escala, alto_px * escala
+    rad = math.radians(grados)
+    c, s = abs(math.cos(rad)), abs(math.sin(rad))
+    ancho, alto = fw * c + fh * s, fw * s + fh * c
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    return fw, fh, fitz.Rect(cx - ancho / 2, cy - alto / 2, cx + ancho / 2, cy + alto / 2)
+
+
 class AnnotationsMixin:
     def _get_annotations_path(self, file_path: str) -> str:
         return file_path + ".pdfmaster.json"
@@ -285,6 +308,16 @@ class AnnotationsMixin:
                                 createdAt=pm.get('createdAt'),
                             )
                             continue
+                        imagen = None
+                        if mapped == 'image':
+                            # Vuelve a la lista con la imagen ORIGINAL que lleva su
+                            # apariencia (ver `_incrustar_imagen`). Si no se puede leer,
+                            # no se importa: una marca de imagen sin píxeles se borraría
+                            # del archivo en el siguiente guardado y no se redibujaría.
+                            # Queda en el PDF como sello no gestionado.
+                            imagen = self._imagen_de_sello(doc, a)
+                            if not imagen:
+                                continue
                         by_xref[a.xref] = Annotation(
                             id=ann_id, type=mapped, page=i,
                             x=float(pm['x']) if 'x' in pm else float(r.x0),
@@ -311,6 +344,8 @@ class AnnotationsMixin:
                             measurement=pm.get('measurement'),
                             createdAt=pm.get('createdAt'),
                             modifiedAt=pm.get('modifiedAt'),
+                            rotation=pm.get('rotation') if mapped == 'image' else None,
+                            imageData=imagen,
                         )
                     except Exception:
                         logger.exception("No se pudo importar una anotación nativa (pág %s)", i)
@@ -399,6 +434,9 @@ class AnnotationsMixin:
             "fillOpacity": ann.fillOpacity,
             "createdAt": ann.createdAt,
             "modifiedAt": ann.modifiedAt,
+            # Solo la imagen lee el giro al reabrir (el resto de las marcas no lo
+            # dibujan en el PDF todavía): sin él volvía derecha.
+            "rotation": ann.rotation if ann.type == 'image' else None,
         }
         if ann.measurement:
             payload["measurement"] = ann.measurement.model_dump()
@@ -467,6 +505,9 @@ class AnnotationsMixin:
     # dibujaría en su lugar una caja con texto — degradando un documento entregado. Se
     # queda tal cual está en el PDF y la app no lo toca. Los sellos que pone PDF Master
     # son anotaciones de texto, no `Stamp`, así que los suyos sí los gestiona.
+    # La única excepción son las IMÁGENES de la app (`Stamp` con payload `type: image`,
+    # ver `_incrustar_imagen`): esas sí se reconstruyen sin pérdida desde la lista, y se
+    # reconocen una a una con `_xref_de_imagen_propia`.
 
     # Tipos visibles que la app no gestiona: están en el PDF, se ven en cualquier otro
     # visor, pero acá no se dibujan.
@@ -492,6 +533,53 @@ class AnnotationsMixin:
         if inicio in cls.PUNTAS_DE_FLECHA:
             return 'inicio'
         return None
+
+    def _xref_de_imagen_propia(self, doc, annot) -> Optional[int]:
+        """xref de la imagen original de una marca de imagen de PDF Master (`Stamp` con
+        payload `type: image` y la imagen en su apariencia), o None si no es eso.
+
+        Es la condición para gestionarla: solo se borra al guardar —y solo deja de
+        contar como «no gestionada»— la que se puede volver a dibujar con su imagen."""
+        try:
+            if (annot.type[1] if annot.type else '') != 'Stamp':
+                return None
+            if self._read_pm(doc, annot).get('type') != 'image':
+                return None
+            kind, ap = doc.xref_get_key(annot.xref, "AP/N")
+            if kind != 'xref':
+                return None
+            kind, img = doc.xref_get_key(int(ap.split()[0]), "Resources/XObject/I")
+            if kind != 'xref':
+                return None
+            ix = int(img.split()[0])
+            return ix if doc.xref_get_key(ix, "Subtype") == ('name', '/Image') else None
+        except Exception:
+            return None
+
+    def _imagen_de_sello(self, doc, annot) -> Optional[str]:
+        """La imagen de una marca de imagen propia como data URL, para devolverla a la
+        lista al reabrir. El JPEG sale byte a byte; lo demás se rearma en PNG con su
+        transparencia (MuPDF guarda el alfa aparte, en la /SMask)."""
+        ix = self._xref_de_imagen_propia(doc, annot)
+        if ix is None:
+            return None
+        try:
+            info = doc.extract_image(ix) or {}
+            ext = info.get('ext')
+            if not info.get('smask') and ext in ('jpeg', 'jpg', 'png'):
+                datos = info['image']
+                mime = 'image/png' if ext == 'png' else 'image/jpeg'
+            else:
+                pix = fitz.Pixmap(doc, ix)
+                if pix.colorspace is not None and pix.colorspace.n > 3:
+                    pix = fitz.Pixmap(fitz.csRGB, pix)
+                if info.get('smask'):
+                    pix = fitz.Pixmap(pix, fitz.Pixmap(doc, info['smask']))
+                datos, mime = pix.tobytes('png'), 'image/png'
+            return f"data:{mime};base64," + base64.b64encode(datos).decode('ascii')
+        except Exception:
+            logger.warning("xref=%s: no se pudo leer la imagen de la marca", annot.xref, exc_info=True)
+            return None
 
     def _es_propia(self, doc, annot) -> bool:
         """Marca puesta por PDF Master: trae su payload `PM` o el nombre `pdfmaster:<id>`.
@@ -533,7 +621,9 @@ class AnnotationsMixin:
             for a in (doc.load_page(i).annots() or []):
                 try:
                     if (a.type[1] if a.type else '') in self.TIPOS_NO_GESTIONADOS_VISIBLES:
-                        total += 1
+                        # Las imágenes de la app son `Stamp`, pero sí se gestionan.
+                        if self._xref_de_imagen_propia(doc, a) is None:
+                            total += 1
                     elif self._es_tinta_multitrazo(a) and not self._es_propia(doc, a):
                         total += 1
                 except Exception:
@@ -553,7 +643,8 @@ class AnnotationsMixin:
             for a in list(page.annots() or []):
                 try:
                     raw = a.type[1] if a.type else ''
-                    if raw not in self.TIPOS_GESTIONADOS:
+                    # Las imágenes de la app también: la lista las vuelve a dibujar.
+                    if raw not in self.TIPOS_GESTIONADOS and self._xref_de_imagen_propia(doc, a) is None:
                         continue
                     # La tinta ajena de varios trazos no se gestiona: borrarla sin poder
                     # redibujarla igual sería corromper la marca.
@@ -785,29 +876,7 @@ class AnnotationsMixin:
                 self._style_annot(annot, ann, color)
                 self._stamp_markup(annot, ann)
             elif ann.type == 'image':
-                if ann.imageData and ',' in ann.imageData:
-                    try:
-                        img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
-                        rect = caja(page, ann.x, ann.y, ann.x + (ann.width or 200), ann.y + (ann.height or 150))
-                        angle = float(ann.rotation or 0)
-                        rotate = 0
-                        if abs(angle) > 0.5:
-                            if abs(angle % 90) < 0.5:
-                                rotate = int(round(angle / 90.0) * 90) % 360
-                            else:
-                                from io import BytesIO
-                                from PIL import Image
-                                im = Image.open(BytesIO(img_bytes)).convert('RGBA')
-                                im = im.rotate(-angle, expand=True, resample=Image.Resampling.BICUBIC)
-                                buf = BytesIO()
-                                im.save(buf, format='PNG')
-                                img_bytes = buf.getvalue()
-                        # insert_image gira la imagen con la página: se compensa para que
-                        # quede como el usuario la ve.
-                        page.insert_image(rect, stream=img_bytes, rotate=(rotate + page.rotation) % 360,
-                                          keep_proportion=False)
-                    except Exception:
-                        logger.exception("embed image falló (ann %s)", ann.id)
+                self._incrustar_imagen(page, ann)
             elif ann.type == 'count':
                 # El diametro viaja en `width` (puntos del PDF). Las marcas de antes
                 # de que el tamano fuera elegible no lo llevan: para esas vale el 18
@@ -831,6 +900,74 @@ class AnnotationsMixin:
             pass
 
         return True
+
+    def _incrustar_imagen(self, page, ann: Annotation) -> None:
+        """La marca de imagen como ANOTACIÓN propia (`Stamp` con la imagen en su
+        apariencia y payload `/PM`), no grabada en el contenido de la página.
+
+        Grabada en el contenido (`insert_image`) quedaba dos veces en el mundo: en la
+        página y en la lista de marcas. Mientras el motor tuviera el documento vivo
+        (limpio, sin la imagen) no se notaba, pero al soltarlo —LRU de 12 en
+        `_evict_inactive`, o un reinicio del motor con `reopenDeadDoc`— se reabría DEL
+        DISCO con la imagen ya horneada, y el siguiente guardado la volvía a grabar desde
+        la lista: una copia en el sitio viejo y otra en el nuevo, y la vieja ya no se
+        podía borrar desde la app. Tras guardar, además, PDF.js pintaba la horneada
+        debajo del overlay: mover la imagen dejaba un fantasma en el sitio anterior.
+
+        Como anotación sigue el ciclo de todas las marcas: `_quitar_marcas_gestionadas`
+        la borra de la copia antes de redibujar la lista (nunca se apila, venga el
+        documento de memoria o de disco), PDF.js no la pinta (annotationMode 0) y al
+        reabrir el archivo vuelve a la lista, editable, con su imagen original
+        (`_imagen_de_sello`). Mover, redimensionar y Ctrl+Z son cambios de la lista y el
+        guardado los redibuja igual que a un rectángulo.
+
+        Geometría en `caja_de_imagen` (proporción y centro, como en pantalla). El giro va
+        en la /Matrix de la apariencia y no en los píxeles: es exacto a cualquier ángulo,
+        no re-muestrea, y deja en el PDF la imagen original —la que se recupera al
+        reabrir—. Los visores encajan la caja girada de la forma en /Rect, y /Rect mide
+        justo eso, así que la escala queda 1:1."""
+        if not ann.imageData or ',' not in ann.imageData:
+            return
+        try:
+            img_bytes = base64.b64decode(ann.imageData.split(',', 1)[1])
+            caja_vista = fitz.Rect(ann.x, ann.y, ann.x + (ann.width or 200),
+                                   ann.y + (ann.height or 150)).normalize()
+            if caja_vista.is_empty:
+                return
+            doc = page.parent
+            # Se crea en la caja y se reajusta después: el tamaño en píxeles se lee de
+            # la imagen que MuPDF ya decodificó, sin abrirla dos veces.
+            annot = page.add_stamp_annot(self._desde_vista(page, caja_vista), stamp=img_bytes)
+            ap = int(doc.xref_get_key(annot.xref, "AP/N")[1].split()[0])
+            ix = int(doc.xref_get_key(ap, "Resources/XObject/I")[1].split()[0])
+            ancho_px = float(doc.xref_get_key(ix, "Width")[1])
+            alto_px = float(doc.xref_get_key(ix, "Height")[1])
+            grados = float(ann.rotation or 0) % 360
+            fw, fh, girada = caja_de_imagen(caja_vista.x0, caja_vista.y0, caja_vista.width,
+                                            caja_vista.height, ancho_px, alto_px, grados)
+            annot.set_rect(self._desde_vista(page, girada))
+            opacidad = float(ann.opacity) if ann.opacity is not None and 0 <= ann.opacity < 1 else None
+            if opacidad is not None:
+                annot.set_opacity(opacidad)
+            self._stamp_markup(annot, ann)  # autor, nombre, /PM y update()
+
+            # La apariencia se escribe DESPUÉS del update(), que la regenera estirada a
+            # /Rect. Forma del tamaño de la imagen encajada, girada con /Matrix. El giro
+            # es el del usuario menos el de la página: la apariencia vive en la página
+            # sin girar y el visor le suma el /Rotate. Matrix(-θ) porque el espacio de la
+            # forma tiene la y hacia arriba: así el giro se ve horario, como en pantalla.
+            ap = int(doc.xref_get_key(annot.xref, "AP/N")[1].split()[0])
+            m = fitz.Matrix(-((grados - page.rotation) % 360))
+            gs = ''
+            if opacidad is not None:
+                doc.xref_set_key(ap, "Resources/ExtGState/PMop",
+                                 f"<</CA {opacidad:.4f} /ca {opacidad:.4f}>>")
+                gs = '/PMop gs '
+            doc.xref_set_key(ap, "BBox", f"[0 0 {fw:.4f} {fh:.4f}]")
+            doc.xref_set_key(ap, "Matrix", f"[{m.a:.6f} {m.b:.6f} {m.c:.6f} {m.d:.6f} 0 0]")
+            doc.update_stream(ap, f"q {gs}{fw:.4f} 0 0 {fh:.4f} 0 0 cm /I Do Q".encode('ascii'))
+        except Exception:
+            logger.exception("embed image falló (ann %s)", ann.id)
 
     # El resumen lo lee una persona: los identificadores internos del tipo de marca
     # ("measure_distance", "strikethrough") no significan nada fuera del código.

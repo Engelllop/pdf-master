@@ -51,7 +51,9 @@ export function useAnnotationDraw(
   const [drawPoints, setDrawPoints] = useState<Array<{ x: number; y: number }>>([])
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(null)
   const [textInput, setTextInput] = useState('')
-  const [textPos, setTextPos] = useState<{ x: number; y: number } | null>(null)
+  // `width` (pt) solo si el cuadro se arrastró: entonces el texto se ajusta a ese
+  // ancho. Con un clic el cuadro crece con lo que se escribe.
+  const [textPos, setTextPos] = useState<{ x: number; y: number; width?: number } | null>(null)
   const [areaPoints, setAreaPoints] = useState<Array<{ x: number; y: number }>>([])
   const [drawingArea, setDrawingArea] = useState(false)
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null)
@@ -164,8 +166,14 @@ export function useAnnotationDraw(
       return true
     }
     if (activeTool === 'text') {
-      setTextPos({ x: pdf.x, y: pdf.y })
-      setDrawing(false)
+      // Se espera al soltar: un clic abre el cuadro de ancho libre y un arrastre fija
+      // el ancho en el que se ajusta el texto (antes solo existía el clic, y todo lo
+      // que se escribía salía en UNA línea larguísima hasta pulsar Enter).
+      setDrawPreview({
+        id: crypto.randomUUID(), type: 'rect', page: activeDoc.currentPage,
+        x: pdf.x, y: pdf.y, width: 0, height: 0,
+        color: annotationColor, lineWidth: 1, lineStyle: 'dashed', opacity: 0.7,
+      })
       return true
     }
 
@@ -241,7 +249,7 @@ export function useAnnotationDraw(
     } else if (
       activeTool === 'highlight' || activeTool === 'rect' || activeTool === 'circle' || activeTool === 'textselect' ||
       activeTool === 'underline' || activeTool === 'strikethrough' || activeTool === 'arrow' || activeTool === 'line' ||
-      activeTool === 'callout' ||
+      activeTool === 'callout' || activeTool === 'text' ||
       activeTool === 'check' || activeTool === 'cross' || activeTool === 'star' || activeTool === 'cloud' ||
       activeTool === 'measure_calibrate' || activeTool === 'measure_distance'
     ) {
@@ -289,6 +297,20 @@ export function useAnnotationDraw(
     }
     if (!drawing || !drawPreview || !activeDoc) {
       setDrawing(false)
+      return
+    }
+
+    // Cuadro de texto: el arrastre (si lo hubo) define el ancho de ajuste.
+    if (activeTool === 'text') {
+      const w = drawPreview.width || 0
+      const h = drawPreview.height || 0
+      const x = Math.min(drawPreview.x || 0, (drawPreview.x || 0) + w)
+      const y = Math.min(drawPreview.y || 0, (drawPreview.y || 0) + h)
+      // Menos de ~3 letras de ancho es un clic que tembló, no un cuadro.
+      const arrastrado = Math.abs(w) >= Math.max(24, (textFontSize || 14) * 2)
+      setTextPos(arrastrado ? { x, y, width: Math.abs(w) } : { x: drawPreview.x || 0, y: drawPreview.y || 0 })
+      setDrawing(false)
+      setDrawPreview(null)
       return
     }
 
@@ -610,7 +632,10 @@ export function useAnnotationDraw(
     showToast(`Área medida: ${label}`, 'success')
   }
 
-  const saveText = () => {
+  /** `medida` (pt) es la caja que ocupó el texto en el editor: viaja en la marca para
+   * que el PDF guardado ajuste y corte las líneas donde se vieron. Sin ella el motor
+   * ponía 200 pt de ancho fijo y otro visor mostraba otra cosa. */
+  const saveText = (medida?: { width: number; height: number }) => {
     if (!textPos || !activeDoc || !activeTool) return
     addAnnotation(activeDoc.doc_id, {
       id: crypto.randomUUID(),
@@ -618,6 +643,7 @@ export function useAnnotationDraw(
       page: activeDoc.currentPage,
       x: textPos.x,
       y: textPos.y,
+      ...(medida ? { width: textPos.width ?? medida.width, height: medida.height } : textPos.width ? { width: textPos.width } : {}),
       color: annotationColor,
       text: textInput || 'Texto',
       fontFamily: textFontFamily,

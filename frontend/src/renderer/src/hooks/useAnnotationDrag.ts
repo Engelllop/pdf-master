@@ -136,7 +136,9 @@ export function useAnnotationDrag(
       }
       estado.updateAnnotation(
         doc.doc_id, resizingAnn.id,
-        geometriaRedimensionada(annAlEmpezar, resizingAnn.corner, deltaX * scaleX, deltaY * scaleY, inicio),
+        // Mayús suelta la proporción de una imagen (por defecto queda fija).
+        geometriaRedimensionada(annAlEmpezar, resizingAnn.corner, deltaX * scaleX, deltaY * scaleY, inicio,
+          { proporcionLibre: e.shiftKey }),
       )
     }
     const handleUp = () => {

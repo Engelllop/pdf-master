@@ -34,6 +34,7 @@ const SECTIONS: Array<{ title: string; items: Array<[string, string]> }> = [
       ['Ctrl+0', 'Zoom 100%'],
       ['Ctrl+rueda', 'Zoom con el ratón'],
       ['Ctrl+Shift+L', 'Mostrar / ocultar panel de páginas'],
+      ['Ctrl+F1', 'Contraer / mostrar la cinta'],
       ['F11', 'Pantalla completa'],
     ],
   },

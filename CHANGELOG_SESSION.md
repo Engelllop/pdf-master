@@ -4,6 +4,25 @@ Changelog canónico en este archivo. Detalle técnico: `DOCUMENTATION.md`.
 
 ---
 
+## Sesión 2026-10-27 — v1.25.0
+
+**Rediseño de la interfaz y de la edición.** Auditorías de diseño y de las herramientas de edición, arregladas.
+
+- **Cinta en dos niveles, como una suite de escritorio.** Antes modos, herramientas, búsqueda y acciones rápidas compartían UNA fila: a 1280 px con un panel abierto, Comentar mostraba 3 botones y el resto quedaba en «…». Ahora: pestañas (Archivo en accent, Inicio, Comentar, **Medir** nueva, Editar, Página, Proteger, Convertir, IA) y debajo una banda de 70 px con botones grandes en grupos rotulados; galerías de iconos para formas y símbolos; contraíble con Ctrl+F1. Guardar/Imprimir/Deshacer/Rehacer pasan a la barra de título; cinta y barra de estado cruzan la ventana. Los controles de la cinta dejaron de definirse dentro de `Toolbar` (se remontaban en cada clic).
+- **Barra de estado:** primera/anterior/siguiente/última página y el papel con nombre (`ARCH D · 36 × 24 in`). Riel con indicador visible del panel abierto y tooltips.
+- **Editar texto edita el PÁRRAFO.** Antes editaba un tramo de un renglón y un Enter escribía la segunda línea ENCIMA del renglón siguiente. Ahora el motor arma el párrafo (aunque cada renglón venga en su bloque), lo reescribe en caja ajustado a su ancho con el interlineado y la alineación medidos, respeta los saltos y avisa si no entra. Enter = línea nueva, Ctrl+Enter = aplicar, con la ayuda a la vista.
+- **Cuadro de texto con ancho:** arrastrar fija el ancho y el texto se ajusta; la marca guarda la caja medida, así el PDF corta donde se vio.
+- **Editar imagen ya no destruye contenido:** mover/borrar redactaba el rect y se llevaba el escaneo de fondo y el texto de debajo, y el logo perdía la transparencia. Ahora se quita solo esa colocación del contenido y se reinserta reusando el xref. El clic elige la imagen de arriba.
+- **Herramienta Imagen:** se graba como anotación propia (sello con la imagen en la apariencia): no se duplica al guardar tras liberar/reabrir el documento, vuelve editable, giro libre sin deformar, misma proporción en pantalla y en el PDF (Mayús la suelta al redimensionar).
+- **Formularios:** cada botón de opción enciende el suyo (antes siempre el primero); casillas y opciones con estados de Acrobat (`Choice1`, «1») se ven y se destildan; solo lectura, multilínea, largo máximo y contraseña respetados; pulsadores y firmas de solo lectura.
+- **Encabezado y pie, numeración y marca de agua en un diálogo** con vista previa del motor (hoja entera o franja ampliada), seis posiciones, variables (`{n}`, `{total}`, `{fecha}`, `{archivo}`, Bates `{n:6}`), márgenes, tipografía, marca centrada o en mosaico, ángulo, opacidad y detrás del contenido. Cada uno en su capa del PDF: aplicar reemplaza, se puede quitar y el diálogo se abre con lo aplicado.
+- **Respaldo del original fuera de la carpeta del plano:** en vez de un `.bak` al lado (que además se pisaba en cada guardado), el original del día va a `%LOCALAPPDATA%\PDF Master\respaldos\AAAA-MM-DD\`, uno por archivo y día, con poda a 30 días / 5 GB y botón en Ajustes.
+- **Propiedades:** se puede vaciar un campo y las palabras clave se precargan.
+- **Motor:** con más de 12 documentos con cambios sin guardar, la limpieza de memoria cerraba el documento pedido («documento no encontrado»). Los diálogos que salen de la cinta ya no se centran sobre ella (cortados): van por portal.
+- **Tests: 807 → 849 frontend, 491 → 564 motor.**
+
+---
+
 ## Sesión 2026-09-26 — v1.24.0
 
 **Segunda auditoría, arreglada entera.** Esta vez sí cambia lo que el usuario ve: había datos que se perdían sin aviso.

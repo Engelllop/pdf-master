@@ -1,3 +1,4 @@
+import type { CapaSello, SelloSpec } from './sellos'
 import { apiFetch } from './api'
 import { correrCola } from './batchQueue'
 import {
@@ -318,6 +319,26 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
     return
   }
 
+  if (op.type === 'sello') {
+    const res = await apiFetch(`/pdf/stamps/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capa: op.capa, spec: op.spec, pages: op.pages ?? null, stash: false }),
+    })
+    if (!res.ok) throw new Error('No se pudo aplicar el sello')
+    return
+  }
+
+  if (op.type === 'quitarSello') {
+    const res = await apiFetch(`/pdf/stamps/remove/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capa: op.capa, stash: false }),
+    })
+    if (!res.ok) throw new Error('No se pudo quitar el sello')
+    return
+  }
+
   if (op.type === 'redactMatches') {
     const res = await apiFetch(`/pdf/redact-matches/${docId}?query=${encodeURIComponent(op.query)}&stash=false`, { method: 'POST' })
     if (!res.ok) throw new Error('No se pudo redactar')
@@ -364,10 +385,9 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
     const res = await apiFetch(`/pdf/edit-text/${docId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        page_num: op.page, x0: op.x0, y0: op.y0, x1: op.x1, y1: op.y1,
-        text: op.text, size: op.size, color: op.color, font: op.font, stash: false,
-      }),
+      // Se reenvía la operación entera: rehacer un párrafo en caja con solo los
+      // campos de la edición por tramo lo reescribía como UNA línea.
+      body: JSON.stringify({ ...sinTipo(op), page_num: op.page, stash: false }),
     })
     if (!res.ok) throw new Error('No se pudo editar el texto')
     return
@@ -414,7 +434,7 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
     const res = await apiFetch(`/pdf/widgets/${docId}/${op.page}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field_name: op.fieldName, value: op.value, stash: false }),
+      body: JSON.stringify({ field_name: op.fieldName, value: op.value, xref: op.xref, stash: false }),
     })
     if (!res.ok) throw new Error('No se pudo actualizar el campo')
     return
@@ -467,6 +487,7 @@ function applyMetaToStore(docId: string, meta: DocMeta) {
             title: meta.title !== undefined ? meta.title || null : d.title,
             author: meta.author !== undefined ? meta.author || null : d.author,
             subject: meta.subject !== undefined ? meta.subject || null : d.subject,
+            keywords: meta.keywords !== undefined ? meta.keywords || null : d.keywords,
             dirty: true,
           }
         : d,
@@ -716,6 +737,35 @@ export async function watermarkUndoable(docId: string, text: string, pages?: num
   await refreshDocLayout(docId)
 }
 
+/** Aplica (o reemplaza) un sello de página en su capa. Un paso de deshacer. */
+export async function selloUndoable(docId: string, capa: CapaSello, spec: SelloSpec, pages?: number[]) {
+  const res = await apiFetch(`/pdf/stamps/${docId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capa, spec, pages: pages ?? null, stash: true }),
+  })
+  if (!res.ok) throw new Error('No se pudo aplicar el sello')
+  const data = await res.json()
+  commitDocStash(docId, data.stash_id || '', { type: 'sello', capa, spec, pages })
+  await refreshDocLayout(docId)
+}
+
+/** Quita la capa del sello de todo el documento. Devuelve cuántas páginas la tenían. */
+export async function quitarSelloUndoable(docId: string, capa: CapaSello): Promise<number> {
+  const res = await apiFetch(`/pdf/stamps/remove/${docId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capa, stash: true }),
+  })
+  if (!res.ok) throw new Error('No se pudo quitar el sello')
+  const data = await res.json()
+  if (data.removed > 0) {
+    commitDocStash(docId, data.stash_id || '', { type: 'quitarSello', capa })
+    await refreshDocLayout(docId)
+  }
+  return data.removed ?? 0
+}
+
 export async function redactMatchesUndoable(docId: string, query: string): Promise<number> {
   const res = await apiFetch(`/pdf/redact-matches/${docId}?query=${encodeURIComponent(query)}&stash=true`, { method: 'POST' })
   if (!res.ok) throw new Error('No se pudo redactar')
@@ -821,10 +871,23 @@ export async function replaceTextUndoable(
   return data.replaced ?? 0
 }
 
+/** Los campos de una operación sin su `type`: lo que espera el motor. */
+function sinTipo<T extends { type: string }>(op: T): Omit<T, 'type'> {
+  const { type: _type, ...resto } = op
+  return resto
+}
+
 export async function editTextUndoable(
   docId: string,
-  params: { page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string },
-) {
+  params: {
+    page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string
+    wrap?: boolean
+    bold?: boolean
+    italic?: boolean
+    align?: string
+    line_height?: number
+  },
+): Promise<{ overflow: boolean }> {
   const res = await apiFetch(`/pdf/edit-text/${docId}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -834,6 +897,7 @@ export async function editTextUndoable(
   const data = await res.json()
   commitPageStash(docId, params.page, data.stash_id || '', { type: 'editText', ...params })
   await refreshDocLayout(docId)
+  return { overflow: !!data.overflow }
 }
 
 export async function transformImageUndoable(
@@ -931,17 +995,20 @@ export async function makeSearchableAllUndoable(
   return { palabras, hechas: r.hechos, cancelado: r.cancelado }
 }
 
-export async function formFieldUndoable(docId: string, page: number, fieldName: string, value: string) {
+/** `xref` = el widget que tocó el usuario (casilla u opción): sin él, el motor elige
+ * la opción por su estado activo, y en las que creaban versiones viejas (todas «Yes»)
+ * se encendía siempre la primera. */
+export async function formFieldUndoable(docId: string, page: number, fieldName: string, value: string, xref?: number) {
   const res = await apiFetch(`/pdf/widgets/${docId}/${page}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ field_name: fieldName, value, stash: true }),
+    body: JSON.stringify({ field_name: fieldName, value, xref, stash: true }),
   })
   if (!res.ok) throw new Error('No se pudo actualizar el campo')
   const data = await res.json()
   if ((data.previous ?? '') === value) return
   if (data.stash_id) {
-    const forward: PageOp = { type: 'formField', page, fieldName, value }
+    const forward: PageOp = { type: 'formField', page, fieldName, value, xref }
     // Si el campo tenía widgets en varias páginas, el motor stashea el documento
     // entero: restaurar una sola página dejaría las otras hojas con el valor nuevo.
     // Se exige la bandera explícita en vez de deducirlo de que falte `stash_page`: un

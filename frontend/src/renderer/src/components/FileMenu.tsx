@@ -272,12 +272,12 @@ export default function FileMenu() {
   return (
     <div className="relative h-full" ref={menuRef}>
       <button onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu"
-        className={`flex items-center gap-1 px-3 h-full text-ui font-medium transition-colors ${open ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'}`}>
+        className={`flex items-center gap-1 px-3 h-7 rounded-token-sm text-ui font-semibold transition-[filter,transform] duration-fast ease-token active:scale-[0.97] bg-accent text-on-accent ${open ? 'brightness-110' : 'hover:brightness-110'}`}>
         Archivo <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="menu-pop absolute top-full left-0 z-dropdown flex w-[640px] max-w-[92vw] border border-border rounded-token shadow-token-lg bg-panel overflow-hidden">
-          <div role="menu" aria-label="Archivo" className="w-56 shrink-0 p-1.5 border-r border-border">
+        <div className="menu-pop absolute top-full left-0 mt-1 z-dropdown flex w-[680px] max-w-[92vw] border border-border rounded-token shadow-token-lg bg-panel overflow-hidden">
+          <div role="menu" aria-label="Archivo" className="w-64 shrink-0 p-1.5 border-r border-border">
             <Item icon={FolderOpen} label="Abrir…" shortcut="Ctrl+O" onClick={handleOpen} />
             <Item icon={History} label={lastSession ? `Reabrir última sesión (${lastSession.docs.length})` : 'Reabrir última sesión'}
               onClick={handleReopenSession} disabled={!lastSession} />
@@ -295,11 +295,11 @@ export default function FileMenu() {
           </div>
           <div className="flex-1 min-w-0 flex flex-col max-h-[480px]">
             <div className="p-2 pb-1 shrink-0">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-token bg-hover border border-transparent focus-within:border-border">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-token bg-surface border border-border focus-within:border-accent">
                 <Search size={14} className="text-muted shrink-0" />
                 <input ref={searchRef} type="text" value={query} onChange={(e) => setQuery(e.target.value)}
                   placeholder="Buscar en recientes…"
-                  className="flex-1 min-w-0 bg-transparent text-mini text-fg placeholder:text-muted focus:outline-none" />
+                  className="input-bare flex-1 min-w-0 bg-transparent text-mini text-fg placeholder:text-muted focus:outline-none" />
                 {query && (
                   <button onClick={() => setQuery('')} className="text-muted hover:text-fg shrink-0"><X size={12} /></button>
                 )}

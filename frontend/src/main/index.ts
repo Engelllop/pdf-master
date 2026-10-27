@@ -36,6 +36,9 @@ const backendEnv = (): NodeJS.ProcessEnv => ({
   ...process.env,
   PDFMASTER_API_TOKEN: API_TOKEN,
   PDFMASTER_PORT: String(enginePort),
+  // Respaldo del original antes de guardar encima: bajo LOCALAPPDATA y no en
+  // userData (Roaming), para que gigas de planos no viajen con el perfil.
+  PDFMASTER_RESPALDOS: join(process.env.LOCALAPPDATA || app.getPath('userData'), 'PDF Master', 'respaldos'),
 })
 
 /** El motor exige el token en todo lo que no sea /health. El renderer lo pone en

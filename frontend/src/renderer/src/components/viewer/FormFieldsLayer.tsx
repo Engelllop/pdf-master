@@ -3,6 +3,23 @@ import { type FormField } from '../../hooks/useFormFields'
 import { type PageDims } from './annotationRender'
 import { askConfirm } from '../../lib/uiPrompt'
 
+// Banderas del campo (/Ff, tabla 221 de la norma). Antes no se miraban: un campo de
+// solo lectura se podía editar, uno multilínea era de una línea (y Enter lo cerraba) y
+// el largo máximo no existía.
+const FF_SOLO_LECTURA = 1
+const FF_MULTILINEA = 4096
+const FF_CONTRASENA = 8192
+
+const tiene = (field: FormField, bandera: number) => ((field.field_flags ?? 0) & bandera) !== 0
+
+/** ¿Está encendida esta casilla/opción? Se compara con SU estado activo: Acrobat usa
+ * «Choice1», «Choice2»…, Word «1»; mirar solo «Yes»/«On» las dejaba sin tildar. */
+export function estaEncendido(field: FormField): boolean {
+  if (!field.value || field.value === 'Off') return false
+  // Motor viejo sin `on_state`: cualquier estado que no sea «Off» es encendido.
+  return field.on_state ? field.value === field.on_state : true
+}
+
 // Widgets de formulario del PDF (inputs/checkbox/select) superpuestos al bitmap.
 // Los de texto escriben en estado local y se confirman al salir del campo o con
 // Enter: guardar en cada tecla mandaba un POST por pulsación al motor (1 worker) y
@@ -14,21 +31,43 @@ function TextWidget({ field, style, onCommit }: {
 }) {
   const [draft, setDraft] = useState(field.value)
   useEffect(() => { setDraft(field.value) }, [field.value])
+  const soloLectura = tiene(field, FF_SOLO_LECTURA)
+  const multilinea = tiene(field, FF_MULTILINEA)
+  const maxLength = field.text_maxlen && field.text_maxlen > 0 ? field.text_maxlen : undefined
   // Los campos se apoyan en la lámina, que es blanca en los DOS temas: con
   // `text-fg` en oscuro serían letras claras sobre papel blanco. De ahí los
   // tokens del plano de la hoja en vez de los del chrome.
+  const comunes = {
+    value: draft,
+    readOnly: soloLectura,
+    maxLength,
+    onBlur: () => { if (!soloLectura && draft !== field.value) onCommit(draft) },
+    className: 'bg-info/10 hover:bg-info/20 focus:bg-paper text-paper-ink text-mini border border-border-control focus:border-paper-ink rounded-token-sm px-1 outline-none transition-colors',
+    style,
+    title: field.field_name,
+    'aria-label': field.field_name || 'Campo de texto',
+  }
+  if (multilinea) {
+    // En un campo multilínea Enter es salto de línea (el comportamiento del
+    // textarea); se confirma al salir del campo o con Ctrl+Enter.
+    return (
+      <textarea {...comunes}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); e.currentTarget.blur() }
+          else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
+        }}
+        style={{ ...style, resize: 'none' }}
+      />
+    )
+  }
   return (
-    <input type="text" value={draft}
+    <input {...comunes} type={tiene(field, FF_CONTRASENA) ? 'password' : 'text'}
       onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => { if (draft !== field.value) onCommit(draft) }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() }
         else if (e.key === 'Escape') { setDraft(field.value); e.currentTarget.blur() }
       }}
-      className="bg-info/10 hover:bg-info/20 focus:bg-paper text-paper-ink text-mini border border-border-control focus:border-paper-ink rounded-token-sm px-1 outline-none transition-colors"
-      style={style}
-      title={field.field_name}
-      aria-label={field.field_name || 'Campo de texto'}
     />
   )
 }
@@ -129,7 +168,8 @@ export default function FormFieldsLayer({
 }: {
   fields: FormField[]
   pageData: PageDims
-  onChange: (fieldName: string, value: string) => void
+  // `xref` solo en casillas y opciones: es el widget concreto que se tocó.
+  onChange: (fieldName: string, value: string, xref?: number) => void
   onTransform?: (xref: number, next: Rect | { delete: true }) => void
   interactive?: boolean
   layoutMode?: boolean
@@ -200,14 +240,40 @@ export default function FormFieldsLayer({
           height: field.rect.height * sy,
           pointerEvents: interactive ? ('auto' as const) : ('none' as const),
         }
-        const isCheckbox = field.field_type.toLowerCase().includes('check')
-        const isRadio = field.field_type.toLowerCase().includes('radio')
-        const isSelect = field.field_type.toLowerCase().includes('combo') || field.field_type.toLowerCase().includes('list')
+        const tipo = field.field_type.toLowerCase()
+        const isCheckbox = tipo.includes('check')
+        const isRadio = tipo.includes('radio')
+        const isSelect = tipo.includes('combo') || tipo.includes('list')
+        const soloLectura = tiene(field, FF_SOLO_LECTURA)
+        // Pulsadores y firmas no tienen nada que rellenar: se dibujaban como cuadros
+        // de texto editables y lo escrito iba a parar al /V del botón. Se muestran
+        // solo como referencia (el bitmap de PDF.js no pinta los widgets).
+        if (tipo === 'button' || tipo === 'signature') {
+          const firma = tipo === 'signature'
+          return (
+            <div key={`${field.field_name}-${i}`}
+              role="note"
+              aria-label={firma ? `Firma ${field.field_name}` : `Botón ${field.field_name}`}
+              title={firma ? `${field.field_name} — campo de firma (no editable)` : field.field_name}
+              className="flex items-center justify-center overflow-hidden text-micro text-paper-ink rounded-token-sm"
+              style={{
+                ...style,
+                pointerEvents: 'none',
+                border: `1px ${firma ? 'dashed' : 'solid'} rgb(var(--paper-muted))`,
+                background: 'rgb(var(--paper-muted) / 0.10)',
+              }}
+            >
+              {firma ? 'Firma' : (field.caption || '')}
+            </div>
+          )
+        }
         if (isCheckbox) {
           return (
             <input key={`${field.field_name}-${i}`} type="checkbox"
-              checked={field.value === 'Yes' || field.value === 'On'}
-              onChange={(e) => onChange(field.field_name, e.target.checked ? 'Yes' : 'Off')}
+              checked={estaEncendido(field)}
+              disabled={soloLectura}
+              onChange={(e) => onChange(field.field_name,
+                e.target.checked ? (field.on_state || 'Yes') : 'Off', field.xref)}
               className="accent-[rgb(var(--paper-ink))]"
               style={style}
               title={field.field_name}
@@ -216,11 +282,15 @@ export default function FormFieldsLayer({
           )
         }
         if (isRadio) {
-          const checked = field.value === 'Yes' || field.value === 'On' || field.value === field.field_name
+          // Se manda el estado activo de ESTA opción y su xref. Antes iba
+          // `options[0] || 'Yes'` —lo mismo para todas— y el motor encendía la primera.
+          // El grupo es el nombre completo: con el prefijo antes del punto, «form.q1» y
+          // «form.q2» quedaban en el mismo grupo del navegador.
           return (
-            <input key={`${field.field_name}-${i}`} type="radio" name={field.field_name.split('.').slice(0, -1).join('.') || field.field_name}
-              checked={checked}
-              onChange={() => onChange(field.field_name, field.options[0] || 'Yes')}
+            <input key={`${field.field_name}-${i}`} type="radio" name={field.field_name}
+              checked={estaEncendido(field)}
+              disabled={soloLectura}
+              onChange={() => onChange(field.field_name, field.on_state || field.options[0] || 'Yes', field.xref)}
               className="accent-[rgb(var(--paper-ink))]"
               style={style}
               title={field.field_name}
@@ -232,6 +302,7 @@ export default function FormFieldsLayer({
           return (
             <select key={`${field.field_name}-${i}`}
               value={field.value}
+              disabled={soloLectura}
               onChange={(e) => onChange(field.field_name, e.target.value)}
               className="bg-paper text-paper-ink text-mini border border-border-control rounded-token-sm"
               style={style}

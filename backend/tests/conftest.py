@@ -62,3 +62,11 @@ def _reset_lru_cap():
     original = pdf_service._max_live_docs
     yield
     pdf_service._max_live_docs = original
+
+@pytest.fixture(autouse=True)
+def respaldos_aislados(tmp_path_factory, monkeypatch):
+    """Cada test respalda en su propia carpeta: si no, los guardados de la batería
+    irían a la carpeta de respaldos real del usuario (LOCALAPPDATA)."""
+    carpeta = tmp_path_factory.mktemp("respaldos")
+    monkeypatch.setenv("PDFMASTER_RESPALDOS", str(carpeta))
+    return carpeta

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { X, Settings } from 'lucide-react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
+import { apiFetch } from '../lib/api'
 import { type ThemePreference, type WheelMode, type DefaultZoomMode } from '../store/usePdfStore'
 
 /** Lo que dura `panel-out`/`overlay-out` en App.css (`--dur-fast`). */
@@ -41,6 +42,13 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   )
 
   const [exportando, setExportando] = useState(false)
+  // Dónde guarda el motor los respaldos del original (fuera de la carpeta del plano).
+  const [respaldos, setRespaldos] = useState<{ dir: string; days: number } | null>(null)
+  useEffect(() => {
+    let vivo = true
+    apiFetch('/pdf/backups').then((r) => (r.ok ? r.json() : null)).then((d) => { if (vivo && d?.dir) setRespaldos(d) }).catch(() => {})
+    return () => { vivo = false }
+  }, [])
 
   /** Los logs viven en %APPDATA%\pdf-master\logs y nadie sabe que existen: sin esto,
    * reportar un fallo desde otra máquina es describirlo de memoria. */
@@ -165,12 +173,20 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               onChange={(v) => setRestoreSession(v === 'on')} />
           </Row>
 
-          <Row label="Copia .bak al guardar"
-            hint="Activado por defecto: la primera vez que guardás in-place se deja una copia .bak junto al original. Nunca en automático.">
+          <Row label="Respaldar el original al guardar"
+            hint={`Antes de guardar encima de un PDF, la app guarda cómo estaba en su carpeta de respaldos (no en la del plano): uno por archivo y por día, el de antes del primer guardado. Se borran solos a los ${respaldos?.days ?? 30} días.`}>
             <Segmented<'on' | 'off'> value={backupOnSave ? 'on' : 'off'}
               options={[['off', 'No'], ['on', 'Sí']]}
               onChange={(v) => setBackupOnSave(v === 'on')} />
           </Row>
+          {respaldos && (
+            <Row label="Carpeta de respaldos" hint={respaldos.dir}>
+              <button onClick={() => { window.api.openFolder(respaldos.dir).catch(() => {}) }}
+                className="px-2.5 h-7 rounded-token-sm text-micro border border-border bg-surface text-fg hover:bg-hover transition-colors duration-fast ease-token">
+                Abrir
+              </button>
+            </Row>
+          )}
           </Seccion>
 
           <Seccion titulo="Diagnóstico">

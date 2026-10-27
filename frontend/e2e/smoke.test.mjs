@@ -89,7 +89,8 @@ test('la barra de estado cuenta las tres páginas', async (t) => {
   if (motivoDeSalto) return t.skip(motivoDeSalto)
   assert.equal(await win.inputValue('[aria-label="Página actual"]'), '1')
   const contador = win.locator('[aria-label="Página actual"]').locator('xpath=..')
-  assert.match(await contador.innerText(), /\/\s*3/)
+  // El navegador de la barra de estado dice «de 3» (antes «/ 3»).
+  assert.match(await contador.innerText(), /de\s*3/)
 })
 
 // Nueve vistas y paneles pasaron a `React.lazy` para sacarlos del chunk de arranque.

@@ -1,8 +1,13 @@
-import { CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveVertical, ScrollText, ChevronDown, Pointer } from 'lucide-react'
+import {
+  CheckCircle2, Loader2, Ruler, ZoomIn, ZoomOut, Maximize2, MoveHorizontal, Rows3, ChevronDown, Pointer,
+  ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useStoreSlice } from '../hooks/useStoreSlice'
 import { toolLabel } from '../lib/tools'
 import { scaleForPage } from '../store/usePdfStore'
+import { describirPapel } from '../lib/paperSize'
+import Tooltip from './Tooltip'
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
 
@@ -32,9 +37,9 @@ export default function StatusBar() {
   const escalaPropia = activeDoc?.pageScales?.[pagina]
   const measuring = !!activeTool && activeTool.startsWith('measure')
   const zoomPercent = activeDoc ? Math.round(activeDoc.zoom * 100) : 100
-  const dims = activeDoc
-    ? `${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.width || 0)} × ${Math.round(activeDoc.page_sizes[activeDoc.currentPage]?.height || 0)} pt`
-    : ''
+  const tamPagina = activeDoc?.page_sizes?.[activeDoc.currentPage]
+  const dims = tamPagina ? describirPapel(tamPagina.width, tamPagina.height) : ''
+  const dimsPt = tamPagina ? `${Math.round(tamPagina.width)} × ${Math.round(tamPagina.height)} pt` : ''
 
   const applyFit = (mode: 'fit-width' | 'fit-page') => {
     if (!activeDoc) return
@@ -47,18 +52,33 @@ export default function StatusBar() {
   return (
     <div className="relative z-dropdown h-status material material-edge text-muted flex items-center px-3 text-mini select-none gap-3">
       {activeDoc ? (
-        <span className="flex items-center gap-1">
-          Pág.
+        <div className="flex items-center gap-0.5" role="group" aria-label="Navegación de páginas">
+          <Tooltip content="Primera página" position="top">
+            <button onClick={() => setPage(activeDoc.doc_id, 0)} disabled={activeDoc.currentPage === 0}
+              aria-label="Primera página" className={iconBtn}><ChevronsLeft size={14} /></button>
+          </Tooltip>
+          <Tooltip content="Página anterior" position="top">
+            <button onClick={() => setPage(activeDoc.doc_id, activeDoc.currentPage - 1)} disabled={activeDoc.currentPage === 0}
+              aria-label="Página anterior" className={iconBtn}><ChevronLeft size={14} /></button>
+          </Tooltip>
           <input type="number" min={1} max={activeDoc.page_count} value={activeDoc.currentPage + 1}
             onChange={(e) => { const v = parseInt(e.target.value); if (v >= 1 && v <= activeDoc.page_count) setPage(activeDoc.doc_id, v - 1) }}
             aria-label="Página actual"
-            className="w-10 border border-border rounded-token-sm px-1 py-0.5 text-center bg-panel text-fg focus:outline-none focus:border-fg" />
-          / {activeDoc.page_count}
-        </span>
+            className="w-11 h-6 mx-0.5 border border-border rounded-token-sm px-1 text-center bg-surface text-fg tabular focus:outline-none focus:border-accent" />
+          <span className="tabular whitespace-nowrap">de {activeDoc.page_count}</span>
+          <Tooltip content="Página siguiente" position="top">
+            <button onClick={() => setPage(activeDoc.doc_id, activeDoc.currentPage + 1)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1}
+              aria-label="Página siguiente" className={iconBtn}><ChevronRight size={14} /></button>
+          </Tooltip>
+          <Tooltip content="Última página" position="top">
+            <button onClick={() => setPage(activeDoc.doc_id, activeDoc.page_count - 1)} disabled={activeDoc.currentPage >= activeDoc.page_count - 1}
+              aria-label="Última página" className={iconBtn}><ChevronsRight size={14} /></button>
+          </Tooltip>
+        </div>
       ) : (
         <span>Sin documento</span>
       )}
-      {dims && <span className="text-muted">{dims}</span>}
+      {dims && <span className="text-muted whitespace-nowrap" title={dimsPt}>{dims}</span>}
 
       {activeDoc && scale && (
         <span className="flex items-center gap-1 text-muted"
@@ -117,9 +137,9 @@ export default function StatusBar() {
         <>
           <button onClick={() => toggleContinuousMode()} className={`${iconBtn} ${continuousMode ? 'bg-selected text-fg hover:text-fg' : ''}`}
             title="Scroll continuo" aria-label="Scroll continuo" aria-pressed={continuousMode}>
-            <ScrollText size={14} />
+            <Rows3 size={14} />
           </button>
-          <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho" aria-label="Ajustar al ancho"><MoveVertical size={14} /></button>
+          <button onClick={() => applyFit('fit-width')} className={iconBtn} title="Ajustar al ancho" aria-label="Ajustar al ancho"><MoveHorizontal size={14} /></button>
           <button onClick={() => applyFit('fit-page')} className={iconBtn} title="Ajustar página" aria-label="Ajustar página"><Maximize2 size={14} /></button>
           <div className="w-px h-4 mx-1 bg-border" />
           <button onClick={() => setZoom(activeDoc.doc_id, activeDoc.zoom - 0.15)} className={iconBtn} title="Alejar" aria-label="Alejar"><ZoomOut size={14} /></button>

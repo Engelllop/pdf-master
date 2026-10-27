@@ -456,3 +456,162 @@ class TestCacheDeRenderTrasEditar:
             assert self._bitmap(client, doc_id) == antes
         finally:
             client.post(f"/pdf/close/{doc_id}")
+
+
+def _pdf_con_parrafo(tmp_path, rotacion=0):
+    """Un párrafo de tres renglones (cada uno en su propio bloque, como los escribe
+    PyMuPDF y muchos CAD) y una línea suelta debajo que no se puede pisar."""
+    path = str(tmp_path / f"parrafo-{rotacion}.pdf")
+    doc = fitz.open()
+    page = doc.new_page(width=612, height=792)
+    page.insert_text((72, 60), "NOTAS GENERALES", fontsize=14, fontname="hebo")
+    page.insert_textbox(fitz.Rect(72, 80, 400, 200),
+                        "Todas las tuberias de agua potable seran de PVC SDR-26 salvo indicacion "
+                        "contraria. Las pruebas hidrostaticas se haran a 150 psi durante dos horas sin perdida.",
+                        fontsize=10, fontname="helv", lineheight=1.5)
+    page.insert_text((72, 160), "Linea de abajo", fontsize=10)
+    page.set_rotation(rotacion)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def _en_vista(path, x, y):
+    with fitz.open(path) as d:
+        p = fitz.Point(x, y) * d[0].rotation_matrix
+    return {"x": p.x, "y": p.y}
+
+
+class TestEditarParrafo:
+    """«Editar texto» trabaja por párrafo: antes editaba un tramo de un renglón, y un
+    Enter escribía la segunda línea ENCIMA del renglón siguiente."""
+
+    def test_el_punto_devuelve_el_parrafo_entero_con_el_ajuste_unido(self, client, tmp_path):
+        path = _pdf_con_parrafo(tmp_path)
+        doc_id = _open(client, path)
+        b = client.get(f"/pdf/text-block/{doc_id}/0", params=_en_vista(path, 150, 100)).json()
+        assert b["mode"] == "block"
+        assert b["text"].startswith("Todas las tuberias") and b["text"].endswith("sin perdida.")
+        assert "\n" not in b["text"], "los cortes del ajuste no son saltos del autor"
+        assert 1.4 < b["lineHeight"] < 1.8
+        assert "Linea de abajo" not in b["text"] and "NOTAS" not in b["text"]
+
+    def test_un_titulo_es_su_propia_linea_y_trae_la_negrita(self, client, tmp_path):
+        path = _pdf_con_parrafo(tmp_path)
+        doc_id = _open(client, path)
+        b = client.get(f"/pdf/text-block/{doc_id}/0", params=_en_vista(path, 100, 55)).json()
+        assert b["mode"] == "line" and b["text"] == "NOTAS GENERALES" and b["bold"] is True
+
+    def test_fuera_del_texto_es_404(self, client, tmp_path):
+        doc_id = _open(client, _pdf_con_parrafo(tmp_path))
+        assert client.get(f"/pdf/text-block/{doc_id}/0", params={"x": 500, "y": 700}).status_code == 404
+
+    @staticmethod
+    def _reescribir(client, path, texto):
+        doc_id = _open(client, path)
+        b = client.get(f"/pdf/text-block/{doc_id}/0", params=_en_vista(path, 150, 100)).json()
+        r = client.post(f"/pdf/edit-text/{doc_id}", json={
+            "page_num": 0, "x0": b["x0"], "y0": b["y0"], "x1": b["x1"], "y1": b["y1"], "text": texto,
+            "size": b["size"], "color": b["color"], "font": b["font"], "wrap": True,
+            "align": b["align"], "line_height": b["lineHeight"],
+        })
+        assert r.status_code == 200, r.text
+        out = str(tmp_path_out(path))
+        assert client.post(f"/pdf/save/{doc_id}", params={"output_path": out}).status_code == 200
+        return r.json(), fitz.open(out)
+
+    def test_el_enter_baja_de_linea_sin_pisar_lo_de_abajo(self, client, tmp_path):
+        res, doc = self._reescribir(client, _pdf_con_parrafo(tmp_path),
+                                    "Primera linea del parrafo nuevo.\nSegunda linea pedida con Enter.")
+        lineas = {"".join(s["text"] for s in l["spans"]).strip(): fitz.Rect(l["bbox"])
+                  for b in doc[0].get_text("dict")["blocks"] for l in b.get("lines", [])}
+        primera, segunda = lineas["Primera linea del parrafo nuevo."], lineas["Segunda linea pedida con Enter."]
+        abajo = lineas["Linea de abajo"]
+        assert segunda.y0 >= primera.y1 - 1, "la segunda línea va debajo de la primera"
+        assert not segunda.intersects(abajo) and not primera.intersects(abajo)
+        assert not any("Todas las tuberias" in t for t in lineas), "el párrafo viejo se va entero"
+        assert res["overflow"] is False
+
+    def test_el_texto_largo_se_ajusta_al_ancho_del_parrafo(self, client, tmp_path):
+        largo = "palabra " * 40
+        _, doc = self._reescribir(client, _pdf_con_parrafo(tmp_path), largo.strip())
+        cajas = [fitz.Rect(l["bbox"]) for b in doc[0].get_text("dict")["blocks"] for l in b.get("lines", [])
+                 if "palabra" in "".join(s["text"] for s in l["spans"])]
+        assert len(cajas) >= 3, "una sola línea larguísima era el bug"
+        assert max(c.x1 for c in cajas) <= 400 + 10
+
+    def test_si_no_entra_avisa_que_crecio(self, client, tmp_path):
+        res, _ = self._reescribir(client, _pdf_con_parrafo(tmp_path), "renglon\n" * 8)
+        assert res["overflow"] is True
+
+    def test_en_pagina_girada_tambien(self, client, tmp_path):
+        _, doc = self._reescribir(client, _pdf_con_parrafo(tmp_path, 90), "Uno.\nDos.")
+        textos = doc[0].get_text()
+        assert "Uno." in textos and "Dos." in textos and "Todas las tuberias" not in textos
+
+
+def tmp_path_out(path):
+    return path.replace(".pdf", "-guardado.pdf")
+
+
+class TestMoverImagenSinRomperLoDemas:
+    """Mover/borrar con «Editar imagen» redactaba el rect: se llevaba el escaneo de
+    fondo entero, el texto de debajo y la transparencia del logo."""
+
+    @staticmethod
+    def _plano(tmp_path):
+        from PIL import Image
+        logo = Image.new("RGBA", (60, 60), (0, 0, 0, 0))
+        for x in range(60):
+            for y in range(60):
+                if (x - 30) ** 2 + (y - 30) ** 2 < 400:
+                    logo.putpixel((x, y), (255, 0, 0, 255))
+        logo_p, scan_p = str(tmp_path / "logo.png"), str(tmp_path / "scan.png")
+        logo.save(logo_p)
+        Image.new("RGB", (300, 300), (230, 230, 200)).save(scan_p)
+        path = str(tmp_path / "plano.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=595, height=842)
+        page.insert_image(fitz.Rect(50, 50, 545, 545), filename=scan_p)
+        page.insert_text((120, 130), "TEXTO BAJO EL LOGO", fontsize=12)
+        page.draw_line((100, 160), (300, 160))
+        xref = page.insert_image(fitz.Rect(100, 100, 200, 200), filename=logo_p)
+        # El mismo logo, reutilizado en otro sitio (como en cada carátula).
+        page.insert_image(fitz.Rect(400, 600, 500, 700), xref=xref)
+        doc.save(path)
+        doc.close()
+        return path
+
+    def _mover(self, client, tmp_path, nuevo=None, borrar=False):
+        path = self._plano(tmp_path)
+        doc_id = _open(client, path)
+        imgs = client.get(f"/pdf/images/{doc_id}/0").json()["images"]
+        logo = next(i for i in imgs if abs(i["x0"] - 100) < 1)
+        r = client.post(f"/pdf/transform-image/{doc_id}", json={
+            "page_num": 0, "xref": logo["xref"], "old": [logo[k] for k in ("x0", "y0", "x1", "y1")],
+            "new": nuevo, "delete": borrar,
+        })
+        assert r.status_code == 200, r.text
+        out = str(tmp_path / "salida.pdf")
+        assert client.post(f"/pdf/save/{doc_id}", params={"output_path": out}).status_code == 200
+        return fitz.open(out)[0]
+
+    def test_mover_el_logo_no_toca_el_escaneo_ni_el_texto(self, client, tmp_path):
+        page = self._mover(client, tmp_path, nuevo=[400, 100, 500, 200])
+        cajas = sorted(tuple(round(v) for v in i["bbox"]) for i in page.get_image_info())
+        assert (50, 50, 545, 545) in cajas, "el escaneo de fondo sigue"
+        assert (400, 100, 500, 200) in cajas and (400, 600, 500, 700) in cajas
+        assert (100, 100, 200, 200) not in cajas
+        assert "TEXTO BAJO EL LOGO" in page.get_text()
+        assert any(round(d["rect"].y0) == 160 for d in page.get_drawings()), "la línea sigue"
+
+    def test_conserva_la_transparencia(self, client, tmp_path):
+        page = self._mover(client, tmp_path, nuevo=[400, 100, 500, 200])
+        esquina = page.get_pixmap(clip=fitz.Rect(400, 100, 500, 200)).pixel(2, 2)
+        assert esquina == (230, 230, 200), "la esquina transparente deja ver el escaneo, no negro"
+
+    def test_borrar_quita_solo_esa_colocacion(self, client, tmp_path):
+        page = self._mover(client, tmp_path, borrar=True)
+        cajas = sorted(tuple(round(v) for v in i["bbox"]) for i in page.get_image_info())
+        assert cajas == [(50, 50, 545, 545), (400, 600, 500, 700)]
+        assert page.get_pixmap(clip=fitz.Rect(100, 100, 200, 200)).pixel(50, 50) == (230, 230, 200)

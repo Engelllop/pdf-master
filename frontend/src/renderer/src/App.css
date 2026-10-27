@@ -406,6 +406,30 @@ a:focus-visible,
    la copia de medida CON etiquetas, que si no medía lo mismo que la compacta y
    dejaba a la fila sin forma de volver a las etiquetas al ensancharse. */
 [data-ribbon-etiquetas] .rb-label { display: inline; }
+/* Banda sin etiquetas: el botón grande pasa a cuadrado de icono. */
+[data-ribbon-compacto] .rb-btn { min-width: 36px; }
+/* En la banda, el separador de grupos ocupa el alto de los botones. */
+.rb-band [data-ribbon-sep] { height: 50px; align-self: flex-start; margin: 0 6px; }
+.rb-band .rb-group { padding: 0 2px; }
+/* En el menú de desbordamiento los grupos se apilan y pierden el rótulo de pie: ahí
+   cada botón ya lleva el suyo. */
+[role="group"][aria-label="Más herramientas"] .rb-group { height: auto; flex-direction: column-reverse; }
+[role="group"][aria-label="Más herramientas"] [data-ribbon-sep] { width: auto; height: 1px; margin: 4px 0; }
+[role="group"][aria-label="Más herramientas"] .rb-caption { text-align: left; padding: 4px 6px 2px; }
+[role="group"][aria-label="Más herramientas"] .rb-btn { flex-direction: row; justify-content: flex-start; height: 32px; gap: 8px; padding: 0 8px; }
+
+/* El buscador de la fila de pestañas: campo ancho mientras hay sitio, lupa sola en
+   una fila estrecha. Mide la fila, no la ventana: un panel abierto también estrecha. */
+.rb-tabs { container-type: inline-size; }
+.rb-search { width: 15rem; }
+@container (max-width: 860px) {
+  .rb-search { width: auto; }
+  .rb-search-text { display: none; }
+}
+
+/* Un campo que vive dentro de una caja con su propio borde de foco no dibuja el
+   anillo global: eran dos anillos, uno dentro del otro. */
+input.input-bare:focus-visible { outline: none; box-shadow: none; }
 
 /* Grosor de trazo único para TODOS los iconos. Lucide viene a 2, que a 14 px se ve
    embarrado; la cinta ya pedía 1.75 a mano en once sitios y el resto de la app

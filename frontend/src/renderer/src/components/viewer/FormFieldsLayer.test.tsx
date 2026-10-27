@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import FormFieldsLayer from './FormFieldsLayer'
+import FormFieldsLayer, { estaEncendido } from './FormFieldsLayer'
 import { type FormField } from '../../hooks/useFormFields'
 import { askConfirm } from '../../lib/uiPrompt'
 
@@ -78,13 +78,14 @@ describe('campos de formulario', () => {
   it('las casillas guardan en el acto (son una sola acción)', () => {
     const onChange = renderLayer([field({ field_name: 'residencial', field_type: 'CheckBox', value: 'Off' })])
     fireEvent.click(screen.getByRole('checkbox'))
-    expect(onChange).toHaveBeenCalledWith('residencial', 'Yes')
+    // Motor viejo sin `on_state`: se manda «Yes», como siempre.
+    expect(onChange).toHaveBeenCalledWith('residencial', 'Yes', 11)
   })
 
   it('un radio se confirma al marcarlo', () => {
     const onChange = renderLayer([field({ field_name: 'tipo.a', field_type: 'RadioButton', value: 'Off', options: ['Yes'] })])
     fireEvent.click(screen.getByRole('radio'))
-    expect(onChange).toHaveBeenCalledWith('tipo.a', 'Yes')
+    expect(onChange).toHaveBeenCalledWith('tipo.a', 'Yes', 11)
   })
 
   it('sin campos no pinta capa (no debe tapar el clic sobre la página)', () => {
@@ -112,5 +113,111 @@ describe('campos de formulario', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Eliminar campo' }))
     await waitFor(() => expect(askConfirm).toHaveBeenCalled())
     expect(onTransform).not.toHaveBeenCalled()
+  })
+
+  describe('casillas y opciones con su estado activo', () => {
+    const radio = (xref: number, on: string, value: string) => field({
+      xref, field_name: 'sexo', field_type: 'RadioButton', value, on_state: on, options: [],
+    })
+
+    it('tilda la opción elegida aunque su estado no sea Yes (Choice2 de Acrobat)', () => {
+      renderLayer([radio(6, 'Choice1', 'Off'), radio(7, 'Choice2', 'Choice2')])
+      const [a, b] = screen.getAllByRole('radio') as HTMLInputElement[]
+      expect(a.checked).toBe(false)
+      expect(b.checked).toBe(true)
+    })
+
+    it('elegir una opción manda SU estado activo y su xref, no los de la primera', () => {
+      const onChange = renderLayer([radio(6, 'Choice1', 'Off'), radio(7, 'Choice2', 'Off')])
+      fireEvent.click(screen.getAllByRole('radio')[1])
+      expect(onChange).toHaveBeenCalledWith('sexo', 'Choice2', 7)
+    })
+
+    it('una casilla con estado «1» se ve tildada y se puede destildar', () => {
+      const onChange = renderLayer([field({ field_name: 'acepto', field_type: 'CheckBox', value: '1', on_state: '1' })])
+      const casilla = screen.getByRole('checkbox') as HTMLInputElement
+      expect(casilla.checked).toBe(true)
+      fireEvent.click(casilla)
+      expect(onChange).toHaveBeenCalledWith('acepto', 'Off', 11)
+    })
+
+    it('al tildarla manda su estado activo, no «Yes»', () => {
+      const onChange = renderLayer([field({ field_name: 'acepto', field_type: 'CheckBox', value: 'Off', on_state: '1' })])
+      fireEvent.click(screen.getByRole('checkbox'))
+      expect(onChange).toHaveBeenCalledWith('acepto', '1', 11)
+    })
+
+    it('estaEncendido compara con el estado activo del widget', () => {
+      expect(estaEncendido(radio(1, 'Choice2', 'Choice2'))).toBe(true)
+      expect(estaEncendido(radio(1, 'Choice1', 'Off'))).toBe(false)
+      expect(estaEncendido(radio(1, 'Choice1', 'Choice2'))).toBe(false)
+      expect(estaEncendido(field({ field_type: 'CheckBox', value: 'Yes' }))).toBe(true)
+    })
+  })
+
+  describe('pulsadores y firmas', () => {
+    it('no se dibujan como cuadros de texto editables', () => {
+      renderLayer([
+        field({ xref: 1, field_name: 'Imprimir', field_type: 'Button', value: '', caption: 'Imprimir' }),
+        field({ xref: 2, field_name: 'Firma1', field_type: 'Signature', value: '' }),
+      ])
+      expect(screen.queryByRole('textbox')).toBeNull()
+      expect(screen.getByRole('note', { name: 'Botón Imprimir' }).textContent).toBe('Imprimir')
+      expect(screen.getByRole('note', { name: 'Firma Firma1' })).toBeTruthy()
+    })
+  })
+
+  describe('banderas del campo', () => {
+    it('solo lectura: no se edita ni se guarda', () => {
+      const onChange = renderLayer([field({ field_flags: 1 })])
+      const input = screen.getByRole('textbox') as HTMLInputElement
+      expect(input.readOnly).toBe(true)
+      fireEvent.change(input, { target: { value: '99' } })
+      fireEvent.blur(input)
+      expect(onChange).not.toHaveBeenCalled()
+    })
+
+    it('casilla, opción y lista de solo lectura quedan deshabilitadas', () => {
+      renderLayer([
+        field({ xref: 1, field_name: 'c', field_type: 'CheckBox', value: 'Off', field_flags: 1 }),
+        field({ xref: 2, field_name: 'r', field_type: 'RadioButton', value: 'Off', field_flags: 1 }),
+        field({ xref: 3, field_name: 'l', field_type: 'ComboBox', value: 'a', options: ['a'], field_flags: 1 }),
+      ])
+      expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true)
+      expect((screen.getByRole('radio') as HTMLInputElement).disabled).toBe(true)
+      expect((screen.getByRole('combobox') as HTMLSelectElement).disabled).toBe(true)
+    })
+
+    it('multilínea: es un textarea y Enter no confirma', () => {
+      const onChange = renderLayer([field({ field_flags: 4096, value: 'uno' })])
+      const area = screen.getByRole('textbox')
+      expect(area.tagName).toBe('TEXTAREA')
+      area.focus()
+      fireEvent.change(area, { target: { value: 'uno\ndos' } })
+      fireEvent.keyDown(area, { key: 'Enter' })
+      expect(onChange).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(area)
+      fireEvent.blur(area)
+      expect(onChange).toHaveBeenCalledWith('medidores', 'uno\ndos')
+    })
+
+    it('multilínea: Ctrl+Enter confirma', () => {
+      const onChange = renderLayer([field({ field_flags: 4096, value: 'uno' })])
+      const area = screen.getByRole('textbox')
+      area.focus()
+      fireEvent.change(area, { target: { value: 'dos' } })
+      fireEvent.keyDown(area, { key: 'Enter', ctrlKey: true })
+      expect(onChange).toHaveBeenCalledWith('medidores', 'dos')
+    })
+
+    it('respeta el largo máximo', () => {
+      renderLayer([field({ text_maxlen: 5 })])
+      expect((screen.getByRole('textbox') as HTMLInputElement).maxLength).toBe(5)
+    })
+
+    it('sin largo máximo no pone límite', () => {
+      renderLayer([field({ text_maxlen: 0 })])
+      expect((screen.getByRole('textbox') as HTMLInputElement).maxLength).toBe(-1)
+    })
   })
 })

@@ -15,6 +15,7 @@ import { esErrorDeCuota, restoreLiveSession } from './lib/session'
 import { requestCloseDoc } from './lib/closeDocument'
 import { updateRecentMeta } from './lib/recents'
 import { TOOL_KEYS } from './lib/tools'
+import { ribbonForTool } from './lib/commentRibbon'
 import CalibrationBanner from './components/CalibrationBanner'
 import ProgressBar from './components/ProgressBar'
 import UnsavedDialog from './components/UnsavedDialog'
@@ -79,7 +80,8 @@ function App() {
   // Panel de atajos: F1 lo abre/cierra; Esc lo cierra; la toolbar lo abre por evento.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'F1') {
+      // Ctrl+F1 es contraer la cinta (RibbonTabs), como en Office.
+      if (e.key === 'F1' && !e.ctrlKey) {
         e.preventDefault()
         setShowShortcuts((s) => !s)
       } else if (e.key === 'Escape') {
@@ -347,7 +349,7 @@ function App() {
         if (!isEditing && tool) {
           e.preventDefault()
           store.setActiveTool(store.activeTool === tool ? null : tool)
-          store.setActiveRibbon('comment')
+          store.setActiveRibbon(ribbonForTool(tool))
           return
         }
       }
@@ -431,10 +433,13 @@ function App() {
         </div>
       )}
       {!readingMode && <TopBar />}
+      {/* La cinta y la barra de estado cruzan la ventana entera, como en cualquier
+          suite de escritorio: colgadas de la columna del documento, el riel de
+          paneles las empujaba y la cinta arrancaba en un sitio distinto del título. */}
+      {!readingMode && <Toolbar />}
       <div className="flex-1 flex overflow-hidden">
         {!readingMode && !compareMode && <ThumbnailPanel />}
         <div className="relative flex-1 flex flex-col overflow-hidden">
-          {!readingMode && <Toolbar />}
           {/* El aviso de calibración se ancla AQUÍ, al área del documento: colgado de
               la columna entera, su `top-3` caía sobre la cinta y tapaba las
               herramientas justo cuando hay que usarlas. */}
@@ -452,7 +457,6 @@ function App() {
             {!readingMode && !compareMode && <CalibrationBanner />}
           </div>
           <ProgressBar />
-          {!readingMode && <StatusBar />}
         </div>
         {!readingMode && aiOpen && (
           <Suspense fallback={<div className="w-[360px] border-l border-border-strong bg-panel shrink-0" />}>
@@ -460,6 +464,7 @@ function App() {
           </Suspense>
         )}
       </div>
+      {!readingMode && <StatusBar />}
       <Toasts />
       <UnsavedDialog />
       {formModal}

@@ -35,6 +35,7 @@ import { Loader2, X } from 'lucide-react'
 
 import { apiFetch } from '../lib/api'
 import { editTextUndoable } from '../lib/pageUndo'
+import { FUENTES_BASE, textoEditable, type TextoEditable } from '../lib/textoEditable'
 
 export default function Viewer() {
   const store = useStoreSlice(
@@ -187,7 +188,9 @@ export default function Viewer() {
   }, [setViewerSize, hasDoc])
 
   // Edición in-situ de texto existente (herramienta 'edittext')
-  const [editSpan, setEditSpan] = useState<{ x0: number; y0: number; x1: number; y1: number; size: number; color: string; font: string; value: string } | null>(null)
+  // El motor devuelve el párrafo bajo el cursor (o la línea, o el tramo si se mezclan
+  // estilos) con su formato; el editor trabaja sobre eso.
+  const [editSpan, setEditSpan] = useState<TextoEditable | null>(null)
 
   // Colocación de una firma guardada: el gestor la elige y el siguiente clic en la
   // página la sitúa (escalada al ancho estándar).
@@ -285,17 +288,16 @@ export default function Viewer() {
     // escrito se perdía. Sin preventDefault a propósito — es lo que dispara el blur.
     if (editingTextAnn || textPos || editSpan) return
 
-    // Editar texto existente: busca el span bajo el cursor y abre el editor in-place
+    // Editar texto existente: pide al motor el párrafo bajo el cursor y abre el editor
     if (store.activeTool === 'edittext') {
       e.preventDefault()
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      apiFetch(`/pdf/spans/${activeDoc.doc_id}/${activeDoc.currentPage}`)
-        .then((r) => r.json())
-        .then(({ spans }: { spans: Array<{ x0: number; y0: number; x1: number; y1: number; text: string; size: number; color: string; font: string }> }) => {
-          const hit = spans.find((s) => pdfX >= s.x0 - 1 && pdfX <= s.x1 + 1 && pdfY >= s.y0 - 1 && pdfY <= s.y1 + 1)
-          if (!hit) { store.showToast('Haz clic justo sobre el texto que quieres editar', 'info'); return }
-          setEditSpan({ x0: hit.x0, y0: hit.y0, x1: hit.x1, y1: hit.y1, size: hit.size, color: hit.color || '#000000', font: hit.font || 'Arial', value: hit.text })
+      apiFetch(`/pdf/text-block/${activeDoc.doc_id}/${activeDoc.currentPage}?x=${pdfX}&y=${pdfY}`)
+        .then(async (r) => {
+          if (r.status === 404) { store.showToast('Hacé clic justo sobre el texto que querés editar', 'info'); return }
+          if (!r.ok) throw new Error(String(r.status))
+          setEditSpan(textoEditable(await r.json()))
         })
         .catch(() => store.showToast('Error al leer el texto de la página', 'error'))
       return
@@ -372,7 +374,9 @@ export default function Viewer() {
           imgModeRef.current = 'resize'; imgStartRef.current = { ox: pt.x, oy: pt.y, rect: r }; setImgPreview(r); return
         }
       }
-      const idx = pageImages.findIndex((im) => { const r = imgLocalOf(im); return pt.x >= r.l && pt.x <= r.l + r.w && pt.y >= r.t && pt.y <= r.t + r.h })
+      // La de ARRIBA: la lista viene en orden de dibujo, y la primera que contenía el
+      // punto era el escaneo de fondo — un clic sobre el logo seleccionaba la lámina.
+      const idx = pageImages.findLastIndex((im) => { const r = imgLocalOf(im); return pt.x >= r.l && pt.x <= r.l + r.w && pt.y >= r.t && pt.y <= r.t + r.h })
       if (idx >= 0) { setSelImg(idx); imgModeRef.current = 'move'; const r = imgLocalOf(pageImages[idx]); imgStartRef.current = { ox: pt.x, oy: pt.y, rect: r }; setImgPreview(r) }
       else { setSelImg(null); setImgPreview(null) }
       return
@@ -618,9 +622,15 @@ export default function Viewer() {
     return () => window.removeEventListener('app:edit-annotation-text', onEdit as EventListener)
   }, [])
 
-  const commitEditText = () => {
+  const commitEditText = (medida?: { width: number; height: number }) => {
     if (!editingTextAnn || !activeDoc) return
-    store.updateAnnotationUndoable(activeDoc.doc_id, editingTextAnn, { text: editTextValue })
+    const ann = activeDoc.annotations.find((a) => a.id === editingTextAnn)
+    // La caja acompaña al texto: un cuadro de texto (o un globo) que creció al
+    // editarlo se guardaba con el alto viejo y el PDF cortaba las últimas líneas.
+    const caja = medida && ann?.type === 'text'
+      ? { width: ann.width ?? medida.width, height: medida.height }
+      : {}
+    store.updateAnnotationUndoable(activeDoc.doc_id, editingTextAnn, { text: editTextValue, ...caja })
     setEditingTextAnn(null)
     setEditTextValue('')
   }
@@ -952,43 +962,6 @@ export default function Viewer() {
                 )
               })()}
 
-              {/* Editor in-place de texto existente */}
-              {editSpan && activeDoc && (() => {
-                const sx2 = pageData.width / pageData.originalWidth
-                const s = toScreenCoords(editSpan.x0, editSpan.y0)
-                const fpx = (editSpan.size || 12) * sx2
-                const w = Math.max((editSpan.x1 - editSpan.x0) * sx2 + fpx * 3, fpx * 4)
-                const commit = async () => {
-                  const v = editSpan.value
-                  const span = editSpan
-                  setEditSpan(null)
-                  try {
-                    await editTextUndoable(activeDoc.doc_id, {
-                      page: activeDoc.currentPage,
-                      x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1,
-                      text: v, size: span.size, color: span.color, font: span.font,
-                    })
-                    store.showToast('Texto editado. Ctrl+Z deshace.', 'success')
-                  } catch { store.showToast('Error al editar texto', 'error') }
-                }
-                return (
-                  <textarea autoFocus value={editSpan.value}
-                    onChange={(e) => setEditSpan({ ...editSpan, value: e.target.value })}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit() }
-                      else if (e.key === 'Escape') { e.preventDefault(); setEditSpan(null) }
-                    }}
-                    onBlur={commit}
-                    className="absolute z-float outline-none resize-none overflow-hidden leading-tight"
-                    style={{
-                      left: s.x, top: s.y, fontSize: fpx, fontFamily: editSpan.font || 'Arial',
-                      color: editSpan.color || '#000', background: 'rgb(var(--paper))',
-                      width: w, height: fpx * 1.5,
-                      border: '1px solid rgb(var(--fg))', padding: 0, whiteSpace: 'pre',
-                    }} />
-                )
-              })()}
-
               {/* Area measurement floating controls */}
               {drawingArea && (
                 <div className="absolute z-float bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
@@ -1045,12 +1018,63 @@ export default function Viewer() {
               return (
                 <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
                   value={textInput} onChange={setTextInput}
-                  onCommit={() => { if (textInput.trim()) saveText(); else { setTextPos(null); setTextInput('') } }}
+                  wrapWidth={textPos.width ? textPos.width * activeDoc.zoom : undefined}
+                  onCommit={(medida) => { if (textInput.trim()) saveText(medida); else { setTextPos(null); setTextInput('') } }}
                   onCancel={() => { setTextPos(null); setTextInput('') }}
                   fontFamily={store.textFontFamily} fontSize={store.textFontSize} color={store.annotationColor}
                   style={store.textStyle}
                   onFontFamily={store.setTextFontFamily} onFontSize={store.setTextFontSize} onColor={store.setAnnotationColor}
                   onStyle={store.setTextStyle} />
+              )
+            })()}
+
+            {/* Editor in-place de texto del PDF (párrafo, línea o tramo). Vive en el wrapper
+                SIN escalar, como los otros editores: dentro del escalado se escalaba dos
+                veces y quedaba más chico que el párrafo que tenía que tapar. */}
+            {editSpan && activeDoc && (() => {
+              const sx2 = pageData.width / pageData.originalWidth
+              const s = toScreenCoords(editSpan.x0, editSpan.y0)
+              const enCaja = editSpan.mode !== 'span'
+              const commit = async () => {
+                const span = editSpan
+                setEditSpan(null)
+                // Sin cambios no se toca el PDF: confirmar por costumbre reescribía
+                // el párrafo con la fuente base y perdía la incrustada.
+                if (!span.dirty) return
+                try {
+                  const { overflow } = await editTextUndoable(activeDoc.doc_id, {
+                    page: activeDoc.currentPage,
+                    x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1,
+                    text: span.value, size: span.size, color: span.color, font: span.fontFamily,
+                    ...(enCaja ? {
+                      wrap: true, bold: span.bold, italic: span.italic, align: span.align,
+                      line_height: span.lineHeight,
+                    } : { bold: span.bold, italic: span.italic }),
+                  })
+                  if (overflow) store.showToast('El texto nuevo no entraba en el párrafo y se estiró hacia abajo: revisá que no pise lo de abajo. Ctrl+Z deshace.', 'info')
+                  else store.showToast('Texto editado. Ctrl+Z deshace.', 'success')
+                } catch { store.showToast('Error al editar texto', 'error') }
+              }
+              const cambiar = (c: Partial<TextoEditable>) => setEditSpan({ ...editSpan, ...c, dirty: true })
+              return (
+                <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
+                  value={editSpan.value} onChange={(v) => cambiar({ value: v })}
+                  onCommit={commit} onCancel={() => setEditSpan(null)}
+                  fontFamily={editSpan.fontFamily} fontSize={editSpan.size} color={editSpan.color}
+                  style={{ bold: editSpan.bold, italic: editSpan.italic, align: editSpan.align, lineHeight: editSpan.lineHeight, listStyle: 'none' }}
+                  onFontFamily={(f) => cambiar({ fontFamily: f })}
+                  onFontSize={(v) => cambiar({ size: v })}
+                  onColor={(c) => cambiar({ color: c })}
+                  onStyle={(st) => cambiar({
+                    ...(st.bold !== undefined ? { bold: st.bold } : {}),
+                    ...(st.italic !== undefined ? { italic: st.italic } : {}),
+                    ...(st.align ? { align: st.align } : {}),
+                    ...(st.lineHeight ? { lineHeight: st.lineHeight } : {}),
+                  })}
+                  wrapWidth={enCaja ? (editSpan.x1 - editSpan.x0) * sx2 * scale + editSpan.size * activeDoc.zoom * 0.6 : undefined}
+                  minHeight={(editSpan.y1 - editSpan.y0) * sx2 * scale}
+                  opaque fontOptions={FUENTES_BASE} showList={false}
+                  note={editSpan.mode === 'block' ? 'párrafo' : editSpan.mode === 'line' ? 'línea' : 'tramo con estilo propio'} />
               )
             })()}
 
@@ -1062,6 +1086,7 @@ export default function Viewer() {
               return (
                 <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
                   value={editTextValue} onChange={setEditTextValue}
+                  wrapWidth={ann.width ? ann.width * activeDoc.zoom : undefined}
                   onCommit={commitEditText}
                   onCancel={() => { setEditingTextAnn(null); setEditTextValue('') }}
                   onDelete={() => { deleteAnnotation(activeDoc.doc_id, ann.id); setEditingTextAnn(null); setEditTextValue('') }}

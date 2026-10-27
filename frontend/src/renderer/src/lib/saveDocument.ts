@@ -195,7 +195,7 @@ export async function avisarSiFallóLaCopia(res: Response): Promise<void> {
   try {
     const data = await res.clone().json()
     if (data?.backup_failed) {
-      usePdfStore.getState().showToast('Guardado, pero no se pudo crear la copia .bak', 'error')
+      usePdfStore.getState().showToast('Guardado, pero no se pudo respaldar el original', 'error')
     }
   } catch { /* respuesta sin cuerpo JSON: nada que avisar */ }
 }

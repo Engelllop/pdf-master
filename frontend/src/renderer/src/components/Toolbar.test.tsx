@@ -26,6 +26,7 @@ vi.mock('./FormModal', () => ({ useFormModal: () => ({ modal: null, ask: vi.fn()
 
 import Toolbar from './Toolbar'
 import { usePdfStore } from '../store/usePdfStore'
+import { TOOL_LABELS } from '../lib/tools'
 
 const initialState = usePdfStore.getState()
 
@@ -203,5 +204,44 @@ describe('buscar en TODOS los documentos abiertos', () => {
     await buscarEnTodos()
     await waitFor(() => expect(avisos().some((m) => m.startsWith('Cancelado:'))).toBe(true))
     expect(rutasBuscadas().length).toBeLessThan(3)
+  })
+})
+
+describe('la cinta', () => {
+  beforeEach(() => { abrir() })
+
+  // Al pasar de menús desplegables a una banda con grupos, ninguna herramienta de
+  // marca puede quedarse sin botón: esta es la lista de la cinta anterior.
+  const HERRAMIENTAS = [
+    'select', 'textselect', 'eraser', 'highlight', 'underline', 'strikethrough', 'note',
+    'draw', 'signature', 'text', 'stamp', 'count',
+    'measure_calibrate', 'measure_distance', 'measure_perimeter', 'measure_area',
+    'rect', 'circle', 'line', 'arrow', 'callout', 'check', 'cross', 'star', 'cloud', 'polygon',
+    'edittext', 'image', 'editimage', 'formtext', 'formcheck', 'formradio', 'formcombo',
+  ]
+
+  it('cada herramienta tiene su botón en alguna pestaña', () => {
+    const vistas = new Set<string>()
+    for (const tab of ['read', 'comment', 'measure', 'edit', 'page', 'protect', 'convert', 'ai'] as const) {
+      usePdfStore.getState().setActiveRibbon(tab)
+      const { unmount } = render(<Toolbar />)
+      for (const b of screen.getAllByRole('button')) {
+        const nombre = b.getAttribute('aria-label')
+        if (nombre) vistas.add(nombre)
+      }
+      unmount()
+    }
+    for (const id of HERRAMIENTAS) {
+      const tip = TOOL_LABELS[id]
+      const tieneBoton = [...vistas].some((n) => n === tip || n.startsWith(tip))
+      expect(tieneBoton, id).toBe(true)
+    }
+  })
+
+  it('pulsar una herramienta la activa sin cambiar de pestaña', () => {
+    usePdfStore.getState().setActiveRibbon('read')
+    render(<Toolbar />)
+    fireEvent.click(screen.getAllByLabelText(TOOL_LABELS.highlight)[0])
+    expect(usePdfStore.getState().activeRibbon).toBe('read')
   })
 })

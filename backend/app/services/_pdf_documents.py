@@ -5,12 +5,12 @@ import math
 import uuid
 import json
 import os
-import shutil
 import tempfile
 from typing import Callable, Dict, NamedTuple, Optional, List
 from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
+from app.services._pdf_respaldos import respaldar_original
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError
 
 logger = logging.getLogger("pdfmaster")
@@ -35,11 +35,13 @@ class DocumentsMixin:
         carpeta del plano, con el contenido del documento dentro."""
         copia_ok = True
         if backup and os.path.exists(save_path):
+            # El original del día va a la carpeta de respaldos de la app, no a un
+            # `.bak` al lado del plano (ver _pdf_respaldos).
             try:
-                shutil.copy2(save_path, save_path + '.bak')
+                respaldar_original(save_path)
             except Exception:
                 copia_ok = False
-                logger.exception("No se pudo crear la copia .bak de %s", save_path)
+                logger.exception("No se pudo respaldar %s antes de guardar", save_path)
         dir_name = os.path.dirname(os.path.abspath(save_path))
         # El temporal lleva la extensión del destino: openpyxl y python-pptx eligen el
         # formato por el nombre del archivo que reciben.
@@ -84,6 +86,7 @@ class DocumentsMixin:
             title=doc.metadata.get("title"),
             author=doc.metadata.get("author"),
             subject=doc.metadata.get("subject"),
+            keywords=doc.metadata.get("keywords"),
             current_page=0,
             page_sizes=page_sizes,
             unmanaged_annots=self.contar_no_gestionadas(doc),
@@ -95,7 +98,7 @@ class DocumentsMixin:
             self._dirty[doc_id] = False
             self._passwords[doc_id] = password
             self._lru[doc_id] = None
-            self._evict_inactive()
+            self._evict_inactive(conservar=doc_id)
         return info
 
     def get_document(self, doc_id: str) -> Optional[fitz.Document]:

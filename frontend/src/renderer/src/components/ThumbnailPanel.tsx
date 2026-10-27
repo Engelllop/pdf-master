@@ -5,6 +5,7 @@ import { mensajeDeError } from '../lib/format'
 import { usePdfStore, type OutlineItem } from '../store/usePdfStore'
 import { useFormModal } from './FormModal'
 import ReviewPanel from './ReviewPanel'
+import Tooltip from './Tooltip'
 import CountPanel from './CountPanel'
 import { EmptyState, PageActions, PanelHeader, iconBtn, iconBtnDanger, rowIdle, rowSelected } from './panelUi'
 
@@ -332,23 +333,27 @@ export default function ThumbnailPanel() {
     setTab(id)
     if (!sidebarOpen) toggleSidebar()
   }
+  // El indicador del panel abierto es una barra de ACENTO pegada al borde: antes era
+  // `on-accent` (blanco en claro) sobre `bg-selected`, y no se veía.
   const railEl = (
-    <div className={`w-11 border-r flex flex-col items-center py-2 gap-1 shrink-0 bg-panel border-border-strong`}>
+    <div role="toolbar" aria-orientation="vertical" aria-label="Paneles"
+      className="w-11 border-r flex flex-col items-center py-1.5 gap-0.5 shrink-0 bg-panel border-border-strong">
       {railItems.map(({ id, icon: Icon, title }) => {
         const on = sidebarOpen && tab === id
+        const hits = id === 'search' && activeDoc && activeDoc.searchResults.length > 0
         return (
-          <button key={id} onClick={() => onRail(id)} title={title}
-            aria-label={id === 'search' && activeDoc && activeDoc.searchResults.length > 0
-              ? `${title}, ${activeDoc.searchResults.length} resultados`
-              : title}
-            aria-pressed={on}
-            className={`relative p-2 rounded-token transition-colors ${on ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-            {on && <span className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-on-accent" />}
-            <Icon size={18} />
-            {id === 'search' && activeDoc && activeDoc.searchResults.length > 0 && (
-              <span className={`absolute top-1 right-1 w-1.5 h-1.5 rounded-full ${on ? 'bg-on-accent' : 'bg-accent'}`} aria-hidden />
-            )}
-          </button>
+          <Tooltip key={id} content={title} position="right">
+            <button onClick={() => onRail(id)}
+              aria-label={hits ? `${title}, ${activeDoc.searchResults.length} resultados` : title}
+              aria-pressed={on}
+              className={`relative w-9 h-9 inline-flex items-center justify-center rounded-token-sm transition-colors duration-fast ease-token ${
+                on ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'
+              }`}>
+              {on && <span className="absolute -left-1 top-2 bottom-2 w-[3px] rounded-full bg-accent" aria-hidden="true" />}
+              <Icon size={18} />
+              {hits && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-accent" aria-hidden="true" />}
+            </button>
+          </Tooltip>
         )
       })}
     </div>

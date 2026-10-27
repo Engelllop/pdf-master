@@ -1,44 +1,12 @@
-/** IA de la cinta Comentar: marcas diarias visibles, el resto en menús. */
-
-export const PRIMARY_MARK_IDS = ['highlight', 'note', 'count'] as const
-
-export const DRAW_BASIC_IDS = [
-  'draw', 'signature',
-  'line', 'arrow', 'rect', 'circle',
-  'callout',
-] as const
-
-export const DRAW_SHAPE_IDS = [
-  'check', 'cross', 'star', 'cloud', 'polygon',
-] as const
-
-export const DRAW_FAMILY_IDS = [...DRAW_BASIC_IDS, ...DRAW_SHAPE_IDS] as const
+/** A qué pestaña de la cinta pertenece cada herramienta. */
 
 export const MEASURE_FAMILY_IDS = [
   'measure_distance', 'measure_perimeter', 'measure_area', 'measure_calibrate',
 ] as const
 
-export const MORE_TOOL_IDS = [
-  'textselect', 'underline', 'strikethrough', 'text', 'stamp',
-] as const
+const MEASURE_TAB_SET = new Set<string>([...MEASURE_FAMILY_IDS, 'count'])
 
-const DRAW_SET = new Set<string>(DRAW_FAMILY_IDS)
-const DRAW_SHAPE_SET = new Set<string>(DRAW_SHAPE_IDS)
-const MEASURE_SET = new Set<string>(MEASURE_FAMILY_IDS)
-const MORE_SET = new Set<string>(MORE_TOOL_IDS)
-
-export function isDrawFamily(id: string | null | undefined): boolean {
-  return !!id && DRAW_SET.has(id)
-}
-
-export function isDrawShape(id: string | null | undefined): boolean {
-  return !!id && DRAW_SHAPE_SET.has(id)
-}
-
-export function isMeasureFamily(id: string | null | undefined): boolean {
-  return !!id && MEASURE_SET.has(id)
-}
-
-export function isMoreTool(id: string | null | undefined): boolean {
-  return !!id && MORE_SET.has(id)
+/** La pestaña de la cinta donde vive una herramienta: medir y contar tienen la suya. */
+export function ribbonForTool(id: string): 'measure' | 'comment' {
+  return MEASURE_TAB_SET.has(id) ? 'measure' : 'comment'
 }

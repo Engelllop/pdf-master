@@ -158,20 +158,24 @@ class TestAnnotations:
         assert client.post(f"/pdf/annotations/{info['doc_id']}", json=anns).status_code == 405
         assert not os.path.exists(info["file_path"] + ".pdfmaster.json")
 
-    def test_save_with_backup_keeps_a_copy(self, client, open_doc):
+    def test_save_with_backup_keeps_the_original_out_of_the_folder(self, client, open_doc, respaldos_aislados):
+        from datetime import date
+        from app.services._pdf_respaldos import nombre_respaldo
         info = open_doc()
         original = open(info["file_path"], "rb").read()
         client.post(f"/pdf/rotate/{info['doc_id']}", json={"page_num": 0, "degrees": 90})
         assert client.post(f"/pdf/save/{info['doc_id']}?backup=true").status_code == 200
-        bak = info["file_path"] + ".bak"
-        assert os.path.exists(bak)
-        assert open(bak, "rb").read() == original
+        respaldo = respaldos_aislados / date.today().isoformat() / nombre_respaldo(info["file_path"])
+        assert open(respaldo, "rb").read() == original
+        # Nada al lado del plano: la carpeta del proyecto queda limpia.
+        assert not os.path.exists(info["file_path"] + ".bak")
 
-    def test_save_without_backup_creates_no_bak(self, client, open_doc):
+    def test_save_without_backup_creates_no_copy(self, client, open_doc, respaldos_aislados):
         info = open_doc()
         client.post(f"/pdf/rotate/{info['doc_id']}", json={"page_num": 0, "degrees": 90})
         assert client.post(f"/pdf/save/{info['doc_id']}").status_code == 200
         assert not os.path.exists(info["file_path"] + ".bak")
+        assert not any(respaldos_aislados.iterdir())
 
     def test_review_metadata_survives_roundtrip(self, client, open_doc):
         info = open_doc()

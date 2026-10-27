@@ -3,31 +3,22 @@ import { scaleForPage, usePdfStore, type PdfDoc, type Annotation } from '../stor
 import { type Field, type FormValues } from '../components/FormModal'
 
 import { apiFetch } from '../lib/api'
-import { parsePageRanges, parsePagesField } from '../lib/pageRange'
+import { parsePageRanges } from '../lib/pageRange'
 import { correrLote } from '../lib/lote'
 import { avisarSiFallóLaCopia, confirmarEscrituraEn, confirmarSobrescritura, pushAnnotations, refrescarEstadoEnDisco, subirMarcasOAvisar } from '../lib/saveDocument'
 import {
   deletePagesUndoable,
   duplicatePageUndoable,
-  headerFooterUndoable,
   insertBlankUndoable,
   makeSearchableAllUndoable,
   makeSearchableUndoable,
   metadataUndoable,
   mergePdfUndoable,
-  pageNumbersUndoable,
   rotatePagesUndoable,
   watermarkUndoable,
 } from '../lib/pageUndo'
 
 type ActiveDoc = PdfDoc | undefined
-
-/** El aviso dice sobre cuántas páginas se aplicó: sellar 3 de 60 láminas y leer el
- * mismo «agregado» que al sellarlas todas no deja ver si el rango se tomó en cuenta. */
-function rangoAplicado(hecho: string, pages?: number[]): string {
-  const donde = pages?.length ? ` en ${pages.length} página(s)` : ''
-  return `${hecho}${donde}. Ctrl+Z deshace.`
-}
 
 type Helpers = {
   askForm: (title: string, fields: Field[], submitLabel?: string) => Promise<FormValues | null>
@@ -76,25 +67,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     }
   }
 
+  // Abre el diálogo de sellos (vista previa, posiciones, capa propia) en Numeración.
   const handleAddPageNumbers = async () => {
     if (!activeDoc) return
-    const v = await askForm('Numerar páginas', [
-      { name: 'prefix', label: 'Prefijo (vacío = n / total)', type: 'text', defaultValue: '', placeholder: 'Ej. DOC-' },
-      { name: 'position', label: 'Posición', type: 'select', options: ['Abajo', 'Arriba'], defaultValue: 'Abajo' },
-      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
-    ])
-    if (!v) return
-    const prefix = String(v.prefix)
-    const position = String(v.position) === 'Arriba' ? 'top' : 'bottom'
-    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
-    if (pages === null) {
-      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
-      return
-    }
-    try {
-      await pageNumbersUndoable(activeDoc.doc_id, prefix, 1, position, pages)
-      showToast(rangoAplicado('Numeración aplicada', pages), 'success')
-    } catch (err) { toastActionError(err) }
+    window.dispatchEvent(new CustomEvent('app:sellos', { detail: { capa: 'numeracion' } }))
   }
 
   const handleMarkupSummary = async () => {
@@ -242,26 +218,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     }
   }
 
+  // Abre el diálogo de sellos en Marca de agua.
   const handleWatermark = async () => {
     if (!activeDoc) return
-    const v = await askForm('Marca de agua', [
-      { name: 'text', label: 'Texto', type: 'text', defaultValue: 'CONFIDENCIAL' },
-      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
-    ])
-    if (!v) return
-    const text = String(v.text).trim()
-    if (!text) return
-    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
-    if (pages === null) {
-      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
-      return
-    }
-    try {
-      await watermarkUndoable(activeDoc.doc_id, text, pages)
-      showToast(rangoAplicado('Marca de agua agregada', pages), 'success')
-    } catch (err) {
-      toastActionError(err)
-    }
+    window.dispatchEvent(new CustomEvent('app:sellos', { detail: { capa: 'marca' } }))
   }
 
   const handleRedact = () => {
@@ -358,15 +318,18 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
       { name: 'title', label: 'Título', type: 'text', defaultValue: activeDoc.title || '' },
       { name: 'author', label: 'Autor', type: 'text', defaultValue: activeDoc.author || '' },
       { name: 'subject', label: 'Asunto', type: 'text', defaultValue: activeDoc.subject || '' },
-      { name: 'keywords', label: 'Palabras clave', type: 'text', defaultValue: '' },
+      { name: 'keywords', label: 'Palabras clave', type: 'text', defaultValue: activeDoc.keywords || '' },
     ], 'Guardar')
     if (!v) return
     try {
+      // El formulario viene precargado, así que lo que trae ES el valor nuevo: un
+      // campo vacío se vacía. Antes '' viajaba como undefined y el motor lo dejaba
+      // igual — no había forma de borrar un título.
       await metadataUndoable(activeDoc.doc_id, {
-        title: String(v.title) || undefined,
-        author: String(v.author) || undefined,
-        subject: String(v.subject) || undefined,
-        keywords: String(v.keywords) || undefined,
+        title: String(v.title ?? ''),
+        author: String(v.author ?? ''),
+        subject: String(v.subject ?? ''),
+        keywords: String(v.keywords ?? ''),
       })
       showToast('Metadatos actualizados. Ctrl+Z deshace.', 'success')
     } catch (err) {
@@ -374,32 +337,10 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     }
   }
 
+  // Abre el diálogo de sellos en Encabezado y pie.
   const handleHeaderFooter = async () => {
     if (!activeDoc) return
-    const v = await askForm('Encabezado y pie de página', [
-      { name: 'header', label: 'Encabezado (vacío = omitir)', type: 'text', defaultValue: '' },
-      { name: 'footer', label: 'Pie de página (vacío = omitir)', type: 'text', defaultValue: '' },
-      { name: 'pages', label: 'Páginas (vacío = todas)', type: 'text', defaultValue: '', placeholder: 'Ej. 1-5, 8' },
-    ], 'Aplicar')
-    if (!v) return
-    const header = String(v.header).trim(), footer = String(v.footer).trim()
-    // Con los dos campos vacíos no hay nada que poner: antes se llamaba igual al motor,
-    // se apilaba un paso de deshacer y el aviso decía «agregado».
-    if (!header && !footer) {
-      showToast('Escribí al menos un encabezado o un pie', 'info')
-      return
-    }
-    const pages = parsePagesField(String(v.pages ?? ''), activeDoc.page_count)
-    if (pages === null) {
-      showToast(`Rango de páginas inválido (el documento tiene ${activeDoc.page_count})`, 'error')
-      return
-    }
-    try {
-      await headerFooterUndoable(activeDoc.doc_id, header || undefined, footer || undefined, pages)
-      showToast(rangoAplicado('Encabezado/pie agregado', pages), 'success')
-    } catch (err) {
-      toastActionError(err)
-    }
+    window.dispatchEvent(new CustomEvent('app:sellos', { detail: { capa: 'encabezado' } }))
   }
 
   const handleMerge = async () => {

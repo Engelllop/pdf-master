@@ -30,18 +30,21 @@ class TestEmbedImage:
         out = str(tmp_path / "con-imagen.pdf")
         assert client.post(f"/pdf/save/{info['doc_id']}?output_path={out}").status_code == 200
 
-        # Se relee del disco: lo que importa es que sobreviva al guardado.
+        # Se relee del disco: lo que importa es que sobreviva al guardado. Va como
+        # anotación propia con la imagen en su apariencia, no en el contenido de la
+        # página (grabada ahí se duplicaba al reabrir: ver test_imagen_marca.py).
         with fitz.open(out) as saved:
-            images = saved.load_page(0).get_images(full=True)
-            assert len(images) == 1
-            rects = saved.load_page(0).get_image_rects(images[0][0])
-            assert rects, "la imagen no quedo colocada en la pagina"
-            r = rects[0]
-            assert abs(r.x0 - 50) < 2 and abs(r.y0 - 60) < 2
-            assert abs(r.width - 120) < 2 and abs(r.height - 90) < 2
+            page = saved.load_page(0)  # viva mientras se lean sus anotaciones
+            sellos = [a for a in page.annots() if a.type[1] == "Stamp"]
+            assert len(sellos) == 1, "la imagen no quedo colocada en la pagina"
+            # 40x20 en una caja de 120x90: encajada sin deformar (120x60) y centrada,
+            # igual que la dibuja la pantalla.
+            r = sellos[0].rect
+            assert abs(r.x0 - 50) < 2 and abs(r.y0 - 75) < 2
+            assert abs(r.width - 120) < 2 and abs(r.height - 60) < 2
 
     def test_la_rotacion_libre_no_tumba_el_embed(self, client, open_doc):
-        """Ángulos arbitrarios se rasterizan con Pillow; 90° usa rotate nativo."""
+        """Cualquier ángulo va en la /Matrix de la apariencia (ver `_incrustar_imagen`)."""
         info = open_doc(pages=1)
         for rotation in (0, 37, 80, 135, 200, 359):
             resp = self._embed(client, info["doc_id"], rotation=rotation)

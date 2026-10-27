@@ -285,3 +285,36 @@ describe('puntos de snap tras editar la página', () => {
     vi.unstubAllGlobals()
   })
 })
+
+describe('cuadro de texto: clic o arrastre', () => {
+  // Antes solo existía el clic, y todo lo escrito salía en UNA línea larguísima.
+  it('un clic abre el cuadro de ancho libre', async () => {
+    usePdfStore.setState({ activeTool: 'text' })
+    const { result } = setup()
+    act(() => { result.current.handleMouseDown({ x: 100, y: 100 }) })
+    await act(async () => { await result.current.handleMouseUp() })
+    expect(result.current.textPos).toEqual({ x: 200, y: 200 })
+  })
+
+  it('un arrastre fija el ancho en el que se ajusta el texto, aunque se arrastre hacia atrás', async () => {
+    usePdfStore.setState({ activeTool: 'text' })
+    const { result } = setup()
+    act(() => { result.current.handleMouseDown({ x: 200, y: 100 }) })
+    act(() => { result.current.handleMouseMove({ x: 50, y: 160 }) })
+    await act(async () => { await result.current.handleMouseUp() })
+    expect(result.current.textPos).toEqual({ x: 100, y: 200, width: 300 })
+  })
+
+  it('guarda la caja medida en el editor para que el PDF corte donde se vio', async () => {
+    usePdfStore.setState({ activeTool: 'text' })
+    const { result } = setup()
+    act(() => { result.current.handleMouseDown({ x: 200, y: 100 }) })
+    act(() => { result.current.handleMouseMove({ x: 300, y: 120 }) })
+    await act(async () => { await result.current.handleMouseUp() })
+    act(() => { result.current.setTextInput('uno dos tres') })
+    act(() => { result.current.saveText({ width: 999, height: 48 }) })
+    const ann = usePdfStore.getState().docs[0].annotations[0]
+    // El ancho arrastrado manda; el alto es el que ocupó el texto ajustado.
+    expect(ann).toMatchObject({ type: 'text', width: 200, height: 48, text: 'uno dos tres' })
+  })
+})

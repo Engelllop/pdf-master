@@ -40,10 +40,41 @@ describe('geometría al redimensionar', () => {
   it('la imagen mantiene su proporción en las esquinas y la pierde en los lados', () => {
     const img = rect({ type: 'image' })
     const esquina = geometriaRedimensionada(img, 'se', 100, 0, inicio)
-    // Proporción de partida 200x100: al llevar el ancho a 300 el alto la sigue.
-    expect(esquina).toMatchObject({ width: 200, height: 100 })
+    // Proporción de partida 200x100: al llevar el ancho a 300 el alto la sigue. Antes
+    // mandaba el eje quieto y la esquina arrastrada en horizontal no hacía nada.
+    expect(esquina).toMatchObject({ x: 100, y: 100, width: 300, height: 150 })
     const lado = geometriaRedimensionada(img, 'e', 100, 0, inicio)
     expect(lado).toMatchObject({ width: 300, height: 100 })
+  })
+
+  describe('imagen por las esquinas', () => {
+    const img = rect({ type: 'image' })
+
+    it('manda el eje que más se movió, también al achicar', () => {
+      // Ancho -50 % y alto +10 %: gana el ancho.
+      expect(geometriaRedimensionada(img, 'se', -100, 10, inicio))
+        .toMatchObject({ width: 100, height: 50 })
+      // Alto +100 % y ancho +10 %: gana el alto.
+      expect(geometriaRedimensionada(img, 'se', 20, 100, inicio))
+        .toMatchObject({ width: 400, height: 200 })
+    })
+
+    it('desde la esquina superior izquierda el ancla es la opuesta', () => {
+      const g = geometriaRedimensionada(img, 'nw', 100, 0, inicio)
+      expect(g).toMatchObject({ width: 100, height: 50 })
+      // La esquina se (300, 200) no se mueve.
+      expect([g.x! + g.width!, g.y! + g.height!]).toEqual([300, 200])
+    })
+
+    it('ningún lado baja del mínimo y la proporción se conserva', () => {
+      const g = geometriaRedimensionada(img, 'se', -999, -999, inicio)
+      expect(g).toMatchObject({ width: 20, height: 10 })
+    })
+
+    it('con proporción libre (Mayús) la esquina deforma', () => {
+      const g = geometriaRedimensionada(img, 'se', 100, 0, inicio, { proporcionLibre: true })
+      expect(g).toMatchObject({ width: 300, height: 100 })
+    })
   })
 
   // Lo que ninguna de las dos copias hacía: escalar los puntos.

@@ -11,9 +11,10 @@ from app.services._pdf_annotations import AnnotationsMixin
 from app.services._pdf_export import ExportMixin
 from app.services._pdf_forms import FormsMixin
 from app.services._pdf_documents import DocumentsMixin
+from app.services._pdf_sellos import SellosMixin
 
 
-class PdfService(RenderMixin, ReadMixin, PagesMixin, EditMixin, AnnotationsMixin, ExportMixin, FormsMixin, DocumentsMixin, PdfServiceBase):
+class PdfService(RenderMixin, ReadMixin, PagesMixin, EditMixin, AnnotationsMixin, ExportMixin, FormsMixin, DocumentsMixin, SellosMixin, PdfServiceBase):
     pass
 
 

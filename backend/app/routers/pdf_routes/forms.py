@@ -1,10 +1,19 @@
 """Formularios: lectura y escritura de widgets."""
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 
 from app.models.pdf import FormFieldCreate, FormFieldResult, FormFieldTransform, FormFieldUpdate
 from app.services.pdf_service import pdf_service
 
 router = APIRouter()
+
+
+class FormFieldUpdateWidget(FormFieldUpdate):
+    # xref del widget que toco el usuario. En un grupo de opciones todas comparten
+    # nombre: sin el xref, el motor escribia siempre sobre la primera. Opcional para
+    # no romper a los clientes (y a los "rehacer") que solo mandan nombre y valor.
+    xref: Optional[int] = None
 
 
 @router.get("/widgets/{doc_id}/{page_num}")
@@ -34,8 +43,9 @@ def transform_widget(doc_id: str, page_num: int, req: FormFieldTransform):
     return FormFieldResult(success=True, stash_id=stash_id or None)
 
 @router.post("/widgets/{doc_id}/{page_num}", response_model=FormFieldResult)
-def update_widget(doc_id: str, page_num: int, req: FormFieldUpdate):
-    result = pdf_service.set_form_field(doc_id, page_num, req.field_name, req.value, stash=req.stash)
+def update_widget(doc_id: str, page_num: int, req: FormFieldUpdateWidget):
+    result = pdf_service.set_form_field(doc_id, page_num, req.field_name, req.value,
+                                        stash=req.stash, xref=req.xref)
     if result is None:
         raise HTTPException(status_code=404, detail="Field not found")
     previous, stash_id, stash_page = result

@@ -1,3 +1,4 @@
+import type { CapaSello, SelloSpec } from '../lib/sellos'
 import { create } from 'zustand'
 import { revokePageUrl } from '../lib/blobUrl'
 import { normalizarRuta } from '../lib/rutas'
@@ -13,7 +14,7 @@ export type ThemePreference = 'light' | 'dark' | 'system'
 export type WheelMode = 'scroll' | 'page'
 /** Encuadre con el que se abre un documento. */
 export type DefaultZoomMode = 'fit-page' | 'fit-width' | 'actual'
-export type RibbonTab = 'read' | 'comment' | 'edit' | 'page' | 'protect' | 'convert' | 'ai'
+export type RibbonTab = 'read' | 'comment' | 'measure' | 'edit' | 'page' | 'protect' | 'convert' | 'ai'
 
 export interface PageSize {
   page_num: number
@@ -136,6 +137,7 @@ export interface PdfDoc {
   title: string | null
   author: string | null
   subject: string | null
+  keywords?: string | null
   page_sizes: PageSize[]
   currentPage: number
   zoom: number
@@ -199,15 +201,17 @@ export type PageOp =
   | { type: 'redact'; page: number; x: number; y: number; width: number; height: number }
   | { type: 'restoreDoc'; stashId: string }
   | { type: 'watermark'; text: string; pages?: number[] }
+  | { type: 'sello'; capa: CapaSello; spec: SelloSpec; pages?: number[] }
+  | { type: 'quitarSello'; capa: CapaSello }
   | { type: 'redactMatches'; query: string }
   | { type: 'headerFooter'; header?: string; footer?: string; pages?: number[] }
   | { type: 'pageNumbers'; prefix: string; start: number; position: string; pages?: number[] }
   | { type: 'replaceText'; query: string; replace: string; page?: number; caseSensitive: boolean; replaceAll: boolean }
-  | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string }
+  | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string; wrap?: boolean; bold?: boolean; italic?: boolean; align?: string; line_height?: number }
   | { type: 'transformImage'; page: number; xref: number; old: number[]; new?: number[]; delete?: boolean; replacePath?: string }
   | { type: 'metadata'; title?: string | null; author?: string | null; subject?: string | null; keywords?: string | null }
   | { type: 'makeSearchable'; page?: number }
-  | { type: 'formField'; page: number; fieldName: string; value: string }
+  | { type: 'formField'; page: number; fieldName: string; value: string; xref?: number }
   | { type: 'addFormField'; page: number; fieldType: string; fieldName: string; x: number; y: number; width: number; height: number; options?: string[]; radioValue?: string }
   | { type: 'transformFormField'; page: number; xref: number; x?: number; y?: number; width?: number; height?: number; delete?: boolean }
 
@@ -314,6 +318,7 @@ export interface PdfState {
     title: string | null
     author: string | null
     subject: string | null
+    keywords?: string | null
     page_sizes: PageSize[]
   }, activate?: boolean) => string
   closeDoc: (docId: string) => void

@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import base64
 import logging
 import math
+import re
 import uuid
 import json
 import os
@@ -250,6 +251,8 @@ class EditMixin:
                     info.author = author or None
                 if subject is not None:
                     info.subject = subject or None
+                if keywords is not None:
+                    info.keywords = keywords or None
             self._dirty[doc_id] = True
             # Sin invalidar el cache de render: los metadatos no se ven en la página.
             return previous
@@ -298,12 +301,77 @@ class EditMixin:
             return "tibi" if bold and italic else "tiit" if italic else "tibo" if bold else "tiro"
         return "hebi" if bold and italic else "heit" if italic else "hebo" if bold else "helv"
 
+    # Hacia dónde se apilan las líneas de `insert_textbox` según su `rotate` (medido):
+    # el lado del rect que hay que estirar si el texto nuevo no entra.
+    _LADO_QUE_CRECE = {0: "y1", 90: "x1", 180: "y0", 270: "x0"}
+
+    @classmethod
+    def _fuente_con_estilo(cls, font: Optional[str], bold: Optional[bool], italic: Optional[bool]) -> str:
+        """La base14 de `font` con la negrita/cursiva pedidas (None = la que traía)."""
+        base = (font or "").lower()
+        if bold is not None:
+            base = base.replace("bold", "").replace("black", "").replace("semibold", "")
+            base += " bold" if bold else ""
+        if italic is not None:
+            base = base.replace("italic", "").replace("oblique", "")
+            base += " italic" if italic else ""
+        return cls._base14_font(base)
+
+    def _escribir_en_caja(self, page, rect, text, fontname, fs, rgb, align, lineheight, giro):
+        """Escribe `text` ajustado al ancho de `rect`, respetando los saltos. Si no
+        entra, estira el rect hacia donde se apilan las líneas hasta el borde de la
+        página. Devuelve True si tuvo que pasarse del alto original."""
+        lado = self._LADO_QUE_CRECE.get(giro, "y1")
+        borde = page.cropbox
+        caja = fitz.Rect(rect)
+        paso = fs * (lineheight or 1.2)
+        opciones = dict(fontsize=fs, fontname=fontname, color=rgb, align=align,
+                        rotate=giro, overlay=True)
+        if lineheight:
+            opciones["lineheight"] = lineheight
+        # Prueba en una página descartable: insert_textbox no escribe nada si no
+        # entra, pero la medida hay que hacerla antes de tocar la de verdad.
+        prueba = fitz.open()
+        hoja = prueba.new_page(width=borde.width + borde.x0 + 1, height=borde.height + borde.y0 + 1)
+        crecio = False
+        for _ in range(400):
+            try:
+                sobra = hoja.insert_textbox(caja, text, **opciones)
+            except Exception:
+                opciones["fontname"] = "helv"
+                sobra = hoja.insert_textbox(caja, text, **opciones)
+            if sobra >= 0:
+                break
+            crecio = True
+            if lado == "y1":
+                caja.y1 = min(borde.y1, caja.y1 + paso)
+            elif lado == "y0":
+                caja.y0 = max(borde.y0, caja.y0 - paso)
+            elif lado == "x1":
+                caja.x1 = min(borde.x1, caja.x1 + paso)
+            else:
+                caja.x0 = max(borde.x0, caja.x0 - paso)
+            if caja.y1 >= borde.y1 and caja.y0 <= borde.y0 and caja.x0 <= borde.x0 and caja.x1 >= borde.x1:
+                break
+            if (lado == "y1" and caja.y1 >= borde.y1) or (lado == "y0" and caja.y0 <= borde.y0) \
+                    or (lado == "x1" and caja.x1 >= borde.x1) or (lado == "x0" and caja.x0 <= borde.x0):
+                break
+        prueba.close()
+        page.insert_textbox(caja, text, **opciones)
+        return crecio
+
     def edit_text_span(self, doc_id: str, page_num: int, x0: float, y0: float,
                        x1: float, y1: float, text: str, size: Optional[float] = None,
-                       color: str = "#000000", font: Optional[str] = None, stash: bool = True) -> Optional[str]:
-        """Edición in-situ: tapa el span original con el color de fondo muestreado y
-        reinserta el texto nuevo en la misma posición, mapeando la fuente a una base14
-        aproximada (PyMuPDF no reusa fuentes incrustadas por nombre)."""
+                       color: str = "#000000", font: Optional[str] = None, stash: bool = True,
+                       wrap: bool = False, bold: Optional[bool] = None, italic: Optional[bool] = None,
+                       align: Optional[str] = None, lineheight: Optional[float] = None) -> Optional[dict]:
+        """Edición in-situ: tapa el texto original con el color de fondo muestreado y
+        reinserta el nuevo en la misma posición, mapeando la fuente a una base14
+        aproximada (PyMuPDF no reusa fuentes incrustadas por nombre).
+
+        Con `wrap` el rect es un PÁRRAFO (o una línea) y el texto se escribe en caja:
+        se ajusta a su ancho, respeta los saltos de línea y, si no entra, crece hacia
+        abajo. Sin `wrap` es la edición de un tramo de siempre."""
         with self._lock:
             doc = self._acquire(doc_id)
             if not doc or page_num < 0 or page_num >= len(doc):
@@ -328,7 +396,7 @@ class EditMixin:
                     fill = tuple(v / 255 for v in bg)
             except Exception:
                 pass
-            span_previo = self._span_en(page, rect) if page.rotation else None
+            span_previo = self._span_en(page, rect) if (page.rotation or wrap) else None
             page.add_redact_annot(rect, fill=fill)
             # Editar un span redacta como paso intermedio: ni el dibujo contenido en
             # el rect ni los píxeles del escaneo de abajo son suyos (ver replace_text).
@@ -337,6 +405,35 @@ class EditMixin:
             c = color.lstrip("#")
             rgb = tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(c) == 6 else (0, 0, 0)
             text = texto_estampable(text)
+            if wrap:
+                giro = span_previo[1] if span_previo else 0
+                fs = size or 11.0
+                alineacion = {"center": fitz.TEXT_ALIGN_CENTER, "right": fitz.TEXT_ALIGN_RIGHT,
+                              "justify": fitz.TEXT_ALIGN_JUSTIFY}.get(align or "", fitz.TEXT_ALIGN_LEFT)
+                # Un poco de holgura en el ancho: el bbox del párrafo es justo el del
+                # texto que había, y con la misma fuente base el ajuste cortaba antes
+                # (la base14 mide distinto que la incrustada).
+                # Y en el alto, el aire del último renglón: el bbox termina en sus
+                # descendentes, pero insert_textbox reserva el interlineado entero.
+                caja = fitz.Rect(rect)
+                aire = fs * max(0.0, (lineheight or 1.2) - 0.9)
+                if giro == 0:
+                    caja.x1 += fs * 0.6
+                    caja.y1 += aire
+                elif giro == 180:
+                    caja.x0 -= fs * 0.6
+                    caja.y0 -= aire
+                elif giro == 90:
+                    caja.y0 -= fs * 0.6
+                    caja.x1 += aire
+                else:
+                    caja.y1 += fs * 0.6
+                    caja.x0 -= aire
+                crecio = self._escribir_en_caja(page, caja, text, self._fuente_con_estilo(font, bold, italic),
+                                                fs, rgb, alineacion, lineheight, giro)
+                self._dirty[doc_id] = True
+                self._invalidate_render_cache(doc_id)
+                return {"stash_id": stash_id, "crecio": crecio}
             if page.rotation:
                 # En una página girada el texto puede ir en cualquier sentido respecto de
                 # la pantalla (lo normal es que vaya girado con ella): se reescribe en el
@@ -349,7 +446,7 @@ class EditMixin:
                 fs = size or max(6.0, (y1 - y0) * 0.85)
                 opciones = dict(fontsize=fs, color=rgb, overlay=True)
             try:
-                page.insert_text(origen, text, fontname=self._base14_font(font), **opciones)
+                page.insert_text(origen, text, fontname=self._fuente_con_estilo(font, bold, italic), **opciones)
             except Exception:
                 page.insert_text(origen, text, **opciones)
             self._dirty[doc_id] = True
@@ -357,7 +454,7 @@ class EditMixin:
             # a PNG, contexto «página actual» de la IA) y los puntos de snap seguían
             # siendo los de antes de la edición.
             self._invalidate_render_cache(doc_id)
-            return stash_id
+            return {"stash_id": stash_id, "crecio": False}
 
     # Dirección de la línea (PyMuPDF, página sin girar) → `rotate` de insert_text.
     _GIRO_POR_DIRECCION = {(1, 0): 0, (0, -1): 90, (-1, 0): 180, (0, 1): 270}
@@ -437,6 +534,35 @@ class EditMixin:
         except Exception:
             return (1, 1, 1)
 
+    @staticmethod
+    def _quitar_colocacion(doc, page, xref: int, rect) -> bool:
+        """Quita del contenido de la página UNA colocación de la imagen `xref`: la que
+        ocupa `rect` (sin girar). Devuelve False si no se pudo ubicar sin ambigüedad.
+
+        Mover una imagen redactaba su rect: se llevaba toda imagen que se le cruzara
+        (el escaneo de fondo entero) y el texto de debajo, y la reinsertaba sin su
+        máscara de transparencia (esquinas negras). `delete_image` tampoco sirve:
+        cambia el xref, que es compartido — el mismo logo en todas las láminas."""
+        nombres = {img[7] for img in page.get_images(full=True) if img[0] == xref and img[7]}
+        if not nombres:
+            return False
+        colocaciones = [fitz.Rect(i["bbox"]) for i in page.get_image_info(xrefs=True) if i.get("xref") == xref]
+        if not colocaciones:
+            return False
+        objetivo = min(range(len(colocaciones)),
+                       key=lambda k: sum(abs(a - b) for a, b in zip(colocaciones[k], rect)))
+        patron = re.compile(rb"/(?:" + b"|".join(re.escape(n.encode()) for n in nombres) + rb")\s+Do\b")
+        flujos = [(c, doc.xref_stream(c) or b"") for c in page.get_contents()]
+        encontradas = [(c, m) for c, datos in flujos for m in patron.finditer(datos)]
+        # Si el conteo no coincide, alguna colocación vive dentro de un grupo (Form
+        # XObject) y la k-ésima del flujo no es la k-ésima de la página.
+        if len(encontradas) != len(colocaciones):
+            return False
+        c, m = encontradas[objetivo]
+        datos = dict(flujos)[c]
+        doc.update_stream(c, datos[:m.start()] + datos[m.end():])
+        return True
+
     def transform_image(self, doc_id: str, page_num: int, xref: int,
                         old: List[float], new: Optional[List[float]] = None,
                         delete: bool = False, replace_path: Optional[str] = None, stash: bool = True) -> Optional[str]:
@@ -469,24 +595,40 @@ class EditMixin:
             old_vista = fitz.Rect(*old)
             old_rect = self._desde_vista(page, old_vista)
             giro = self._giro_de_imagen(page, xref, old_rect)
-            page.add_redact_annot(old_rect, fill=self._sample_bg_color(page, old_vista))
-            try:
-                # Igual que arriba: se está moviendo/rotando una imagen, no redactando.
-                # Borrar el dibujo que quedaba debajo de su posición vieja era destruir
-                # contenido del plano.
-                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE,
-                                      graphics=fitz.PDF_REDACT_LINE_ART_NONE)
-            except Exception:
-                # Sin IMAGE_NONE a propósito: si el borrado de la imagen vieja falló,
-                # que al menos se blanqueen sus píxeles (lo que hace `IMAGE_PIXELS` por
-                # omisión). Si no, quedaría el fantasma de la imagen en su sitio viejo.
-                page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE)
-            if not delete and img_bytes:
+            # Una imagen de fondo (un escaneo) vuelve DETRÁS del contenido; un logo,
+            # encima, como estaba.
+            de_fondo = old_rect.get_area() > 0.6 * page.rect.get_area()
+            if self._quitar_colocacion(doc, page, xref, old_rect):
+                # Se quitó solo ESA colocación del contenido: lo demás de la página
+                # (otras imágenes encima o debajo, el texto, el dibujo) queda intacto,
+                # y el mismo logo en otras láminas también. Se reinserta reusando el
+                # xref, así conserva la transparencia y el archivo no engorda.
+                if not delete:
+                    try:
+                        destino = self._desde_vista(page, fitz.Rect(*(new or old)))
+                        if replace_path and img_bytes:
+                            page.insert_image(destino, stream=img_bytes, rotate=giro, overlay=not de_fondo)
+                        else:
+                            page.insert_image(destino, xref=xref, rotate=giro, keep_proportion=False,
+                                              overlay=not de_fondo)
+                    except Exception:
+                        return None
+            else:
+                # Imagen dentro de un grupo (Form XObject): no hay una colocación suelta
+                # que quitar. Queda el camino de antes, que redacta el rect.
+                page.add_redact_annot(old_rect, fill=self._sample_bg_color(page, old_vista))
                 try:
-                    page.insert_image(self._desde_vista(page, fitz.Rect(*(new or old))), stream=img_bytes,
-                                      rotate=giro)
+                    page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_REMOVE,
+                                          graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                                          text=fitz.PDF_REDACT_TEXT_NONE)
                 except Exception:
-                    return None
+                    page.apply_redactions(graphics=fitz.PDF_REDACT_LINE_ART_NONE)
+                if not delete and img_bytes:
+                    try:
+                        page.insert_image(self._desde_vista(page, fitz.Rect(*(new or old))), stream=img_bytes,
+                                          rotate=giro)
+                    except Exception:
+                        return None
             self._dirty[doc_id] = True
             # Mover, rotar o borrar una imagen también cambia el bitmap de la página.
             self._invalidate_render_cache(doc_id)

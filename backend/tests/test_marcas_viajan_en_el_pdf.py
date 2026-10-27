@@ -63,14 +63,18 @@ class TestMarcasViajanEnElPdf:
             client, open_doc, tmp_path, [_marca('rect')], "sin-sidecar.pdf")
         assert not os.path.exists(out + ".pdfmaster.json")
 
-    def test_la_imagen_queda_incrustada_en_la_pagina(self, client, open_doc, tmp_path):
-        """La imagen se hornea en el contenido (no vuelve como marca editable), pero
-        tiene que estar dentro del PDF: si no, guardar la perdería."""
+    def test_la_imagen_viaja_en_el_pdf_y_vuelve_editable(self, client, open_doc, tmp_path):
+        """La imagen va como anotación propia con la imagen en su apariencia. Antes se
+        horneaba en el contenido y no volvía como marca: al reabrir el documento de disco
+        el siguiente guardado la grababa otra vez (ver test_imagen_marca.py)."""
         marca = _marca('image')
         marca["imageData"] = PNG_1PX
         out, got = _guardar_y_reabrir(client, open_doc, tmp_path, [marca], "imagen.pdf")
-        assert not [a for a in got if a["type"] == "image"]
-        assert fitz.open(out).load_page(0).get_images()
+        imagenes = [a for a in got if a["type"] == "image"]
+        assert len(imagenes) == 1 and imagenes[0]["imageData"].startswith("data:image/")
+        with fitz.open(out) as d:
+            page = d.load_page(0)
+            assert [a for a in page.annots() if a.type[1] == "Stamp"]
 
     def test_el_estilo_del_cuadro_de_texto_sobrevive(self, client, open_doc, tmp_path):
         """El FreeText nativo solo guarda tamaño, color y alineación: negrita, cursiva,

@@ -155,14 +155,14 @@ components:
   ribbon-tool:
     backgroundColor: "transparent"
     textColor: "{colors.fg}"
-    rounded: "{rounded.md}"
-    padding: "0 10px"
-    height: "32px"
+    rounded: "{rounded.sm}"
+    padding: "0 6px"
+    height: "50px"
   ribbon-tool-active:
-    backgroundColor: "{colors.accent}"
-    textColor: "{colors.on-accent}"
-    rounded: "{rounded.md}"
-    height: "32px"
+    backgroundColor: "{colors.selected}"
+    textColor: "{colors.fg}"
+    rounded: "{rounded.sm}"
+    height: "50px"
   tab-active:
     backgroundColor: "{colors.toolbar}"
     textColor: "{colors.fg}"
@@ -289,13 +289,15 @@ Cada tamaño trae su tracking y su interlineado: **el tracking es específico po
 
 ## Layout
 
-Escritorio de ventana fija, no landing. Columnas: riel 44px, panel lateral 224px (320–360px en revisión, conteo y AI), visor flexible. Filas: top bar 40px, cinta de modos 36px, fila de tools 44px, status 32px.
+Escritorio de ventana fija, no landing. Columnas: riel 44px, panel lateral 224px (320–360px en revisión, conteo y AI), visor flexible. Filas: barra de título 44px (acceso rápido + pestañas de documento), pestañas de cinta 36px, banda de herramientas 70px (contraíble con Ctrl+F1), status 32px. La cinta y el status cruzan la ventana entera; el riel y los paneles viven entre ellos.
 
 Las cuatro filas del chrome comparten un solo eje izquierdo a 8px (`px-2`). La pantalla vacía se centra a `max-w-3xl` con `space-y-6`. No hay tipografía fluida ni breakpoints de marketing.
 
 ### Named Rules
 
 **The Single Axis Rule.** Todo lo que se apila verticalmente en el chrome arranca en la misma x. Reservar ancho para los botones de ventana en una fila que no los tiene desalinea las demás.
+
+**The Tools In Sight Rule.** Una herramienta de uso diario no vive dos clics adentro. La cinta de una sola fila (modos + herramientas + búsqueda + acciones rápidas) dejaba el modo Comentar con tres botones a 1280 px con un panel abierto; la banda propia de dos niveles entra entera a 1024 px y, sin rótulos, a 760. Lo que se agrupa en un desplegable son variantes de una acción, nunca herramientas hermanas.
 
 ## Elevation & Depth
 
@@ -360,7 +362,7 @@ Cuatro duraciones: `instant` 90ms (la respuesta al press: se siente, no se ve), 
 
 ## Components
 
-Controles reprimidos y precisos: compactos, hover gris, sin teatro. La cinta es icono + etiqueta; los iconos solos llevan nombre accesible.
+Controles reprimidos y precisos: compactos, hover gris, sin teatro. La banda de la cinta es de botones grandes (icono de 20px arriba, rótulo de 11.5px abajo) en grupos con nombre al pie; las galerías (formas, símbolos) son botones de icono en dos filas. Los iconos solos llevan nombre accesible.
 
 Los patrones compartidos viven en `components/panelUi.tsx` (`PanelHeader`, `EmptyState`, `SegmentedGroup`, `FieldLabel`, `ControlGroup`, `PageActions`, `iconBtn`, `rowSelected`). Un segmented control implementado tres veces es un componente que falta.
 
@@ -403,8 +405,11 @@ Los patrones compartidos viven en `components/panelUi.tsx` (`PanelHeader`, `Empt
 
 ### Navigation
 
-- **Top bar** 40px, zona de arrastre de ventana; utilidades a la derecha como chips de 32px
-- **Cinta:** tablist a la izquierda (Leer / Comentar / …), subrayado accent de 2px en el modo activo; tools en la fila de 44px
+- **Top bar** 44px, zona de arrastre de ventana: logo, **acceso rápido** (Guardar, Imprimir, Deshacer, Rehacer), pestañas de documento y utilidades a la derecha como chips de 32px
+- **Cinta:** botón **Archivo** relleno de accent (la convención de las suites de escritorio), tablist de texto (Inicio / Comentar / Medir / Editar / Página / Proteger / Convertir / IA) con subrayado accent de 2px en el modo activo, y el buscador con forma de campo a la derecha (en una fila estrecha queda la lupa, por container query)
+- **Banda:** `RibbonGroup` + `RibbonButton` / `RibbonSmallButton` / `RibbonGallery` / `RibbonMenuButton` (`components/ribbon/RibbonControls.tsx`). Las herramientas están a la vista; un desplegable es solo para variantes de UNA acción (Dividir, XFDF, Texto). Sin sitio, primero se van los rótulos de los botones y después grupos enteros a «Más herramientas»
+- **Riel** 44px, `aria-pressed`, barra accent de 3px en el panel abierto, tooltip a la derecha
+- **Status:** navegador de páginas (primera / anterior / campo / siguiente / última), formato de papel con nombre (`ARCH D · 36 × 24 in`; los pt en el title), escala, herramienta activa, guardado y zoom
 - **Riel** 44px, `aria-pressed`
 - **Pestaña de documento:** lógica tonal de navegador — activa al plano de la barra (`toolbar` + borde), inactivas hundidas a `surface`. **Sin subrayado accent**: ese eje ya lo usan los modos de cinta, una fila más abajo, y dos subrayados idénticos en filas contiguas no son jerarquía
 

@@ -367,13 +367,19 @@ class TestDocumentOps:
             assert d.needs_pass
 
 
+def _respaldo_de(carpeta, ruta):
+    from datetime import date
+    from app.services._pdf_respaldos import nombre_respaldo
+    return carpeta / date.today().isoformat() / nombre_respaldo(ruta)
+
+
 class TestCopiaDeSeguridad:
-    """La copia .bak es la red del usuario al sobrescribir un archivo entregado.
+    """El respaldo del original es la red del usuario al sobrescribir un archivo entregado.
     `save_with_password` y `remove_password` ni la miraban —el ajuste estaba activado
     y no había copia— y si el guardado fallaba dejaban su temporal tirado EN LA
     CARPETA DEL PLANO, con el documento dentro."""
 
-    def test_guardar_con_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory):
+    def test_guardar_con_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory, respaldos_aislados):
         info = open_doc()
         destino = pdf_factory(pages=1)  # ya existe: sobrescribirlo debe dejar .bak
         resp = client.post(f"/pdf/save-password/{info['doc_id']}", json={
@@ -381,16 +387,16 @@ class TestCopiaDeSeguridad:
         })
         assert resp.status_code == 200
         assert resp.json()["backup_failed"] is False
-        assert os.path.exists(destino + ".bak")
+        assert _respaldo_de(respaldos_aislados, destino).exists()
 
-    def test_quitar_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory):
+    def test_quitar_contrasena_hace_la_copia_bak(self, client, open_doc, pdf_factory, respaldos_aislados):
         info = open_doc()
         destino = pdf_factory(pages=1)
         resp = client.post(f"/pdf/remove-password/{info['doc_id']}?output_path={destino}&backup=true")
         assert resp.status_code == 200
-        assert os.path.exists(destino + ".bak")
+        assert _respaldo_de(respaldos_aislados, destino).exists()
 
-    def test_si_la_copia_falla_lo_dice_en_vez_de_callarse(self, client, open_doc, pdf_factory, monkeypatch):
+    def test_si_la_copia_falla_lo_dice_en_vez_de_callarse(self, client, open_doc, pdf_factory, monkeypatch, respaldos_aislados):
         """Se guarda igual (el usuario pidió guardar), pero sabiendo que no hay red."""
         import shutil as _shutil
         info = open_doc()
@@ -403,7 +409,7 @@ class TestCopiaDeSeguridad:
         resp = client.post(f"/pdf/save/{info['doc_id']}?output_path={destino}&backup=true")
         assert resp.status_code == 200
         assert resp.json()["backup_failed"] is True
-        assert not os.path.exists(destino + ".bak")
+        assert not _respaldo_de(respaldos_aislados, destino).exists()
 
     def test_un_guardado_fallido_no_deja_temporales_en_la_carpeta(self, client, open_doc, pdf_factory, monkeypatch):
         info = open_doc()

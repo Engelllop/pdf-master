@@ -25,6 +25,20 @@ class EditTextRequest(BaseModel):
     color: str = "#000000"
     font: Optional[str] = None
     stash: bool = True
+    # Párrafo o línea en caja (ajuste al ancho y saltos de línea) en vez de un tramo.
+    wrap: bool = False
+    bold: Optional[bool] = None
+    italic: Optional[bool] = None
+    align: Optional[str] = None
+    line_height: Optional[float] = None
+
+
+class EditTextResult(BaseModel):
+    success: bool
+    stash_id: Optional[str] = None
+    # El texto nuevo no entró en el alto del párrafo original y se estiró hacia abajo:
+    # puede pisar lo que había debajo, y el usuario tiene que saberlo.
+    overflow: bool = False
 
 
 class TransformImageRequest(BaseModel):
@@ -80,12 +94,16 @@ def set_metadata(doc_id: str, req: MetadataRequest):
         raise HTTPException(status_code=404, detail="Document not found")
     return MetadataResult(success=True, previous=MetadataRequest(**previous))
 
-@router.post("/edit-text/{doc_id}", response_model=SaveResult)
+@router.post("/edit-text/{doc_id}", response_model=EditTextResult)
 def edit_text(doc_id: str, req: EditTextRequest):
-    stash_id = pdf_service.edit_text_span(doc_id, req.page_num, req.x0, req.y0, req.x1, req.y1, req.text, req.size, req.color, req.font, stash=req.stash)
-    if stash_id is None:
+    res = pdf_service.edit_text_span(
+        doc_id, req.page_num, req.x0, req.y0, req.x1, req.y1, req.text, req.size, req.color, req.font,
+        stash=req.stash, wrap=req.wrap, bold=req.bold, italic=req.italic, align=req.align,
+        lineheight=req.line_height,
+    )
+    if res is None:
         raise HTTPException(status_code=404, detail="Page not found")
-    return SaveResult(success=True, stash_id=stash_id or None)
+    return EditTextResult(success=True, stash_id=res["stash_id"] or None, overflow=res["crecio"])
 
 @router.get("/images/{doc_id}/{page_num}")
 def list_page_images(doc_id: str, page_num: int):

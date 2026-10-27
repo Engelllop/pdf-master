@@ -137,6 +137,195 @@ class ReadMixin:
                         })
             return spans
 
+    @staticmethod
+    def _estilo_span(sp) -> tuple:
+        """(negrita, cursiva) de un span: por las banderas de PyMuPDF (16 y 2) o por
+        el nombre de la fuente, que es lo único que traen muchos PDF exportados."""
+        f = (sp.get("font") or "").lower()
+        flags = sp.get("flags", 0)
+        negrita = bool(flags & 16) or any(k in f for k in ("bold", "black", "semibold", "heavy"))
+        cursiva = bool(flags & 2) or "italic" in f or "oblique" in f
+        return negrita, cursiva
+
+    def get_text_block(self, doc_id: str, page_num: int, x: float, y: float) -> Optional[dict]:
+        """El texto editable bajo un punto del visor, al nivel más grande que se pueda
+        reescribir sin perder formato:
+
+        - `block`: el PÁRRAFO entero, si todas sus líneas comparten fuente, cuerpo y
+          dirección. Las líneas que llegan al borde se unen con espacio (es ajuste,
+          no un salto del autor) y las cortas con salto de línea.
+        - `line`: solo la línea, si el párrafo mezcla estilos pero la línea no.
+        - `span`: solo el tramo, si hasta la línea mezcla estilos (una palabra en
+          negrita). Es lo que se hacía siempre.
+
+        Antes se editaba siempre un tramo de una línea: un Enter escribía la segunda
+        línea ENCIMA de la siguiente del párrafo, y el texto nuevo no se reacomodaba.
+        """
+        with self._lock:
+            doc = self._acquire(doc_id)
+            if not doc or page_num < 0 or page_num >= len(doc):
+                return None
+            page = doc.load_page(page_num)
+            p = self._desde_vista(page, fitz.Point(x, y))
+            todas = [l for b in page.get_text("dict").get("blocks", []) if b.get("type", 0) == 0
+                     for l in b.get("lines", [])
+                     if any(s.get("text", "").strip() for s in l.get("spans", []))]
+            linea = next((l for l in todas if p in fitz.Rect(l["bbox"]) + (-1, -1, 1, 1)), None)
+            if linea is None:
+                return None
+            tramo = next((s for s in linea["spans"]
+                          if s.get("text", "").strip() and p in fitz.Rect(s["bbox"]) + (-1, -1, 1, 1)), None)
+            return self._bloque_editable(page, self._parrafo_de(todas, linea), linea, tramo)
+
+    # Por dirección de línea: (inicio, fin) a lo largo del renglón y la coordenada en
+    # la que se apilan los renglones, para tratar igual texto horizontal y girado.
+    @staticmethod
+    def _ejes_linea(l):
+        x0, y0, x1, y1 = l["bbox"]
+        ox, oy = l["spans"][0]["origin"]
+        d = tuple(round(v) for v in l.get("dir", (1, 0)))
+        if d == (0, -1):
+            return -y1, -y0, ox
+        if d == (-1, 0):
+            return -x1, -x0, -oy
+        if d == (0, 1):
+            return y0, y1, -ox
+        return x0, x1, oy
+
+    def _clave_estilo(self, l):
+        ss = [s for s in l["spans"] if s.get("text", "").strip()]
+        claves = {(round(s["size"] * 2) / 2, self._base14_font(s.get("font"))) for s in ss}
+        return next(iter(claves)) if len(claves) == 1 else None
+
+    def _parrafo_de(self, todas, linea) -> list:
+        """Las líneas del párrafo de `linea`. No se fía de los bloques del extractor:
+        muchos PDF (los de CAD, y los que escribe el propio PyMuPDF) traen cada renglón
+        en un bloque suelto. Se arma por vecindad: misma dirección y estilo, renglones
+        que se solapan a lo largo y un interlineado parejo."""
+        clave = self._clave_estilo(linea)
+        if clave is None:
+            return [linea]
+        direccion = tuple(round(v) for v in linea.get("dir", (1, 0)))
+        cuerpo = clave[0]
+        candidatas = [l for l in todas
+                      if tuple(round(v) for v in l.get("dir", (1, 0))) == direccion and self._clave_estilo(l) == clave]
+        parrafo = [linea]
+        for sentido in (1, -1):
+            actual, paso = linea, None
+            while True:
+                a0, a1, ap = self._ejes_linea(actual)
+                mejor, dist = None, None
+                for l in candidatas:
+                    if any(l is q for q in parrafo):
+                        continue
+                    b0, b1, bp = self._ejes_linea(l)
+                    delta = (bp - ap) * sentido
+                    if not (0.9 * cuerpo <= delta <= 2.2 * cuerpo) or min(a1, b1) - max(a0, b0) <= 0:
+                        continue
+                    if dist is None or delta < dist:
+                        mejor, dist = l, delta
+                if mejor is None or (paso is not None and abs(dist - paso) > 0.2 * paso):
+                    break
+                paso = paso or dist
+                parrafo.append(mejor)
+                actual = mejor
+        return sorted(parrafo, key=lambda l: self._ejes_linea(l)[2])
+
+    def _bloque_editable(self, page, lineas, linea, tramo) -> dict:
+        def tramos(ls):
+            return [s for l in ls for s in l["spans"] if s.get("text", "").strip()]
+
+        def uniforme(ls) -> bool:
+            ss = tramos(ls)
+            ref = ss[0]
+            dir0 = tuple(round(v) for v in ls[0].get("dir", (1, 0)))
+            return all(abs(s["size"] - ref["size"]) <= 0.6
+                       and self._base14_font(s.get("font")) == self._base14_font(ref.get("font"))
+                       for s in ss) and all(tuple(round(v) for v in l.get("dir", (1, 0))) == dir0 for l in ls)
+
+        if uniforme(lineas):
+            modo, elegidas = ("block" if len(lineas) > 1 else "line"), lineas
+        elif uniforme([linea]):
+            modo, elegidas = "line", [linea]
+        else:
+            modo, elegidas = "span", None
+
+        if modo == "span":
+            s = tramo or max(tramos([linea]), key=lambda t: len(t["text"]))
+            rect = fitz.Rect(s["bbox"])
+            texto = s["text"]
+            ref = s
+            alto_linea = None
+            alineacion = "left"
+        else:
+            ss = tramos(elegidas)
+            ref = max(ss, key=lambda t: len(t["text"]))
+            dx, dy = (round(v) for v in elegidas[0].get("dir", (1, 0)))
+            horizontal = dy == 0
+            largo = lambda l: (fitz.Rect(l["bbox"]).width if horizontal else fitz.Rect(l["bbox"]).height)
+            maximo = max(largo(l) for l in elegidas)
+            partes = []
+            fuente = self._base14_font(ref.get("font"))
+
+            def cabia_la_siguiente(l, siguiente) -> bool:
+                # El corte es de ajuste si la primera palabra del renglón siguiente NO
+                # cabía al final de este: es lo que decide cualquier compositor.
+                palabra = "".join(s.get("text", "") for s in siguiente["spans"]).strip().split(" ")[0]
+                try:
+                    ancho = fitz.get_text_length(" " + palabra, fontname=fuente, fontsize=ref["size"])
+                except Exception:
+                    ancho = len(palabra) * ref["size"] * 0.5
+                return largo(l) + ancho <= maximo + 0.5
+
+            for i, l in enumerate(elegidas):
+                t = "".join(s.get("text", "") for s in l["spans"]).strip()
+                if i == len(elegidas) - 1:
+                    partes.append(t)
+                elif not cabia_la_siguiente(l, elegidas[i + 1]):
+                    # Línea llena: el corte es del ajuste, no del autor. Un guion al
+                    # final se conserva pegado (no se sabe si era de partición).
+                    partes.append(t if t.endswith("-") else t + " ")
+                else:
+                    partes.append(t + "\n")
+            texto = "".join(partes)
+            rect = fitz.Rect()
+            for l in elegidas:
+                rect |= fitz.Rect(l["bbox"])
+            # Interlineado real del párrafo (distancia entre orígenes / cuerpo): sin
+            # esto el texto reescrito queda más apretado o más suelto que el original.
+            alto_linea = None
+            if len(elegidas) > 1:
+                ejes = [l["spans"][0]["origin"][1 if horizontal else 0] for l in elegidas]
+                pasos = sorted(abs(b - a) for a, b in zip(ejes, ejes[1:]))
+                paso = pasos[len(pasos) // 2]
+                if paso > 0:
+                    alto_linea = round(paso / ref["size"], 3)
+            alineacion = "left"
+            if horizontal and len(elegidas) > 1:
+                cajas = [fitz.Rect(l["bbox"]) for l in elegidas]
+                izq = max(c.x0 for c in cajas) - min(c.x0 for c in cajas)
+                der = max(c.x1 for c in cajas) - min(c.x1 for c in cajas)
+                cen = max((c.x0 + c.x1) / 2 for c in cajas) - min((c.x0 + c.x1) / 2 for c in cajas)
+                if izq > 4 and cen <= 2:
+                    alineacion = "center"
+                elif izq > 4 and der <= 2:
+                    alineacion = "right"
+
+        negrita, cursiva = self._estilo_span(ref)
+        x0, y0, x1, y1 = self._a_vista(page, rect)
+        return {
+            "mode": modo,
+            "x0": x0, "y0": y0, "x1": x1, "y1": y1,
+            "text": texto,
+            "size": ref.get("size", 12),
+            "color": "#%06x" % (ref.get("color", 0) & 0xFFFFFF),
+            "font": ref.get("font", ""),
+            "bold": negrita,
+            "italic": cursiva,
+            "align": alineacion,
+            "lineHeight": alto_linea,
+        }
+
     def get_text_clip(self, doc_id: str, page_num: int, x: float, y: float, w: float, h: float) -> str:
         with self._lock:
             doc = self._acquire(doc_id)

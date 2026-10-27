@@ -73,24 +73,24 @@ describe('handleToolClick', () => {
   })
 })
 
-describe('handleWatermark', () => {
-  it('pide el texto, llama a /watermark y marca el doc como modificado', async () => {
+describe('encabezado, numeración y marca de agua', () => {
+  // Los tres botones abren el MISMO diálogo (vista previa, posiciones, capa propia) en
+  // su pestaña; ya no piden un formulario de una línea ni escriben nada por su cuenta.
+  it.each([
+    ['handleWatermark', 'marca'],
+    ['handleHeaderFooter', 'encabezado'],
+    ['handleAddPageNumbers', 'numeracion'],
+  ] as const)('%s abre el diálogo en «%s» sin tocar el motor', async (accion, capa) => {
     const fetchMock = okFetch()
     vi.stubGlobal('fetch', fetchMock)
     const h = helpers()
     const { result } = setup(h)
-    await act(async () => { await result.current.handleWatermark() })
-    expect(h.askForm).toHaveBeenCalled()
-    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/pdf/watermark/doc-1'), expect.objectContaining({ method: 'POST' }))
-    expect(usePdfStore.getState().docs[0].dirty).toBe(true)
-  })
-
-  it('no llama al backend si el usuario cancela el formulario', async () => {
-    const fetchMock = okFetch()
-    vi.stubGlobal('fetch', fetchMock)
-    const h = { ...helpers(), askForm: vi.fn(async (_t: string, _f: Field[], _s?: string): Promise<FormValues | null> => null) }
-    const { result } = setup(h)
-    await act(async () => { await result.current.handleWatermark() })
+    const oyente = vi.fn()
+    window.addEventListener('app:sellos', oyente)
+    await act(async () => { await result.current[accion]() })
+    window.removeEventListener('app:sellos', oyente)
+    expect((oyente.mock.calls[0][0] as CustomEvent).detail).toEqual({ capa })
+    expect(h.askForm).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
@@ -631,7 +631,7 @@ describe('quitar la contraseña y la copia .bak', () => {
     const { result } = renderHook(({ d }) => usePdfActions(d, helpers()), { initialProps: { d: doc } })
     await act(async () => { await result.current.handleRemovePassword() })
     expect(urlQuitar(fetchMock)).toContain('backup=true')
-    expect(avisos()).toContain('Guardado, pero no se pudo crear la copia .bak')
+    expect(avisos()).toContain('Guardado, pero no se pudo respaldar el original')
     vi.unstubAllGlobals()
   })
 

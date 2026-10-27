@@ -50,7 +50,7 @@ const titulos = (items: OutlineItem[]): string[] =>
 async function panelEnEsquema() {
   abrirConIndice()
   const r = render(<ThumbnailPanel />)
-  fireEvent.click(screen.getByTitle('Esquema'))
+  fireEvent.click(screen.getByRole('button', { name: 'Esquema' }))
   await waitFor(() => expect(screen.getByText('Fachadas')).toBeTruthy())
   return r
 }
@@ -116,7 +116,7 @@ describe('marcadores del archivo abierto', () => {
     })
     usePdfStore.getState().addBookmark({ id: 'b1', filePath: rutaMarcador, page: 3, label: 'Página 4' })
     render(<ThumbnailPanel />)
-    fireEvent.click(screen.getByTitle('Marcadores'))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcadores' }))
   }
 
   it('los muestra aunque la ruta venga con otras barras y mayúsculas', () => {
@@ -138,7 +138,7 @@ describe('panel de páginas — jerarquía', () => {
       page_sizes: Array.from({ length: 3 }, (_, i) => ({ page_num: i, width: 612, height: 792 })),
     })
     const r = render(<ThumbnailPanel />)
-    fireEvent.click(screen.getByTitle('Páginas'))
+    fireEvent.click(screen.getByRole('button', { name: 'Páginas' }))
     return r
   }
 

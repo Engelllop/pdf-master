@@ -46,3 +46,36 @@ describe('editor de cuadro de texto', () => {
     expect(props.onCancel).toHaveBeenCalled()
   })
 })
+
+describe('editor: saltos de línea y ajuste', () => {
+  it('Enter solo NO confirma: es una línea nueva', () => {
+    const { props } = renderEditor()
+    fireEvent.keyDown(screen.getByLabelText('Texto'), { key: 'Enter' })
+    expect(props.onCommit).not.toHaveBeenCalled()
+  })
+
+  it('las teclas están a la vista', () => {
+    renderEditor()
+    expect(screen.getByText(/Enter: línea nueva · Ctrl\+Enter: aplicar · Esc: cancelar/)).toBeTruthy()
+  })
+
+  it('con ancho de ajuste el texto envuelve y confirma la caja en puntos', () => {
+    const { props } = renderEditor({ wrapWidth: 300, zoom: 2 })
+    const area = screen.getByLabelText('Texto') as HTMLTextAreaElement
+    expect(area.style.whiteSpace).toBe('pre-wrap')
+    expect(area.style.width).toBe('300px')
+    fireEvent.keyDown(area, { key: 'Enter', ctrlKey: true })
+    expect(props.onCommit).toHaveBeenCalledWith(expect.objectContaining({ width: 150 }))
+  })
+
+  it('sin ancho de ajuste no envuelve (crece con la línea)', () => {
+    renderEditor()
+    expect((screen.getByLabelText('Texto') as HTMLTextAreaElement).style.whiteSpace).toBe('pre')
+  })
+
+  it('opaco tapa el texto original y oculta la lista si se pide', () => {
+    renderEditor({ opaque: true, showList: false })
+    expect((screen.getByLabelText('Texto') as HTMLTextAreaElement).style.background).toContain('var(--paper)')
+    expect(screen.queryByLabelText('Lista')).toBeNull()
+  })
+})

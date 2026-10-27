@@ -12,6 +12,16 @@ export interface CajaInicial {
 
 const ESQUINAS: ReadonlyArray<ResizeCorner> = ['nw', 'ne', 'sw', 'se']
 
+export interface OpcionesRedimension {
+  /**
+   * Suelta la proporción de una imagen al arrastrar una esquina (la convención es
+   * Mayús). Por defecto la proporción queda FIJA. Hoy ningún llamador la pasa
+   * (`useAnnotationDrag` y `ContinuousView` no leen el modificador), así que en la app
+   * las esquinas de una imagen siempre mantienen la proporción; los lados siguen libres.
+   */
+  proporcionLibre?: boolean
+}
+
 /**
  * Geometría resultante de arrastrar un tirador, en puntos PDF.
  *
@@ -27,6 +37,7 @@ export function geometriaRedimensionada(
   dx: number,
   dy: number,
   inicio: CajaInicial,
+  opciones: OpcionesRedimension = {},
 ): Partial<Annotation> {
   // Un cuadro de texto encogido a 10 pt deja de mostrar nada y parece que
   // «desapareció»: el mínimo depende del cuerpo de la letra.
@@ -85,11 +96,20 @@ export function geometriaRedimensionada(
   }
 
   // Las esquinas de una imagen mantienen su proporción (los lados siguen libres):
-  // arrastrar la esquina la deformaba y no había vuelta atrás.
-  if (ann.type === 'image' && esEsquina && inicio.w > 0 && inicio.h > 0) {
-    const ratio = inicio.h / inicio.w
-    if (w * ratio > h) w = h / ratio
-    else h = w * ratio
+  // arrastrar la esquina la deformaba y no había vuelta atrás. Manda el eje que MÁS se
+  // movió: antes mandaba el menor, así que arrastrar la esquina en horizontal no hacía
+  // nada (el alto quieto frenaba al ancho). Ningún lado baja del mínimo. Aunque se
+  // deforme la caja con un lado, la imagen no: pantalla y PDF la encajan centrada.
+  if (ann.type === 'image' && esEsquina && !opciones.proporcionLibre && inicio.w > 0 && inicio.h > 0) {
+    const fx = w / inicio.w
+    const fy = h / inicio.h
+    const f = Math.max(
+      Math.abs(fx - 1) >= Math.abs(fy - 1) ? fx : fy,
+      MIN / inicio.w,
+      MIN / inicio.h,
+    )
+    w = inicio.w * f
+    h = inicio.h * f
     if (corner === 'nw' || corner === 'sw') x = inicio.x + (inicio.w - w)
     if (corner === 'nw' || corner === 'ne') y = inicio.y + (inicio.h - h)
   }

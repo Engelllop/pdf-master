@@ -46,6 +46,14 @@ def get_text_clip(doc_id: str, page_num: int, req: TextClipRequest):
 def get_page_spans(doc_id: str, page_num: int):
     return {"spans": pdf_service.get_page_spans(doc_id, page_num)}
 
+@router.get("/text-block/{doc_id}/{page_num}")
+def get_text_block(doc_id: str, page_num: int, x: float = Query(...), y: float = Query(...)):
+    """El párrafo (o línea, o tramo) editable bajo un punto del visor."""
+    bloque = pdf_service.get_text_block(doc_id, page_num, x, y)
+    if bloque is None:
+        raise HTTPException(status_code=404, detail="No hay texto en ese punto")
+    return bloque
+
 @router.get("/snap-points/{doc_id}/{page_num}")
 def get_snap_points(doc_id: str, page_num: int):
     points = pdf_service.get_snap_points(doc_id, page_num)

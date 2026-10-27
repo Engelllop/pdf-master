@@ -169,12 +169,17 @@ class PdfServiceBase:
                 self._dirty.setdefault(doc_id, False)
             self._lru.pop(doc_id, None)
             self._lru[doc_id] = None  # most-recently used
-            self._evict_inactive()
+            self._evict_inactive(conservar=doc_id)
             return self._docs.get(doc_id)
 
-    def _evict_inactive(self):
+    def _evict_inactive(self, conservar: Optional[str] = None):
         """Close least-recently-used non-dirty documents when over the live cap.
-        Must be called holding self._lock."""
+        Must be called holding self._lock.
+
+        `conservar` es el documento que se está pidiendo: nunca se cierra. Con más de
+        `_max_live_docs` documentos con cambios sin guardar, el único limpio era
+        justo el recién pedido, se cerraba, y `_acquire` devolvía None — la app
+        respondía «documento no encontrado» a un PDF abierto."""
         if len(self._docs) <= self._max_live_docs:
             return
         for did in list(self._lru.keys()):
@@ -183,7 +188,7 @@ class PdfServiceBase:
             if did not in self._docs:
                 self._lru.pop(did, None)
                 continue
-            if self._dirty.get(did):
+            if self._dirty.get(did) or did == conservar:
                 continue  # keep unsaved work in memory
             doc = self._docs.pop(did, None)
             if doc is not None:

@@ -2,10 +2,10 @@ import { useStoreSlice } from '../hooks/useStoreSlice'
 import {
   FilePlus, Minimize2, Trash2, RotateCw, RotateCcw,
   Search, AlignVerticalJustifyCenter,
-  X, ChevronDown, ChevronUp, ChevronRight, Merge,
-  BookOpen, Printer,
+  X, ChevronUp, ChevronDown, Merge,
+  BookOpen,
   FileDown, GitCompare, RefreshCw, Scissors, Stamp, FileText, Presentation, ScrollText,
-  Volume2, VolumeX, ScanText,
+  Volume2, VolumeX, ScanText, ScanSearch, SearchX,
   Highlighter, Underline, Strikethrough, MessageSquare, PenTool, Signature,
   Type, Image as ImageIcon, Images, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
@@ -13,24 +13,28 @@ import {
   FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
-  TextCursorInput, CircleDot, List, MoreHorizontal, Eraser,
+  TextCursorInput, CircleDot, List, Eraser, SquareCheck as CheckSquare,
+  Maximize2, MoveHorizontal, Rows3, ClipboardList, ArrowLeftRight, Droplets, ListOrdered, Info,
   type LucideIcon,
 } from 'lucide-react'
 import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
 import { correrLote } from '../lib/lote'
 import { TOOL_LABELS, TOOL_SHORTCUTS } from '../lib/tools'
-import {
-  DRAW_BASIC_IDS, DRAW_SHAPE_IDS, MEASURE_FAMILY_IDS, MORE_TOOL_IDS,
-  isDrawFamily, isDrawShape, isMeasureFamily, isMoreTool,
-} from '../lib/commentRibbon'
+import { ribbonForTool } from '../lib/commentRibbon'
 import { registerCommands } from '../lib/commands'
 import RibbonTabs from './ribbon/RibbonTabs'
 import { RibbonSep } from './ribbon/RibbonOverflow'
+import {
+  RibbonButton, RibbonGallery, RibbonGroup, RibbonMenuButton, RibbonMenuItem, RibbonMenuSep, RibbonSmallButton,
+} from './ribbon/RibbonControls'
 import PrintDialog from './PrintDialog'
+import SellosDialog from './SellosDialog'
+import type { CapaSello } from '../lib/sellos'
 import PropertiesBar from './PropertiesBar'
 import { useFormModal } from './FormModal'
 import { usePdfActions } from '../hooks/usePdfActions'
-import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import Tooltip from './Tooltip'
 
 import { apiFetch } from '../lib/api'
@@ -40,15 +44,50 @@ import { redactMatchesUndoable, replaceTextUndoable } from '../lib/pageUndo'
 type ToolIcon = LucideIcon
 type ToolDescriptor = { id: string; icon: ToolIcon; label: string }
 type TextResponse = { text?: string; blocks?: Array<{ text?: string }> }
-type ToolButtonProps = {
-  icon: ToolIcon
-  label: string
-  tip?: string
-  shortcut?: string
-  onClick: () => void
-  active?: boolean
-  disabled?: boolean
-}
+
+// `label` es el rótulo corto; el nombre completo y el atajo van en el tooltip
+// (TOOL_LABELS/TOOL_SHORTCUTS son la fuente única, compartida con los atajos globales
+// y la barra de estado). Estos catálogos alimentan la paleta de comandos.
+const COUNT_SYMBOL_ICONS: Array<{ id: CountSymbol; icon: ToolIcon; label: string }> = [
+  { id: 'circle', icon: Circle, label: 'círculo' },
+  { id: 'square', icon: Square, label: 'cuadrado' },
+  { id: 'triangle', icon: Triangle, label: 'triángulo' },
+  { id: 'diamond', icon: Diamond, label: 'rombo' },
+  { id: 'cross', icon: X, label: 'cruz' },
+  { id: 'star', icon: Star, label: 'estrella' },
+]
+
+const COMMENT_TOOLS: ToolDescriptor[] = [
+  { id: 'select', icon: MousePointer2, label: 'Seleccionar' },
+  { id: 'eraser', icon: Eraser, label: 'Borrador' },
+  { id: 'textselect', icon: TextSelect, label: 'Copiar texto' },
+  { id: 'highlight', icon: Highlighter, label: 'Resaltar' },
+  { id: 'underline', icon: Underline, label: 'Subrayar' },
+  { id: 'strikethrough', icon: Strikethrough, label: 'Tachar' },
+  { id: 'note', icon: MessageSquare, label: 'Nota' },
+  { id: 'draw', icon: PenTool, label: 'Dibujar' },
+  { id: 'signature', icon: Signature, label: 'Firma' },
+  { id: 'text', icon: Type, label: 'Cuadro texto' },
+  { id: 'stamp', icon: Stamp, label: 'Sello' },
+  { id: 'count', icon: Tally5, label: 'Conteo' },
+  { id: 'measure_calibrate', icon: Ruler, label: 'Calibrar' },
+  { id: 'measure_distance', icon: MoveDiagonal, label: 'Distancia' },
+  { id: 'measure_perimeter', icon: Spline, label: 'Perímetro' },
+  { id: 'measure_area', icon: LandPlot, label: 'Área' },
+]
+
+const SHAPE_TOOLS: ToolDescriptor[] = [
+  { id: 'rect', icon: Square, label: 'Rectángulo' },
+  { id: 'circle', icon: Circle, label: 'Círculo' },
+  { id: 'line', icon: Minus, label: 'Línea' },
+  { id: 'arrow', icon: ArrowRightTool, label: 'Flecha' },
+  { id: 'callout', icon: MessageSquareQuote, label: 'Llamada' },
+  { id: 'check', icon: CheckIcon, label: 'Check' },
+  { id: 'cross', icon: X, label: 'Cruz' },
+  { id: 'star', icon: Star, label: 'Estrella' },
+  { id: 'cloud', icon: CloudIcon, label: 'Nube (revisión)' },
+  { id: 'polygon', icon: Hexagon, label: 'Polígono (clic por vértice, doble clic cierra)' },
+]
 
 export default function Toolbar() {
   const {
@@ -56,7 +95,7 @@ export default function Toolbar() {
     setSearchQuery, setSearchResults, nextSearchResult, prevSearchResult,
     showToast,
     readingMode, toggleReadingMode, togglePresentationMode, toggleContinuousMode,
-    compareMode, activeRibbon, activeTool,
+    compareMode, continuousMode, activeRibbon, activeTool,
     countCategory, setCountCategory, countSymbol, setCountSymbol,
     stickyTools, setStickyTools, setActiveRibbon,
   } = useStoreSlice(
@@ -64,7 +103,7 @@ export default function Toolbar() {
     'setSearchQuery', 'setSearchResults', 'nextSearchResult', 'prevSearchResult',
     'showToast',
     'readingMode', 'toggleReadingMode', 'togglePresentationMode', 'toggleContinuousMode',
-    'compareMode', 'activeRibbon', 'activeTool',
+    'compareMode', 'continuousMode', 'activeRibbon', 'activeTool',
     'countCategory', 'setCountCategory', 'countSymbol', 'setCountSymbol',
     'stickyTools', 'setStickyTools', 'setActiveRibbon',
   )
@@ -101,10 +140,7 @@ export default function Toolbar() {
   const [searchAllDocs, setSearchAllDocs] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [showPrint, setShowPrint] = useState(false)
-  const [commentMenu, setCommentMenu] = useState<string | null>(null)
-  const [drawFormasOpen, setDrawFormasOpen] = useState(false)
-  const [lastDrawTool, setLastDrawTool] = useState('draw')
-  const [lastMeasureTool, setLastMeasureTool] = useState('measure_distance')
+  const [sellos, setSellos] = useState<CapaSello | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const replaceRef = useRef<HTMLInputElement>(null)
 
@@ -114,22 +150,13 @@ export default function Toolbar() {
     else searchRef.current?.focus()
   }, [showSearch, showReplace])
 
-  useEffect(() => { setCommentMenu(null); setDrawFormasOpen(false) }, [activeRibbon])
-  useEffect(() => { if (commentMenu !== 'draw') setDrawFormasOpen(false) }, [commentMenu])
-
-  // Esc cerraba la herramienta pero dejaba el desplegable de formas abierto: se cierra
-  // primero el menú (en captura, para que el atajo global no suelte además la
-  // herramienta que el usuario estaba por elegir).
+  // Encabezado y pie, numeración y marca de agua: un solo diálogo, abierto en la
+  // pestaña que pidió el botón (o la paleta de comandos).
   useEffect(() => {
-    if (!commentMenu) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      e.stopPropagation()
-      closeCommentMenu()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [commentMenu])
+    const onSellos = (e: Event) => setSellos(((e as CustomEvent).detail?.capa as CapaSello) || 'encabezado')
+    window.addEventListener('app:sellos', onSellos)
+    return () => window.removeEventListener('app:sellos', onSellos)
+  }, [])
 
   // Atajo de búsqueda (Ctrl+F) desde App.tsx
   useEffect(() => {
@@ -157,7 +184,7 @@ export default function Toolbar() {
   // donde viven los handlers; la paleta solo los consume.
   useEffect(() => {
     const hasDoc = !!activeDoc
-    const tool = (id: string) => () => { setActiveRibbon('comment'); handleToolClick(id) }
+    const tool = (id: string) => () => { setActiveRibbon(ribbonForTool(id)); handleToolClick(id) }
     registerCommands([
       { id: 'file.open', group: 'Archivo', label: 'Abrir PDF…', shortcut: 'Ctrl+O', run: () => window.dispatchEvent(new CustomEvent('app:shortcut-open')) },
       { id: 'file.save', group: 'Archivo', label: 'Guardar', shortcut: 'Ctrl+S', disabled: !hasDoc, run: () => window.dispatchEvent(new CustomEvent('app:shortcut-save')) },
@@ -388,493 +415,257 @@ export default function Toolbar() {
     }
   }
 
-  // `active` sin valor por defecto a propósito: solo los botones que SON un
-  // interruptor (herramienta, lectura, presentación, comparar) lo pasan, y solo esos
-  // llevan aria-pressed — en los de acción suelta anunciaría un estado que no existe.
-  const TBtn = ({ icon: Icon, label, tip, shortcut, onClick, active, disabled = false }: ToolButtonProps) => (
-    <Tooltip content={tip || label} shortcut={shortcut}>
-      <button onClick={onClick} disabled={disabled} aria-label={tip || label} aria-pressed={active}
-        className={`flex items-center justify-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors duration-fast ease-token disabled:opacity-40 disabled:cursor-not-allowed ${
-          active ? 'bg-selected text-fg' : 'text-fg hover:bg-hover active:bg-active'
-        }`}>
-        <Icon size={16} strokeWidth={1.75} />
-        {/* `rb-label` es lo que apaga la fila cuando se queda sin sitio: antes de
-            esconder herramientas en el menú, se quitan las etiquetas. El nombre
-            sigue en el tooltip y en aria-label, así que no se pierde nada. */}
-        <span className="rb-label">{label}</span>
-      </button>
-    </Tooltip>
-  )
-  // El separador vive en RibbonOverflow: el reparto necesita reconocerlo para no
-  // dejar una raya suelta al final de la fila ni al principio del menú.
   const Sep = RibbonSep
-  const closeCommentMenu = () => { setCommentMenu(null); setDrawFormasOpen(false) }
-  const MenuItem = ({ id, icon: Icon, label }: ToolDescriptor) => (
-    <button role="menuitem" onClick={() => {
-      if (isDrawFamily(id)) setLastDrawTool(id)
-      if (isMeasureFamily(id)) setLastMeasureTool(id)
-      handleToolClick(id)
-      closeCommentMenu()
-    }}
-      className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-        activeTool === id ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
-      }`}>
-      <Icon size={14} strokeWidth={1.75} className="shrink-0" />
-      <span className="flex-1">{TOOL_LABELS[id] || label}</span>
-      {TOOL_SHORTCUTS[id] && (
-        <kbd className="text-micro text-muted">{TOOL_SHORTCUTS[id]}</kbd>
-      )}
-    </button>
+
+  // Un clic en una herramienta del lápiz la activa sin cambiar de pestaña: saltar de
+  // Inicio a Comentar al pulsar «Resaltar» movía toda la banda bajo el cursor.
+  const toolBtn = (id: string, icon: ToolIcon, label: string, tip?: string) => (
+    <RibbonButton key={id} icon={icon} label={label} tip={tip || TOOL_LABELS[id] || label}
+      shortcut={TOOL_SHORTCUTS[id]} onClick={() => handleToolClick(id)} active={activeTool === id} />
   )
-  const SplitTool = ({
-    family, icon: Icon, label, tip, shortcut, active, onActivate, children,
-  }: {
-    family: 'draw' | 'measure'
-    icon: ToolIcon
-    label: string
-    tip: string
-    shortcut?: string
-    active: boolean
-    onActivate: () => void
-    children: ReactNode
-  }) => {
-    const open = commentMenu === family
-    return (
-      <div className="relative flex items-stretch shrink-0">
-        <Tooltip content={tip} shortcut={shortcut}>
-          <button onClick={() => { onActivate(); closeCommentMenu() }} aria-label={tip}
-            className={`flex items-center gap-1.5 pl-2.5 pr-1.5 h-8 text-ui rounded-l-token whitespace-nowrap transition-colors ${
-              active ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
-            }`}>
-            <Icon size={16} strokeWidth={1.75} />
-            <span>{label}</span>
-          </button>
-        </Tooltip>
-        <button type="button" aria-label={`${label}: más opciones`} aria-expanded={open} aria-haspopup="menu"
-          onClick={() => setCommentMenu(open ? null : family)}
-          className={`px-1 h-8 rounded-r-token border-l transition-colors ${
-            active || open
-              ? 'bg-selected text-fg border-toolbar/20'
-              : 'text-muted hover:text-fg hover:bg-hover border-border'
-          }`}>
-          <ChevronDown size={12} />
-        </button>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-sticky" onClick={closeCommentMenu} />
-            <div role="menu" className="menu-pop absolute top-full left-0 z-dropdown mt-1 min-w-[220px] border border-border rounded-token shadow-token-md py-1 bg-panel">
-              {children}
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
-  const OverflowMenu = ({
-    id, icon: Icon, label, active, children,
-  }: {
-    id: string
-    icon: ToolIcon
-    label: string
-    active?: boolean
-    children: ReactNode
-  }) => {
-    const open = commentMenu === id
-    return (
-      <div className="relative shrink-0">
-        <button type="button" aria-label={label} aria-expanded={open} aria-haspopup="menu"
-          onClick={() => setCommentMenu(open ? null : id)}
-          className={`flex items-center gap-1.5 px-2.5 h-8 text-ui rounded-token whitespace-nowrap transition-colors ${
-            active || open ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
-          }`}>
-          <Icon size={16} strokeWidth={1.75} />
-          <span>{label}</span>
-          <ChevronDown size={12} />
-        </button>
-        {open && (
-          <>
-            <div className="fixed inset-0 z-sticky" onClick={closeCommentMenu} />
-            <div role="menu" className="menu-pop absolute top-full right-0 z-dropdown mt-1 min-w-[220px] border border-border rounded-token shadow-token-md py-1 bg-panel">
-              {children}
-            </div>
-          </>
-        )}
-      </div>
-    )
-  }
-
-  // `label` es el rótulo corto del botón; el nombre completo y el atajo van en el
-  // tooltip (TOOL_LABELS/TOOL_SHORTCUTS son la fuente única, compartida con los
-  // atajos globales y la barra de estado).
-  const COUNT_SYMBOL_ICONS: Array<{ id: CountSymbol; icon: ToolIcon }> = [
-    { id: 'circle', icon: Circle },
-    { id: 'square', icon: Square },
-    { id: 'triangle', icon: Triangle },
-    { id: 'diamond', icon: Diamond },
-    { id: 'cross', icon: X },
-    { id: 'star', icon: Star },
-  ]
-
-  const COMMENT_TOOLS: ToolDescriptor[] = [
-    { id: 'select', icon: MousePointer2, label: 'Seleccionar' },
-    { id: 'eraser', icon: Eraser, label: 'Borrador' },
-    { id: 'textselect', icon: TextSelect, label: 'Copiar texto' },
-    { id: 'highlight', icon: Highlighter, label: 'Resaltar' },
-    { id: 'underline', icon: Underline, label: 'Subrayar' },
-    { id: 'strikethrough', icon: Strikethrough, label: 'Tachar' },
-    { id: 'note', icon: MessageSquare, label: 'Nota' },
-    { id: 'draw', icon: PenTool, label: 'Dibujar' },
-    { id: 'signature', icon: Signature, label: 'Firma' },
-    { id: 'text', icon: Type, label: 'Cuadro texto' },
-    { id: 'stamp', icon: Stamp, label: 'Sello' },
-    { id: 'count', icon: Tally5, label: 'Conteo' },
-    { id: 'measure_calibrate', icon: Ruler, label: 'Calibrar' },
-    { id: 'measure_distance', icon: MoveDiagonal, label: 'Distancia' },
-    { id: 'measure_perimeter', icon: Spline, label: 'Perímetro' },
-    { id: 'measure_area', icon: LandPlot, label: 'Área' },
-  ]
-
-  // Galería de formas (estilo Acrobat): las básicas + las nuevas configurables.
-  const SHAPE_TOOLS: ToolDescriptor[] = [
-    { id: 'rect', icon: Square, label: 'Rectángulo' },
-    { id: 'circle', icon: Circle, label: 'Círculo' },
-    { id: 'line', icon: Minus, label: 'Línea' },
-    { id: 'arrow', icon: ArrowRightTool, label: 'Flecha' },
-    { id: 'callout', icon: MessageSquareQuote, label: 'Llamada' },
-    { id: 'check', icon: CheckIcon, label: 'Check' },
-    { id: 'cross', icon: X, label: 'Cruz' },
-    { id: 'star', icon: Star, label: 'Estrella' },
-    { id: 'cloud', icon: CloudIcon, label: 'Nube (revisión)' },
-    { id: 'polygon', icon: Hexagon, label: 'Polígono (clic por vértice, doble clic cierra)' },
-  ]
-
+  const toolSmall = (id: string, icon: ToolIcon) => (
+    <RibbonSmallButton key={id} icon={icon} label={TOOL_LABELS[id] || id}
+      shortcut={TOOL_SHORTCUTS[id]} onClick={() => handleToolClick(id)} active={activeTool === id} />
+  )
   const renderRibbon = () => {
     if (!activeDoc) return null
     switch (activeRibbon) {
       case 'read':
         return (
           <>
-            <TBtn icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
-            <TBtn icon={Presentation} label="Presentación" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
-            <TBtn icon={GitCompare} label="Comparar" tip="Comparar PDFs" onClick={handleCompare} active={compareMode} />
+            <RibbonGroup label="Herramientas">
+              {toolBtn('select', MousePointer2, 'Seleccionar')}
+              {toolBtn('textselect', TextSelect, 'Copiar texto')}
+            </RibbonGroup>
             <Sep />
-            <TBtn icon={Highlighter} label="Resaltar" tip={TOOL_LABELS.highlight}
-              shortcut={TOOL_SHORTCUTS.highlight}
-              onClick={() => { setActiveRibbon('comment'); handleToolClick('highlight') }}
-              active={activeTool === 'highlight'} disabled={compareMode} />
-            <TBtn icon={MessageSquare} label="Nota" tip={TOOL_LABELS.note}
-              shortcut={TOOL_SHORTCUTS.note}
-              onClick={() => { setActiveRibbon('comment'); handleToolClick('note') }}
-              active={activeTool === 'note'} disabled={compareMode} />
+            <RibbonGroup label="Vista">
+              <RibbonButton icon={Maximize2} label="Página" tip="Ajustar página" onClick={() => handleFit('fit-page')} />
+              <RibbonButton icon={MoveHorizontal} label="Ancho" tip="Ajustar al ancho" onClick={() => handleFit('fit-width')} />
+              <RibbonButton icon={Rows3} label="Continuo" tip="Scroll continuo" onClick={() => toggleContinuousMode()}
+                active={continuousMode} disabled={compareMode} />
+            </RibbonGroup>
             <Sep />
-            <TBtn icon={isSpeaking ? VolumeX : Volume2} label="Leer" tip={isSpeaking ? 'Detener' : 'Leer en voz alta'} onClick={handleReadAloud} active={isSpeaking} />
-            <TBtn icon={Printer} label="Imprimir" tip="Imprimir" onClick={() => setShowPrint(true)} />
+            <RibbonGroup label="Modos">
+              <RibbonButton icon={BookOpen} label="Lectura" tip="Modo lectura" onClick={toggleReadingMode} active={readingMode} disabled={compareMode} />
+              <RibbonButton icon={Presentation} label="Presentar" tip="Modo presentación" onClick={() => togglePresentationMode()} disabled={compareMode} />
+              <RibbonButton icon={GitCompare} label="Comparar" tip="Comparar dos PDFs" onClick={handleCompare} active={compareMode} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Revisión">
+              {toolBtn('highlight', Highlighter, 'Resaltar')}
+              {toolBtn('note', MessageSquare, 'Nota')}
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Voz">
+              <RibbonButton icon={isSpeaking ? VolumeX : Volume2} label={isSpeaking ? 'Detener' : 'Leer'}
+                tip={isSpeaking ? 'Detener la lectura' : 'Leer la página en voz alta'} onClick={handleReadAloud} active={isSpeaking} />
+            </RibbonGroup>
           </>
         )
-      case 'comment': {
-        const allTools = [...COMMENT_TOOLS, ...SHAPE_TOOLS]
-        const byId = (id: string) => allTools.find((t) => t.id === id)
-        const drawId = isDrawFamily(activeTool) ? activeTool! : lastDrawTool
-        const measureId = isMeasureFamily(activeTool) ? activeTool! : lastMeasureTool
-        const drawDef = byId(drawId) || byId('draw')!
-        const measureDef = byId(measureId) || byId('measure_distance')!
-        const moreActive = isMoreTool(activeTool)
+      case 'comment':
         return (
           <>
-            <Tooltip content={stickyTools
-              ? 'Herramienta fija: se queda activa hasta pulsar Esc'
-              : 'Herramienta de un solo uso: se suelta tras cada marca'}>
-              <button onClick={() => setStickyTools(!stickyTools)} aria-label="Fijar herramienta"
-                className={`p-2 rounded-token transition-colors ${stickyTools ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-                {stickyTools ? <Pin size={16} strokeWidth={1.75} /> : <PinOff size={16} strokeWidth={1.75} />}
-              </button>
-            </Tooltip>
+            <RibbonGroup label="Selección">
+              {toolBtn('select', MousePointer2, 'Seleccionar')}
+              {toolBtn('eraser', Eraser, 'Borrador', 'Borrador: pasá sobre un dibujo y lo corta, como el borrador de un lápiz')}
+              <RibbonButton icon={stickyTools ? Pin : PinOff} label="Fijar"
+                tip={stickyTools
+                  ? 'Herramienta fija: se queda activa hasta pulsar Esc'
+                  : 'Herramienta de un solo uso: se suelta tras cada marca'}
+                onClick={() => setStickyTools(!stickyTools)} active={stickyTools} />
+            </RibbonGroup>
             <Sep />
-            <TBtn icon={MousePointer2} label="Seleccionar" tip={TOOL_LABELS.select}
-              shortcut={TOOL_SHORTCUTS.select}
-              onClick={() => handleToolClick('select')} active={activeTool === 'select'} />
-            <TBtn icon={Eraser} label="Borrador" tip="Borrador: pasá sobre un dibujo y lo corta, como el borrador de un lápiz"
-              shortcut={TOOL_SHORTCUTS.eraser}
-              onClick={() => handleToolClick('eraser')} active={activeTool === 'eraser'} />
-            <TBtn icon={Highlighter} label="Resaltar" tip={TOOL_LABELS.highlight}
-              shortcut={TOOL_SHORTCUTS.highlight}
-              onClick={() => handleToolClick('highlight')} active={activeTool === 'highlight'} />
-            <TBtn icon={MessageSquare} label="Nota" tip={TOOL_LABELS.note}
-              shortcut={TOOL_SHORTCUTS.note}
-              onClick={() => handleToolClick('note')} active={activeTool === 'note'} />
-            <TBtn icon={Tally5} label="Conteo" tip={TOOL_LABELS.count}
-              shortcut={TOOL_SHORTCUTS.count}
-              onClick={() => handleToolClick('count')} active={activeTool === 'count'} />
-            <SplitTool
-              family="draw"
-              icon={drawDef.icon}
-              label={isDrawFamily(activeTool) ? (TOOL_LABELS[drawId] || drawDef.label) : 'Dibujar'}
-              tip={TOOL_LABELS[drawId] || 'Dibujar'}
-              shortcut={TOOL_SHORTCUTS[drawId]}
-              active={isDrawFamily(activeTool)}
-              onActivate={() => { setLastDrawTool(drawId); handleToolClick(drawId) }}
-            >
-              {DRAW_BASIC_IDS.map((id) => {
-                const t = byId(id)
-                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
-              })}
-              <div className="relative">
-                <button type="button" role="menuitem"
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDrawFormasOpen((o) => !o) }}
-                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left transition-colors ${
-                    isDrawShape(activeTool) || drawFormasOpen ? 'bg-selected text-fg' : 'text-fg hover:bg-hover'
-                  }`}>
-                  <Hexagon size={14} strokeWidth={1.75} className="shrink-0" />
-                  <span className="flex-1">Formas</span>
-                  <ChevronRight size={12} />
-                </button>
-                {drawFormasOpen && (
-                  <div role="menu" className="menu-pop absolute left-full top-0 z-dropdown ml-1 min-w-[200px] border border-border rounded-token shadow-token-md py-1 bg-panel">
-                    {DRAW_SHAPE_IDS.map((id) => {
-                      const t = byId(id)
-                      return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
-                    })}
-                  </div>
-                )}
-              </div>
-            </SplitTool>
-            <SplitTool
-              family="measure"
-              icon={measureDef.icon}
-              label={isMeasureFamily(activeTool) ? (TOOL_LABELS[measureId] || measureDef.label) : 'Medir'}
-              tip={TOOL_LABELS[measureId] || 'Medir'}
-              shortcut={TOOL_SHORTCUTS[measureId]}
-              active={isMeasureFamily(activeTool)}
-              onActivate={() => { setLastMeasureTool(measureId); handleToolClick(measureId) }}
-            >
-              {MEASURE_FAMILY_IDS.map((id) => {
-                const t = byId(id)
-                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
-              })}
-            </SplitTool>
+            <RibbonGroup label="Texto">
+              {toolBtn('highlight', Highlighter, 'Resaltar')}
+              {toolBtn('note', MessageSquare, 'Nota')}
+              {toolBtn('text', Type, 'Cuadro')}
+              <RibbonGallery>
+                {toolSmall('underline', Underline)}
+                {toolSmall('strikethrough', Strikethrough)}
+                {toolSmall('callout', MessageSquareQuote)}
+                {toolSmall('textselect', TextSelect)}
+              </RibbonGallery>
+            </RibbonGroup>
             <Sep />
-            <OverflowMenu id="more" icon={MoreHorizontal} label="Más" active={moreActive}>
-              {MORE_TOOL_IDS.map((id) => {
-                const t = byId(id)
-                return t ? <MenuItem key={id} id={id} icon={t.icon} label={t.label} /> : null
-              })}
-            </OverflowMenu>
-            <OverflowMenu id="export" icon={FileDown} label="Exportar">
-              <button role="menuitem" onClick={() => { handleMarkupSummary(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileDown size={14} /> Resumen de marcas
-              </button>
-              <button role="menuitem" onClick={() => { handleExportMeasurements(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileSpreadsheet size={14} /> Mediciones y conteos
-              </button>
-              <button role="menuitem" onClick={() => { handleExportXfdf(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileType size={14} /> Exportar marcas
-              </button>
-              <button role="menuitem" onClick={() => { handleImportXfdf(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FilePlus2 size={14} /> Importar marcas
-              </button>
-            </OverflowMenu>
-            {activeTool === 'count' && (
-              <>
-                <Sep />
-                <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
-                  placeholder="Categoría" title="Categoría del conteo" aria-label="Categoría del conteo"
-                  className="w-28 px-2 py-1 text-mini rounded-token-sm border border-border bg-surface text-fg shrink-0" />
-                <div className="flex items-center gap-0.5 shrink-0">
-                  {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon }) => (
-                    <button key={id} onClick={() => setCountSymbol(id)} title={`Símbolo: ${id}`} aria-label={`Símbolo ${id}`}
-                      className={`p-1 rounded-token-sm transition-colors ${countSymbol === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}>
-                      <Icon size={14} />
-                    </button>
+            <RibbonGroup label="Dibujo">
+              {toolBtn('draw', PenTool, 'Lápiz')}
+              {toolBtn('cloud', CloudIcon, 'Nube')}
+              <RibbonGallery>
+                {toolSmall('line', Minus)}
+                {toolSmall('arrow', ArrowRightTool)}
+                {toolSmall('rect', Square)}
+                {toolSmall('circle', Circle)}
+                {toolSmall('polygon', Hexagon)}
+                {toolSmall('star', Star)}
+              </RibbonGallery>
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Sellos">
+              {toolBtn('stamp', Stamp, 'Sello')}
+              {toolBtn('signature', Signature, 'Firma')}
+              <RibbonGallery>
+                {toolSmall('check', CheckIcon)}
+                {toolSmall('cross', X)}
+              </RibbonGallery>
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Marcas">
+              <RibbonButton icon={ClipboardList} label="Resumen" tip="Resumen de marcas (PDF)" onClick={handleMarkupSummary} />
+              <RibbonMenuButton icon={ArrowLeftRight} label="XFDF" tip="Intercambiar marcas con Acrobat o Bluebeam">
+                <RibbonMenuItem icon={FileDown} label="Exportar marcas" onClick={handleExportXfdf} />
+                <RibbonMenuItem icon={FilePlus2} label="Importar marcas" onClick={handleImportXfdf} />
+              </RibbonMenuButton>
+            </RibbonGroup>
+          </>
+        )
+      case 'measure': {
+        const enCategoria = activeDoc.annotations.filter((a) => a.type === 'count' && (a.text || 'General') === (countCategory || 'General')).length
+        return (
+          <>
+            <RibbonGroup label="Escala">
+              {toolBtn('measure_calibrate', Ruler, 'Calibrar')}
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Medir">
+              {toolBtn('measure_distance', MoveDiagonal, 'Distancia')}
+              {toolBtn('measure_perimeter', Spline, 'Perímetro')}
+              {toolBtn('measure_area', LandPlot, 'Área')}
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Conteo">
+              {toolBtn('count', Tally5, 'Conteo')}
+              {/* La categoría y el símbolo se eligen ANTES de marcar: van siempre a la
+                  vista, no solo con la herramienta activa (antes aparecían y corrían
+                  la fila al activarla). */}
+              <div className="flex flex-col justify-center gap-1 px-1 self-center">
+                <div className="flex items-center gap-1">
+                  <input type="text" value={countCategory} onChange={(e) => setCountCategory(e.target.value)}
+                    placeholder="Categoría" title="Categoría del conteo" aria-label="Categoría del conteo"
+                    className="w-28 h-[22px] px-1.5 text-mini rounded-token-sm border border-border-control/60 bg-surface text-fg" />
+                  <span className="text-mini text-muted tabular w-8" title="Marcas de esta categoría en el documento">= {enCategoria}</span>
+                </div>
+                <div className="flex items-center gap-0.5">
+                  {COUNT_SYMBOL_ICONS.map(({ id, icon: Icon, label }) => (
+                    <Tooltip key={id} content={`Símbolo: ${label}`}>
+                      <button type="button" onClick={() => setCountSymbol(id)} aria-label={`Símbolo ${label}`} aria-pressed={countSymbol === id}
+                        className={`w-[22px] h-[20px] inline-flex items-center justify-center rounded-token-sm transition-colors ${countSymbol === id ? 'bg-selected text-fg' : 'text-muted hover:bg-hover hover:text-fg'}`}>
+                        <Icon size={13} />
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
-                <span className="text-mini text-muted shrink-0 tabular" title="Marcas de esta categoría en el documento">
-                  = {activeDoc.annotations.filter((a) => a.type === 'count' && (a.text || 'General') === (countCategory || 'General')).length}
-                </span>
-              </>
-            )}
+              </div>
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Datos">
+              <RibbonButton icon={FileSpreadsheet} label="Exportar" tip="Exportar mediciones y conteos a Excel" onClick={handleExportMeasurements} />
+            </RibbonGroup>
           </>
         )
       }
-      case 'edit': {
-        const contentOn = ['edittext', 'text', 'image', 'editimage'].includes(activeTool || '')
-        const formOn = ['formtext', 'formcheck', 'formradio', 'formcombo'].includes(activeTool || '')
-        const itemCls = (id: string) =>
-          `w-full flex items-center gap-2 px-3 py-1.5 text-mini text-left hover:bg-hover ${activeTool === id ? 'bg-selected text-fg' : 'text-fg'}`
+      case 'edit':
         return (
           <>
-            <OverflowMenu id="edit-content" icon={Type} label="Contenido" active={contentOn}>
-              <button role="menuitem" onClick={() => { handleToolClick('edittext'); closeCommentMenu() }} className={itemCls('edittext')}>
-                <Pencil size={14} /> Editar texto
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('text'); closeCommentMenu() }} className={itemCls('text')}>
-                <Type size={14} /> Texto
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('image'); closeCommentMenu() }} className={itemCls('image')}>
-                <ImageIcon size={14} /> Imagen
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('editimage'); closeCommentMenu() }} className={itemCls('editimage')}>
-                <Images size={14} /> Editar imagen
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="edit-form" icon={TextCursorInput} label="Formulario" active={formOn}>
-              <button role="menuitem" onClick={() => { handleToolClick('formtext'); closeCommentMenu() }} className={itemCls('formtext')}>
-                <TextCursorInput size={14} /> Campo de texto
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('formcheck'); closeCommentMenu() }} className={itemCls('formcheck')}>
-                <CheckIcon size={14} /> Casilla
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('formradio'); closeCommentMenu() }} className={itemCls('formradio')}>
-                <CircleDot size={14} /> Opción
-              </button>
-              <button role="menuitem" onClick={() => { handleToolClick('formcombo'); closeCommentMenu() }} className={itemCls('formcombo')}>
-                <List size={14} /> Lista
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="edit-doc" icon={FileText} label="Documento">
-              <button role="menuitem" onClick={() => { handleHeaderFooter(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <AlignVerticalJustifyCenter size={14} /> Encabezado y pie
-              </button>
-              <button role="menuitem" onClick={() => { handleWatermark(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Stamp size={14} /> Marca de agua
-              </button>
-              <button role="menuitem" onClick={() => { handleAddPageNumbers(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileText size={14} /> Numerar páginas
-              </button>
-              <button role="menuitem" onClick={() => { handleEditMetadata(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileText size={14} /> Metadatos
-              </button>
-            </OverflowMenu>
+            <RibbonGroup label="Contenido">
+              {toolBtn('edittext', Pencil, 'Editar texto')}
+              {toolBtn('text', Type, 'Agregar texto')}
+              {toolBtn('image', ImageIcon, 'Imagen')}
+              {toolBtn('editimage', Images, 'Editar imagen')}
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Formulario">
+              {toolBtn('formtext', TextCursorInput, 'Texto')}
+              {toolBtn('formcheck', CheckSquare, 'Casilla')}
+              {toolBtn('formradio', CircleDot, 'Opción')}
+              {toolBtn('formcombo', List, 'Lista')}
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Documento">
+              <RibbonButton icon={AlignVerticalJustifyCenter} label="Encabezado" tip="Encabezado y pie de página" onClick={handleHeaderFooter} />
+              <RibbonButton icon={Droplets} label="Marca de agua" tip="Marca de agua" onClick={handleWatermark} />
+              <RibbonButton icon={ListOrdered} label="Numerar" tip="Numerar páginas" onClick={handleAddPageNumbers} />
+              <RibbonButton icon={Info} label="Propiedades" tip="Editar metadatos del documento" onClick={handleEditMetadata} />
+            </RibbonGroup>
           </>
         )
-      }
       case 'page':
         return (
           <>
-            <OverflowMenu id="page-rotate" icon={RotateCw} label="Rotar">
-              <button role="menuitem" onClick={() => { handleRotate(-90); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <RotateCcw size={14} /> Rotar a la izquierda
-              </button>
-              <button role="menuitem" onClick={() => { handleRotate(90); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <RotateCw size={14} /> Rotar a la derecha
-              </button>
-              <button role="menuitem" onClick={() => { handleRotateAll(90); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <RefreshCw size={14} /> Rotar todo el documento
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="page-pages" icon={FilePlus} label="Páginas">
-              <button role="menuitem" onClick={() => { handleInsertBlank(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FilePlus size={14} /> Insertar en blanco
-              </button>
-              <button role="menuitem" onClick={() => { handleDuplicatePage(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Copy size={14} /> Duplicar
-              </button>
-              <button role="menuitem" onClick={() => { handleDeletePage(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Trash2 size={14} /> Eliminar
-              </button>
-              <button role="menuitem" onClick={() => { window.dispatchEvent(new CustomEvent('app:page-organizer')); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <LayoutGrid size={14} /> Organizar
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="page-extract" icon={Scissors} label="Extraer">
-              <button role="menuitem" onClick={() => { handleMerge(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Merge size={14} /> Combinar otro PDF
-              </button>
-              <div className="h-px my-1 bg-border" />
-              {([['even', 'Dividir páginas pares'], ['odd', 'Dividir páginas impares'], ['range', 'Dividir rango…'], ['from-current', 'Dividir desde la actual']] as const).map(([m, lbl]) => (
-                <button key={m} role="menuitem" onClick={() => { handleSplit(m); closeCommentMenu() }}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                  <Scissors size={14} /> {lbl}
-                </button>
-              ))}
-              <div className="h-px my-1 bg-border" />
-              <button role="menuitem" onClick={() => { handleCrop(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Crop size={14} /> Recortar
-              </button>
-            </OverflowMenu>
+            <RibbonGroup label="Rotar">
+              <RibbonButton icon={RotateCcw} label="Izquierda" tip="Rotar a la izquierda" onClick={() => handleRotate(-90)} />
+              <RibbonButton icon={RotateCw} label="Derecha" tip="Rotar a la derecha" onClick={() => handleRotate(90)} />
+              <RibbonButton icon={RefreshCw} label="Todo" tip="Rotar todo el documento" onClick={() => handleRotateAll(90)} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Páginas">
+              <RibbonButton icon={FilePlus} label="Insertar" tip="Insertar página en blanco" onClick={handleInsertBlank} />
+              <RibbonButton icon={Copy} label="Duplicar" tip="Duplicar la página actual" onClick={handleDuplicatePage} />
+              <RibbonButton icon={Trash2} label="Eliminar" tip="Eliminar la página actual" onClick={handleDeletePage} />
+              <RibbonButton icon={LayoutGrid} label="Organizar" tip="Organizar páginas (pantalla completa)"
+                onClick={() => window.dispatchEvent(new CustomEvent('app:page-organizer'))} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Documento">
+              <RibbonButton icon={Merge} label="Combinar" tip="Combinar otro PDF" onClick={handleMerge} />
+              <RibbonMenuButton icon={Scissors} label="Dividir" tip="Dividir o extraer páginas">
+                <RibbonMenuItem icon={Scissors} label="Rango…" onClick={() => handleSplit('range')} />
+                <RibbonMenuItem icon={Scissors} label="Desde la página actual" onClick={() => handleSplit('from-current')} />
+                <RibbonMenuSep />
+                <RibbonMenuItem icon={Scissors} label="Páginas pares" onClick={() => handleSplit('even')} />
+                <RibbonMenuItem icon={Scissors} label="Páginas impares" onClick={() => handleSplit('odd')} />
+              </RibbonMenuButton>
+              <RibbonButton icon={Crop} label="Recortar" tip="Recortar página" onClick={handleCrop} />
+            </RibbonGroup>
           </>
         )
       case 'protect':
         return (
           <>
-            <TBtn icon={Lock} label="Contraseña" tip="Guardar con contraseña (AES-256)" onClick={handleSaveWithPassword} />
-            <TBtn icon={LockOpen} label="Quitar clave" tip="Guardar copia sin contraseña" onClick={handleRemovePassword} />
-            <TBtn icon={Shield} label="Redactar" tip="Redactar área" onClick={handleRedact} />
-            <TBtn icon={Search} label="Buscar y redactar" tip="Buscar un texto y tacharlo permanentemente (con vista previa)" onClick={handleRedactMatches} />
+            <RibbonGroup label="Contraseña">
+              <RibbonButton icon={Lock} label="Proteger" tip="Guardar con contraseña (AES-256)" onClick={handleSaveWithPassword} />
+              <RibbonButton icon={LockOpen} label="Quitar clave" tip="Guardar copia sin contraseña" onClick={handleRemovePassword} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Redacción">
+              <RibbonButton icon={Shield} label="Redactar área" tip="Tachar permanentemente un área" onClick={handleRedact} />
+              <RibbonButton icon={SearchX} label="Buscar y redactar" tip="Buscar un texto y tacharlo permanentemente (con vista previa)" onClick={handleRedactMatches} />
+            </RibbonGroup>
           </>
         )
       case 'convert':
         return (
           <>
-            <OverflowMenu id="cvt-office" icon={FileDown} label="Oficina">
-              <button role="menuitem" onClick={() => { handleExportWord(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileDown size={14} /> Word
-              </button>
-              <button role="menuitem" onClick={() => { handleExportExcel(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileSpreadsheet size={14} /> Excel
-              </button>
-              <button role="menuitem" onClick={() => { handleExportPptx(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Presentation size={14} /> PowerPoint
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="cvt-text" icon={FileType} label="Texto">
-              <button role="menuitem" onClick={() => { handleExportTxt(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileType size={14} /> TXT
-              </button>
-              <button role="menuitem" onClick={() => { handleExportHtml(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <Code2 size={14} /> HTML
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="cvt-image" icon={FileImage} label="Imagen">
-              <button role="menuitem" onClick={() => { handleSavePageAsImage(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FileImage size={14} /> Página como imagen
-              </button>
-              <button role="menuitem" onClick={() => { handleImagesToPdf(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <FilePlus2 size={14} /> Imágenes → PDF
-              </button>
-            </OverflowMenu>
-            <OverflowMenu id="cvt-ocr" icon={ScanText} label="OCR">
-              <button role="menuitem" onClick={() => { handleMakeSearchable(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <ScanText size={14} /> Hacer página buscable
-              </button>
-              <button role="menuitem" onClick={() => { handleOcr(); closeCommentMenu() }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-mini text-fg hover:bg-hover text-left">
-                <ScanText size={14} /> Extraer texto
-              </button>
-            </OverflowMenu>
+            <RibbonGroup label="Exportar">
+              <RibbonButton icon={FileText} label="Word" tip="Exportar a Word" onClick={handleExportWord} />
+              <RibbonButton icon={FileSpreadsheet} label="Excel" tip="Exportar a Excel" onClick={handleExportExcel} />
+              <RibbonButton icon={Presentation} label="PowerPoint" tip="Exportar a PowerPoint" onClick={handleExportPptx} />
+              <RibbonButton icon={FileImage} label="Imagen" tip="Guardar la página como imagen" onClick={handleSavePageAsImage} />
+              <RibbonMenuButton icon={FileType} label="Texto" tip="Exportar a texto plano o HTML">
+                <RibbonMenuItem icon={FileType} label="Texto plano (.txt)" onClick={handleExportTxt} />
+                <RibbonMenuItem icon={Code2} label="Página web (.html)" onClick={handleExportHtml} />
+              </RibbonMenuButton>
+            </RibbonGroup>
             <Sep />
-            <TBtn icon={Minimize2} label="Comprimir" tip="Comprimir PDF" onClick={handleCompress} />
+            <RibbonGroup label="Crear">
+              <RibbonButton icon={FilePlus2} label="Desde imágenes" tip="Crear PDF a partir de imágenes" onClick={handleImagesToPdf} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="OCR">
+              <RibbonButton icon={ScanText} label="Hacer buscable" tip="OCR: hacer la página buscable" onClick={handleMakeSearchable} />
+              <RibbonButton icon={ScanSearch} label="Extraer texto" tip="OCR: extraer el texto de la página" onClick={handleOcr} />
+            </RibbonGroup>
+            <Sep />
+            <RibbonGroup label="Optimizar">
+              <RibbonButton icon={Minimize2} label="Comprimir" tip="Comprimir PDF" onClick={handleCompress} />
+            </RibbonGroup>
             {docs.length > 1 && (
               <>
                 <Sep />
-                <span className="text-mini text-muted px-1 shrink-0 self-center tabular">Todos ({docs.length}):</span>
-                <TBtn icon={Minimize2} label="Comprimir" tip="Comprimir todos los documentos abiertos" onClick={handleBatchCompress} />
-                <TBtn icon={Stamp} label="Marca agua" tip="Marca de agua en todos los abiertos" onClick={handleBatchWatermark} />
-                <TBtn icon={FileDown} label="A Word" tip="Exportar todos los abiertos a Word" onClick={handleBatchExportWord} />
+                <RibbonGroup label={`Todos los abiertos (${docs.length})`}>
+                  <RibbonButton icon={Minimize2} label="Comprimir" tip="Comprimir todos los documentos abiertos" onClick={handleBatchCompress} />
+                  <RibbonButton icon={Droplets} label="Marca de agua" tip="Marca de agua en todos los abiertos" onClick={handleBatchWatermark} />
+                  <RibbonButton icon={FileText} label="A Word" tip="Exportar todos los abiertos a Word" onClick={handleBatchExportWord} />
+                </RibbonGroup>
               </>
             )}
           </>
@@ -883,11 +674,16 @@ export default function Toolbar() {
         const openAI = (preset?: string) => window.dispatchEvent(new CustomEvent('app:ai-open', { detail: preset ? { preset } : {} }))
         return (
           <>
-            <TBtn icon={Sparkles} label="Asistente" tip="Abrir asistente IA (Claude)" onClick={() => openAI()} />
+            <RibbonGroup label="Asistente">
+              <RibbonButton icon={Sparkles} label="Asistente" tip="Abrir asistente IA (Claude)" onClick={() => openAI()} />
+            </RibbonGroup>
             <Sep />
-            <TBtn icon={ScrollText} label="Resumir" tip="Resumir el documento" onClick={() => openAI('Resume este documento en puntos clave.')} />
-            <TBtn icon={MessageCircleQuestion} label="Preguntar" tip="Preguntar sobre el PDF" onClick={() => openAI()} />
-            <TBtn icon={ListTree} label="Extraer" tip="Extraer datos estructurados" onClick={() => openAI('Extrae los datos más relevantes de este documento en formato estructurado (listas o tabla).')} />
+            <RibbonGroup label="Sobre el documento">
+              <RibbonButton icon={ScrollText} label="Resumir" tip="Resumir el documento" onClick={() => openAI('Resume este documento en puntos clave.')} />
+              <RibbonButton icon={MessageCircleQuestion} label="Preguntar" tip="Preguntar sobre el PDF" onClick={() => openAI()} />
+              <RibbonButton icon={ListTree} label="Extraer datos" tip="Extraer datos estructurados"
+                onClick={() => openAI('Extrae los datos más relevantes de este documento en formato estructurado (listas o tabla).')} />
+            </RibbonGroup>
           </>
         )
       }
@@ -902,10 +698,16 @@ export default function Toolbar() {
   // mientras la caja está abierta: es su ancla, y sin él la fila daba un salto.
   const buscador = activeDoc ? (
     <div className="relative shrink-0">
+      {/* Parece un campo porque ES el sitio donde se busca: un icono suelto en la
+          esquina no se lee como buscador. En una ventana estrecha queda solo la lupa. */}
       <button onClick={() => setShowSearch((v) => !v)} aria-label="Buscar" aria-expanded={showSearch}
         title="Buscar (Ctrl+F)"
-        className={`w-8 h-8 inline-flex items-center justify-center rounded-token-sm transition-[background-color,color,transform] duration-fast ease-token active:scale-[0.97] active:duration-instant ${showSearch ? 'bg-selected text-fg' : 'text-muted hover:text-fg hover:bg-hover'}`}>
-        <Search size={16} />
+        className={`rb-search h-7 inline-flex items-center gap-2 px-2 rounded-token-sm border text-mini transition-[background-color,color,border-color] duration-fast ease-token ${
+          showSearch ? 'bg-panel border-accent text-fg' : 'bg-surface border-border text-muted hover:text-fg hover:border-border-strong'
+        }`}>
+        <Search size={14} className="shrink-0" />
+        <span className="rb-search-text flex-1 text-left">Buscar en el documento</span>
+        <kbd className="rb-search-text px-1 rounded-token-sm border border-border text-micro text-faint tabular">Ctrl+F</kbd>
       </button>
       {showSearch && (
         <div className="absolute right-0 top-full mt-2 z-dropdown menu-pop">
@@ -966,19 +768,24 @@ export default function Toolbar() {
   ) : null
 
   return (
-    <div className="relative z-dropdown flex flex-col shrink-0 select-none material text-fg">
+    <div className="relative z-dropdown flex flex-col shrink-0 select-none material border-b border-border-strong/70 text-fg">
       <RibbonTabs tools={renderRibbon()} trailing={buscador} />
 
       {activeDoc && <PropertiesBar />}
       {formModal}
 
-      {showPrint && activeDoc && (
+      {/* Los diálogos van al body: la cinta es material (`backdrop-filter`), que hace
+          de contenedor de los `fixed` de adentro, y un diálogo se centraba sobre la
+          cinta —cortado por arriba— en vez de sobre la ventana. */}
+      {sellos && activeDoc && createPortal(<SellosDialog capaInicial={sellos} onClose={() => setSellos(null)} />, document.body)}
+      {showPrint && activeDoc && createPortal(
         <PrintDialog
           docId={activeDoc.doc_id}
           pageCount={activeDoc.page_count}
           currentPage={activeDoc.currentPage}
           onClose={() => setShowPrint(false)}
-        />
+        />,
+        document.body,
       )}
     </div>
   )

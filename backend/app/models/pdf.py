@@ -17,6 +17,9 @@ class PdfInfo(BaseModel):
     title: Optional[str] = None
     author: Optional[str] = None
     subject: Optional[str] = None
+    # Sin esto el diálogo de propiedades mostraba SIEMPRE las palabras clave vacías
+    # (aunque el PDF las tuviera) y al guardar se perdían.
+    keywords: Optional[str] = None
     current_page: int = 0
     page_sizes: List[PageSize] = Field(default_factory=list)
     # Anotaciones VISIBLES que la app no gestiona (hoy: los sellos ajenos). Siguen en el

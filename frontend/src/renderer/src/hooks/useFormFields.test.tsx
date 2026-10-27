@@ -9,7 +9,7 @@ vi.mock('../lib/pageUndo', () => ({
   transformFormFieldUndoable: vi.fn(),
 }))
 
-import { useFormFields } from './useFormFields'
+import { useFormFields, aplicarValorLocal, type FormField } from './useFormFields'
 import { usePdfStore } from '../store/usePdfStore'
 
 const initialState = usePdfStore.getState()
@@ -41,4 +41,39 @@ describe('campos de formulario', () => {
     expect(ok).toBe(false)
     expect(usePdfStore.getState().toasts.some((t) => /no se pudo guardar el campo/i.test(t.message))).toBe(true)
   })
+
+  it('tras elegir una opción, el valor local enciende solo esa (no todo el grupo)', async () => {
+    const opcion = (xref: number, on: string): FormField => ({
+      xref, field_name: 'sexo', field_type: 'RadioButton', value: 'Off', on_state: on, options: [],
+      rect: { x: 0, y: 0, width: 10, height: 10 },
+    })
+    apiFetch.mockResolvedValue({ ok: true, json: async () => [opcion(6, 'Choice1'), opcion(7, 'Choice2')] })
+    formFieldUndoable.mockResolvedValue(undefined)
+    const { result } = renderHook(() => useFormFields('doc-2', 0))
+    await waitFor(() => expect(result.current.fields).toHaveLength(2))
+
+    await act(async () => { await result.current.updateField('sexo', 'Choice2', 7) })
+
+    // El widget tocado viaja al motor: escribe sobre ESA opción.
+    expect(formFieldUndoable).toHaveBeenCalledWith('doc-2', 0, 'sexo', 'Choice2', 7)
+    expect(result.current.fields.map((f) => f.value)).toEqual(['Off', 'Choice2'])
+  })
 })
+
+describe('aplicarValorLocal', () => {
+  const base = { field_type: 'CheckBox', options: [], rect: { x: 0, y: 0, width: 1, height: 1 } }
+  it('apagar una casilla la deja en Off', () => {
+    const fs: FormField[] = [{ ...base, xref: 1, field_name: 'a', value: '1', on_state: '1' }]
+    expect(aplicarValorLocal(fs, 'a', 'Off', 1)[0].value).toBe('Off')
+  })
+  it('sin xref elige por estado activo; los campos de texto copian el valor', () => {
+    const fs: FormField[] = [
+      { ...base, field_type: 'RadioButton', xref: 1, field_name: 'g', value: 'Off', on_state: 'Si' },
+      { ...base, field_type: 'RadioButton', xref: 2, field_name: 'g', value: 'Si', on_state: 'No' },
+      { ...base, field_type: 'Text', xref: 3, field_name: 't', value: 'x' },
+    ]
+    expect(aplicarValorLocal(fs, 'g', 'Si').map((f) => f.value)).toEqual(['Si', 'Off', 'x'])
+    expect(aplicarValorLocal(fs, 't', 'y')[2].value).toBe('y')
+  })
+})
+
