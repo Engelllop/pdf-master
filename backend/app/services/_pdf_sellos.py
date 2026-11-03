@@ -1,4 +1,4 @@
-"""Sellos de página: encabezado y pie, numeración y marca de agua.
+"""Sellos de página: encabezado y pie, numeración, marca de agua y fondo.
 
 Antes cada uno escribía texto suelto en el contenido de la página: no había forma de
 encontrarlo después, así que no se podía quitar ni corregir, aplicarlo dos veces lo
@@ -25,6 +25,7 @@ CAPAS = {
     "encabezado": "PDF Master - Encabezado y pie",
     "numeracion": "PDF Master - Numeracion",
     "marca": "PDF Master - Marca de agua",
+    "fondo": "PDF Master - Fondo",
 }
 
 ZONAS = ("tl", "tc", "tr", "bl", "bc", "br")
@@ -230,10 +231,51 @@ class SellosMixin:
             y += paso_y
             fila += 1
 
+    # `rotate` de `insert_image` para que la imagen se vea derecha en una página con
+    # /Rotate (el contenido se dibuja en la página SIN girar). Salió igual al giro de la
+    # página; el sentido contrario, que es lo que se supone, dejaba la imagen invertida
+    # en 90° y 270° (lo cubre `test_en_pagina_girada_la_imagen_se_ve_derecha`).
+    _GIRO_IMAGEN = {0: 0, 90: 90, 180: 180, 270: 270}
+
+    def _dibujar_fondo(self, page, spec: dict, ocg: int):
+        """Color liso (con opacidad) o una imagen, DETRÁS de todo el contenido, cubriendo
+        la hoja entera. Las coordenadas se calculan en las del visor y se llevan a las de
+        la página sin girar, que son las que `draw_rect` e `insert_image` usan."""
+        vista = page.rect
+        if spec.get("kind") == "image":
+            if not spec.get("image_path"):
+                return  # todavía sin imagen elegida (la vista previa del diálogo): no se pinta nada
+            try:
+                pix = fitz.Pixmap(spec["image_path"])
+                iw, ih = float(pix.width), float(pix.height)
+            except Exception:
+                logger.warning("No se pudo leer la imagen de fondo %s", spec.get("image_path"), exc_info=True)
+                return
+            if iw <= 0 or ih <= 0:
+                return
+            ajuste = spec.get("fit", "cover")
+            if ajuste == "stretch":
+                caja = fitz.Rect(vista)
+            else:
+                # «cover» llena la hoja y recorta lo que sobra; «contain» entra entera.
+                esc = (max if ajuste == "cover" else min)(vista.width / iw, vista.height / ih)
+                w, h = iw * esc, ih * esc
+                cx, cy = vista.width / 2, vista.height / 2
+                caja = fitz.Rect(cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+            destino = fitz.Rect(self._desde_vista(page, caja)).normalize()
+            page.insert_image(destino, filename=spec["image_path"], overlay=False, oc=ocg,
+                              keep_proportion=False, rotate=self._GIRO_IMAGEN.get(page.rotation, 0))
+            return
+        hoja = fitz.Rect(self._desde_vista(page, vista)).normalize()
+        page.draw_rect(hoja, color=None, fill=_rgb(spec.get("color"), (1.0, 1.0, 1.0)), width=0,
+                       fill_opacity=float(spec.get("opacity", 1) or 1), overlay=False, oc=ocg)
+
     def _sellar_pagina(self, doc, page, i: int, capa: str, spec: dict, ocg: int):
         self._vaciar_capa(doc, page, ocg)
         if capa == "marca":
             self._dibujar_marca(page, spec, ocg)
+        elif capa == "fondo":
+            self._dibujar_fondo(page, spec, ocg)
         else:
             self._dibujar_textos(doc, page, i, spec, ocg)
 
@@ -319,6 +361,8 @@ class SellosMixin:
                         self._vaciar_capa(copia, pagina, xref)
                 if capa == "marca":
                     self._dibujar_marca(pagina, spec, ocg)
+                elif capa == "fondo":
+                    self._dibujar_fondo(pagina, spec, ocg)
                 else:
                     falso = _DocConTotal(copia, total_real, doc.name)
                     self._dibujar_textos(falso, pagina, page_num, spec, ocg)

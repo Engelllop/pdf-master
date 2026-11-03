@@ -31,6 +31,7 @@ export const TOOL_LABELS: Record<string, string> = {
   image: 'Insertar imagen',
   edittext: 'Editar texto',
   editimage: 'Editar imagen',
+  link: 'Enlace',
   croparea: 'Recortar área',
   redactarea: 'Redactar área',
   formtext: 'Campo de texto',

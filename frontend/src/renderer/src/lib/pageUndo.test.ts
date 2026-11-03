@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { anotarPaso, marcasEnVersionDeDisco, pasoDeMarcas, remapAnnsAfterDelete, remapAnnsAfterInsert, remapAnnsAfterRotate, rotatePagesUndoable, remapPageIndexAfterDelete, deletePagesUndoable, invertOrder, reorderPagesUndoable, cropPageUndoable, watermarkUndoable, mergePdfUndoable, replaceTextUndoable, metadataUndoable, makeSearchableUndoable, formFieldUndoable, addFormFieldUndoable, transformFormFieldUndoable } from './pageUndo'
+import { anotarPaso, applyPageOp, crearEnlaceUndoable, editarEnlaceUndoable, quitarEnlaceUndoable, marcasEnVersionDeDisco, pasoDeMarcas, remapAnnsAfterDelete, remapAnnsAfterInsert, remapAnnsAfterRotate, rotatePagesUndoable, remapPageIndexAfterDelete, deletePagesUndoable, invertOrder, reorderPagesUndoable, cropPageUndoable, watermarkUndoable, mergePdfUndoable, replaceTextUndoable, metadataUndoable, makeSearchableUndoable, formFieldUndoable, addFormFieldUndoable, transformFormFieldUndoable } from './pageUndo'
 import { usePdfStore, type Annotation, type PageCommand } from '../store/usePdfStore'
 
 const initial = usePdfStore.getState()
@@ -619,6 +619,97 @@ describe('marcasEnVersionDeDisco', () => {
     expect(marcasEnVersionDeDisco(recortado, [recorte]).anns).toEqual(antes)
     const deshacer = pasoDeMarcas({ type: 'replace', page: 0, stashId: 's', desplazar: { dx: 30, dy: 20 } }, recortado, tam(1))!
     expect(marcasEnVersionDeDisco(antes, [deshacer]).anns).toEqual(recortado)
+  })
+})
+
+describe('enlaces deshacer / rehacer', () => {
+  const ZONA = { x0: 10, y0: 20, x1: 110, y1: 50 }
+  let llamadas: Array<{ url: string; body: Record<string, unknown> }> = []
+
+  function motor(respuestas: Record<string, { ok: boolean; status?: number; json?: unknown }> = {}) {
+    llamadas = []
+    usePdfStore.getState().addDoc({
+      doc_id: 'doc-1', file_path: 'C:\\a.pdf', page_count: 3, title: null, author: null, subject: null,
+      page_sizes: [0, 1, 2].map((i) => ({ page_num: i, width: 100, height: 100 })),
+    })
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      const path = String(url)
+      llamadas.push({ url: path, body: init?.body ? JSON.parse(String(init.body)) : {} })
+      const clave = Object.keys(respuestas).find((k) => path.includes(k))
+      if (clave) {
+        const r = respuestas[clave]
+        return Promise.resolve({ ok: r.ok, status: r.status ?? (r.ok ? 200 : 500), json: async () => r.json ?? {} })
+      }
+      if (path.includes('/info/')) {
+        return Promise.resolve({ ok: true, json: async () => ({ page_count: 3, page_sizes: [0, 1, 2].map((i) => ({ page_num: i, width: 100, height: 100 })) }) })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) })
+    }))
+  }
+
+  it('crear: manda la zona y el destino, y apila restaurar el documento ENTERO', async () => {
+    motor({ '/links/doc-1': { ok: true, json: { success: true, stash_id: 'lk-1', index: 0 } } })
+    await crearEnlaceUndoable('doc-1', 1, ZONA, { uri: 'www.ejemplo.com' })
+    expect(llamadas.find((c) => c.url.endsWith('/pdf/links/doc-1'))?.body)
+      .toEqual({ page_num: 1, zona: ZONA, uri: 'www.ejemplo.com', stash: true })
+    const last = usePdfStore.getState().undoStack.at(-1)
+    expect(last?.kind).toBe('page')
+    if (last && last.kind === 'page') {
+      expect(last.inverse).toEqual({ type: 'restoreDoc', stashId: 'lk-1' })
+      expect(last.forward).toEqual({ type: 'addLink', page: 1, zona: ZONA, destino: { uri: 'www.ejemplo.com' } })
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('editar a una página: manda el índice y el destino en base 0', async () => {
+    motor({ '/links/update/': { ok: true, json: { success: true, stash_id: 'lk-2', index: 2 } } })
+    await editarEnlaceUndoable('doc-1', 0, 2, { target_page: 1 })
+    expect(llamadas.find((c) => c.url.includes('/links/update/'))?.body)
+      .toEqual({ page_num: 0, index: 2, target_page: 1, stash: true })
+    const last = usePdfStore.getState().undoStack.at(-1)
+    if (last && last.kind === 'page') {
+      expect(last.inverse).toEqual({ type: 'restoreDoc', stashId: 'lk-2' })
+      expect(last.forward).toEqual({ type: 'editLink', page: 0, index: 2, destino: { target_page: 1 } })
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('quitar: apila restaurar el documento y rehacer vuelve a quitar ese índice', async () => {
+    motor({ '/links/remove/': { ok: true, json: { success: true, stash_id: 'lk-3' } } })
+    await quitarEnlaceUndoable('doc-1', 2, 1)
+    const last = usePdfStore.getState().undoStack.at(-1)
+    if (last && last.kind === 'page') {
+      expect(last.inverse).toEqual({ type: 'restoreDoc', stashId: 'lk-3' })
+      expect(last.forward).toEqual({ type: 'removeLink', page: 2, index: 1 })
+    }
+    vi.unstubAllGlobals()
+  })
+
+  it('si el motor rechaza, el error lleva SU motivo y no queda nada para deshacer', async () => {
+    motor({ '/links/doc-1': { ok: false, status: 422, json: { detail: 'La dirección no es válida: use http(s)://, mailto: o tel:' } } })
+    await expect(crearEnlaceUndoable('doc-1', 0, ZONA, { uri: 'javascript:x' }))
+      .rejects.toThrow('La dirección no es válida: use http(s)://, mailto: o tel:')
+    expect(usePdfStore.getState().undoStack).toHaveLength(0)
+    vi.unstubAllGlobals()
+  })
+
+  it('si el motor falla sin motivo, el mensaje es el genérico', async () => {
+    motor({ '/links/remove/': { ok: false, status: 500, json: {} } })
+    await expect(quitarEnlaceUndoable('doc-1', 0, 0)).rejects.toThrow('No se pudo quitar el enlace')
+    vi.unstubAllGlobals()
+  })
+
+  it('rehacer reenvía la operación sin pedir otra copia (stash false)', async () => {
+    motor()
+    await applyPageOp('doc-1', { type: 'addLink', page: 1, zona: ZONA, destino: { target_page: 2 } })
+    await applyPageOp('doc-1', { type: 'editLink', page: 1, index: 0, destino: { uri: 'a.com' } })
+    await applyPageOp('doc-1', { type: 'removeLink', page: 1, index: 0 })
+    expect(llamadas.filter((c) => c.url.includes('/links/')).map((c) => [c.url.replace(/^.*\/pdf/, ''), c.body])).toEqual([
+      ['/links/doc-1', { page_num: 1, zona: ZONA, target_page: 2, stash: false }],
+      ['/links/update/doc-1', { page_num: 1, index: 0, uri: 'a.com', stash: false }],
+      ['/links/remove/doc-1', { page_num: 1, index: 0, stash: false }],
+    ])
+    vi.unstubAllGlobals()
   })
 })
 

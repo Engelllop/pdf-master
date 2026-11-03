@@ -1,7 +1,7 @@
-/** Sellos de página (encabezado y pie, numeración, marca de agua): los tipos que
+/** Sellos de página (encabezado y pie, numeración, marca de agua, fondo): los tipos que
  * comparten el diálogo, el motor y el deshacer. */
 
-export type CapaSello = 'encabezado' | 'numeracion' | 'marca'
+export type CapaSello = 'encabezado' | 'numeracion' | 'marca' | 'fondo'
 
 export type ZonaSello = 'tl' | 'tc' | 'tr' | 'bl' | 'bc' | 'br'
 
@@ -20,6 +20,10 @@ export type SelloSpec = {
   bold?: boolean
   color?: string
   opacity?: number
+  /** Fondo: color liso (`color` + `opacity`) o una imagen del disco ajustada a la hoja. */
+  kind?: 'color' | 'image'
+  image_path?: string
+  fit?: 'cover' | 'contain' | 'stretch'
   /** Lo devuelve el motor con lo aplicado: el rango que se usó (null = todas). */
   pages?: number[] | null
 }
@@ -28,6 +32,7 @@ export const ETIQUETA_CAPA: Record<CapaSello, string> = {
   encabezado: 'Encabezado y pie',
   numeracion: 'Numeración',
   marca: 'Marca de agua',
+  fondo: 'Fondo',
 }
 
 export const PT_POR_MM = 72 / 25.4
@@ -49,4 +54,8 @@ export const SPEC_INICIAL: Record<CapaSello, SelloSpec> = {
     text: 'BORRADOR', mode: 'center', angle: 45, behind: false,
     fontsize: 0, font: 'Helvetica', bold: true, color: '#c0392b', opacity: 0.25,
   },
+  fondo: { kind: 'color', color: '#fdf6e3', opacity: 1, fit: 'cover' },
 }
+
+/** Colores de fondo a un clic: papel, crema, gris, azul y verde claros, y uno oscuro. */
+export const COLORES_FONDO = ['#ffffff', '#fdf6e3', '#f2f2f2', '#e8f1fb', '#eaf6ea', '#2b2b2b'] as const

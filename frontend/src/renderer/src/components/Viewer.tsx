@@ -8,7 +8,8 @@ import { useAnnotationDrag } from '../hooks/useAnnotationDrag'
 import { useRotateAnnotation } from '../hooks/useRotateAnnotation'
 import { useRightPageResize } from '../hooks/useRightPageResize'
 import { useImageEdit } from '../hooks/useImageEdit'
-import { useAreaSelect } from '../hooks/useAreaSelect'
+import { isAreaTool, useAreaSelect } from '../hooks/useAreaSelect'
+import { useEnlaces } from '../hooks/useEnlaces'
 import { isFormTool } from '../lib/formFields'
 import { SEL, BORRA, BORRA_RELLENO } from '../lib/selectionChrome'
 import { aplicarBorrador, marcasBajoBorrador } from '../lib/eraser'
@@ -35,7 +36,8 @@ import { Loader2, X } from 'lucide-react'
 
 import { apiFetch } from '../lib/api'
 import { editTextUndoable } from '../lib/pageUndo'
-import { FUENTES_BASE, textoEditable, type TextoEditable } from '../lib/textoEditable'
+import { paramsDeEdicion, textoEditable, type TextoEditable } from '../lib/textoEditable'
+import { cargarFuentesInstaladas, opcionesDeFuente } from '../lib/fuentesInstaladas'
 
 export default function Viewer() {
   const store = useStoreSlice(
@@ -191,6 +193,15 @@ export default function Viewer() {
   // El motor devuelve el párrafo bajo el cursor (o la línea, o el tramo si se mezclan
   // estilos) con su formato; el editor trabaja sobre eso.
   const [editSpan, setEditSpan] = useState<TextoEditable | null>(null)
+  // Las familias instaladas para el selector del editor de texto; se piden al abrirlo.
+  const [fuentesInstaladas, setFuentesInstaladas] = useState<string[]>([])
+  const editorAbierto = editSpan !== null
+  useEffect(() => {
+    if (!editorAbierto) return
+    let vivo = true
+    cargarFuentesInstaladas().then((f) => { if (vivo) setFuentesInstaladas(f) })
+    return () => { vivo = false }
+  }, [editorAbierto])
 
   // Colocación de una firma guardada: el gestor la elige y el siguiente clic en la
   // página la sitúa (escalada al ancho estándar).
@@ -234,6 +245,9 @@ export default function Viewer() {
     pageImages, selImg, setSelImg, imgPreview, setImgPreview,
     imgModeRef, imgStartRef, imgSx, imgSy, imgLocalOf, applyImageTransform,
   } = useImageEdit(activeDoc, pageData)
+
+  // Enlaces de la página (herramienta 'link'): se dibujan y el que se toca se edita.
+  const { enlaces, localDe: localEnlace, enlaceEn, editarEnlace } = useEnlaces(activeDoc, pageData)
 
   /** Pasada del borrador. Lee el estado vivo: en un arrastre hay varias pasadas por
    * frame y `activeDoc` de este render ya viene con la lista anterior. No apila
@@ -384,8 +398,14 @@ export default function Viewer() {
 
     // Selección de área (recortar/redactar): arrastrar rectángulo
     const areaTool = store.activeTool
-    if (areaTool === 'croparea' || areaTool === 'redactarea' || isFormTool(areaTool)) {
+    if (isAreaTool(areaTool)) {
       e.preventDefault()
+      // Con la herramienta de enlaces, tocar uno existente lo edita (o lo quita) en vez
+      // de dibujar otro encima.
+      if (areaTool === 'link') {
+        const existente = enlaceEn(pt)
+        if (existente) { void editarEnlace(existente); return }
+      }
       areaDraggingRef.current = true
       areaToolRef.current = areaTool
       setArea({ x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y })
@@ -524,7 +544,9 @@ export default function Viewer() {
       void (async () => {
         const applied = await applyArea(tool, s)
         setArea(null)
-        if (applied && !isFormTool(tool)) store.setActiveTool(null)
+        // Los campos de formulario y los enlaces se van poniendo uno tras otro: la
+        // herramienta sigue activa hasta Esc.
+        if (applied && !isFormTool(tool) && tool !== 'link') store.setActiveTool(null)
       })()
       return
     }
@@ -936,8 +958,19 @@ export default function Viewer() {
                   )
                 })}
 
-                {/* Rectángulo de selección de área (recortar/redactar) */}
-                {areaSel && (store.activeTool === 'croparea' || store.activeTool === 'redactarea' || isFormTool(store.activeTool)) && (
+                {/* Enlaces que ya tiene la página (herramienta Enlace): tocar uno lo edita */}
+                {store.activeTool === 'link' && enlaces.map((en) => {
+                  const r = localEnlace(en)
+                  return (
+                    <g key={`${en.index}-${en.x0}-${en.y0}`} pointerEvents="none">
+                      <rect x={r.l} y={r.t} width={r.w} height={r.h} fill={SEL} fillOpacity={0.1} stroke={SEL} strokeWidth={1.5} />
+                      <title>{en.kind === 'uri' ? en.uri : en.kind === 'goto' ? `Página ${(en.page ?? 0) + 1}` : 'Otro tipo de enlace'}</title>
+                    </g>
+                  )
+                })}
+
+                {/* Rectángulo de selección de área (recortar/redactar/enlace) */}
+                {areaSel && isAreaTool(store.activeTool) && (
                   <rect x={Math.min(areaSel.x0, areaSel.x1)} y={Math.min(areaSel.y0, areaSel.y1)}
                     width={Math.abs(areaSel.x1 - areaSel.x0)} height={Math.abs(areaSel.y1 - areaSel.y0)}
                     fill={store.activeTool === 'redactarea' ? 'rgba(0,0,0,0.35)' : SEL}
@@ -1042,14 +1075,11 @@ export default function Viewer() {
                 // el párrafo con la fuente base y perdía la incrustada.
                 if (!span.dirty) return
                 try {
+                  // La fuente real del PDF (no una de tres) y, si el usuario no cambió el
+                  // estilo de todo, los tramos: el motor conserva el de cada uno.
                   const { overflow } = await editTextUndoable(activeDoc.doc_id, {
                     page: activeDoc.currentPage,
-                    x0: span.x0, y0: span.y0, x1: span.x1, y1: span.y1,
-                    text: span.value, size: span.size, color: span.color, font: span.fontFamily,
-                    ...(enCaja ? {
-                      wrap: true, bold: span.bold, italic: span.italic, align: span.align,
-                      line_height: span.lineHeight,
-                    } : { bold: span.bold, italic: span.italic }),
+                    ...paramsDeEdicion(span),
                   })
                   if (overflow) store.showToast('El texto nuevo no entraba en el párrafo y se estiró hacia abajo: revisá que no pise lo de abajo. Ctrl+Z deshace.', 'info')
                   else store.showToast('Texto editado. Ctrl+Z deshace.', 'success')
@@ -1061,20 +1091,26 @@ export default function Viewer() {
                   value={editSpan.value} onChange={(v) => cambiar({ value: v })}
                   onCommit={commit} onCancel={() => setEditSpan(null)}
                   fontFamily={editSpan.fontFamily} fontSize={editSpan.size} color={editSpan.color}
-                  style={{ bold: editSpan.bold, italic: editSpan.italic, align: editSpan.align, lineHeight: editSpan.lineHeight, listStyle: 'none' }}
-                  onFontFamily={(f) => cambiar({ fontFamily: f })}
-                  onFontSize={(v) => cambiar({ size: v })}
-                  onColor={(c) => cambiar({ color: c })}
+                  // El editor no tiene botón de justificado: lo muestra a la izquierda, pero
+                  // el valor real (`editSpan.align`) es el que se manda al motor.
+                  style={{ bold: editSpan.bold, italic: editSpan.italic, align: editSpan.align === 'justify' ? 'left' : editSpan.align, lineHeight: editSpan.lineHeight, listStyle: 'none' }}
+                  // Fuente, cuerpo, color, negrita o cursiva se aplican a TODO el texto: los
+                  // tramos del original dejan de valer (`estiloCambiado`). Alineación e
+                  // interlineado no tocan el estilo de los tramos.
+                  onFontFamily={(f) => cambiar({ fontFamily: f, fuenteElegida: true, estiloCambiado: true })}
+                  onFontSize={(v) => cambiar({ size: v, estiloCambiado: true })}
+                  onColor={(c) => cambiar({ color: c, estiloCambiado: true })}
                   onStyle={(st) => cambiar({
-                    ...(st.bold !== undefined ? { bold: st.bold } : {}),
-                    ...(st.italic !== undefined ? { italic: st.italic } : {}),
+                    ...(st.bold !== undefined ? { bold: st.bold, estiloCambiado: true } : {}),
+                    ...(st.italic !== undefined ? { italic: st.italic, estiloCambiado: true } : {}),
                     ...(st.align ? { align: st.align } : {}),
                     ...(st.lineHeight ? { lineHeight: st.lineHeight } : {}),
                   })}
                   wrapWidth={enCaja ? (editSpan.x1 - editSpan.x0) * sx2 * scale + editSpan.size * activeDoc.zoom * 0.6 : undefined}
                   minHeight={(editSpan.y1 - editSpan.y0) * sx2 * scale}
-                  opaque fontOptions={FUENTES_BASE} showList={false}
-                  note={editSpan.mode === 'block' ? 'párrafo' : editSpan.mode === 'line' ? 'línea' : 'tramo con estilo propio'} />
+                  opaque fontOptions={opcionesDeFuente(fuentesInstaladas, editSpan.fontFamily)} showList={false}
+                  note={editSpan.mode === 'span' ? 'tramo con estilo propio'
+                    : `${editSpan.mode === 'block' ? 'párrafo' : 'línea'}${editSpan.runs && editSpan.runs.length > 1 && !editSpan.estiloCambiado ? ' · conserva los estilos de cada tramo' : ''}`} />
               )
             })()}
 

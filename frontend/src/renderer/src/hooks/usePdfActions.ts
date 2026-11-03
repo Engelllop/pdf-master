@@ -338,6 +338,11 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
   }
 
   // Abre el diálogo de sellos en Encabezado y pie.
+  const handleBackground = async () => {
+    if (!activeDoc) return
+    window.dispatchEvent(new CustomEvent('app:sellos', { detail: { capa: 'fondo' } }))
+  }
+
   const handleHeaderFooter = async () => {
     if (!activeDoc) return
     window.dispatchEvent(new CustomEvent('app:sellos', { detail: { capa: 'encabezado' } }))
@@ -845,7 +850,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
 
   return {
     handleExportWord, handleAddPageNumbers, handleMarkupSummary, handleMakeSearchable,
-    handleSaveWithPassword, handleWatermark, handleRedact, handleCrop,
+    handleSaveWithPassword, handleWatermark, handleBackground, handleRedact, handleCrop,
     handleExportExcel, handleExportPptx, handleOcr, handleSavePageAsImage,
     handleEditMetadata, handleHeaderFooter, handleMerge, handleCompress,
     handleBatchCompress, handleBatchWatermark, handleBatchExportWord,

@@ -1,14 +1,15 @@
-"""Sellos de página en capa propia: encabezado y pie, numeración y marca de agua."""
+"""Sellos de página en capa propia: encabezado y pie, numeración, marca de agua y fondo."""
 from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
 
+from app.routers.pdf_routes._shared import _IMAGE_EXTS, _validate_input_file
 from app.services.pdf_service import pdf_service
 
 router = APIRouter()
 
-Capa = Literal["encabezado", "numeracion", "marca"]
+Capa = Literal["encabezado", "numeracion", "marca", "fondo"]
 
 
 class SelloSpec(BaseModel):
@@ -24,6 +25,11 @@ class SelloSpec(BaseModel):
     mode: Literal["center", "tile"] = "center"
     angle: float = 45
     behind: bool = False
+    # Fondo: color liso (`color` + `opacity`) o una imagen del disco, ajustada a la hoja
+    # («cover» la llena y recorta, «contain» entra entera, «stretch» la deforma).
+    kind: Literal["color", "image"] = "color"
+    image_path: str = ""
+    fit: Literal["cover", "contain", "stretch"] = "cover"
     # Comunes. `fontsize` 0 en la marca de agua = relativo a la hoja.
     fontsize: float = 10
     font: str = "Helvetica"
@@ -52,6 +58,13 @@ class VistaPreviaRequest(BaseModel):
     area: Literal["full", "top", "bottom"] = "full"
 
 
+def _validar_fondo(capa: str, spec: SelloSpec, sin_elegir_ok: bool = False) -> None:
+    """422 si el fondo es una imagen que no existe o no es una imagen. La vista previa
+    del diálogo admite «todavía no elegí ninguna» (`sin_elegir_ok`): se ve la hoja sola."""
+    if capa == "fondo" and spec.kind == "image" and not (sin_elegir_ok and not spec.image_path):
+        _validate_input_file(spec.image_path, _IMAGE_EXTS)
+
+
 @router.get("/stamps/{doc_id}")
 def estado(doc_id: str):
     res = pdf_service.estado_sellos(doc_id)
@@ -62,6 +75,7 @@ def estado(doc_id: str):
 
 @router.post("/stamps/{doc_id}")
 def aplicar(doc_id: str, req: AplicarSelloRequest):
+    _validar_fondo(req.capa, req.spec)
     stash_id = pdf_service.aplicar_sello(doc_id, req.capa, req.spec.model_dump(), req.pages, stash=req.stash)
     if stash_id is None:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -78,6 +92,7 @@ def quitar(doc_id: str, req: QuitarSelloRequest):
 
 @router.post("/stamps/preview/{doc_id}")
 def vista_previa(doc_id: str, req: VistaPreviaRequest):
+    _validar_fondo(req.capa, req.spec, sin_elegir_ok=True)
     png = pdf_service.vista_previa_sello(doc_id, req.page_num, req.capa, req.spec.model_dump(), req.width, req.area)
     if png is None:
         raise HTTPException(status_code=404, detail="Page not found")

@@ -2,6 +2,7 @@ import fitz  # PyMuPDF
 import base64
 import logging
 import math
+import re
 import uuid
 import json
 import os
@@ -193,9 +194,26 @@ class ReadMixin:
         return x0, x1, oy
 
     def _clave_estilo(self, l):
+        """(cuerpo, base14) del tramo que más caracteres tiene en la línea: con eso se
+        decide qué renglones vecinos son del mismo párrafo. Antes una línea con una
+        palabra en negrita no tenía clave y quedaba sola; ahora se agrupa por su estilo
+        dominante y los tramos distintos viajan como `runs`."""
         ss = [s for s in l["spans"] if s.get("text", "").strip()]
-        claves = {(round(s["size"] * 2) / 2, self._base14_font(s.get("font"))) for s in ss}
-        return next(iter(claves)) if len(claves) == 1 else None
+        if not ss:
+            return None
+        dom = max(ss, key=lambda s: len(s["text"].strip()))
+        return (round(dom["size"] * 2) / 2, self._base14_font(dom.get("font")))
+
+    @staticmethod
+    def _fuente_limpia(nombre) -> str:
+        """El nombre de fuente sin el prefijo de subconjunto («ABCDEF+»): la misma
+        fuente aparece con prefijos distintos en cada página o exportación."""
+        return re.sub(r"^[A-Za-z]{6}\+", "", nombre or "").lower()
+
+    def _estilo_de(self, sp) -> tuple:
+        """Lo que hace distinto a un tramo de otro al reescribir: fuente, cuerpo, color."""
+        return (self._fuente_limpia(sp.get("font")), round(float(sp.get("size", 0)) * 2) / 2,
+                int(sp.get("color", 0)) & 0xFFFFFF)
 
     def _parrafo_de(self, todas, linea) -> list:
         """Las líneas del párrafo de `linea`. No se fía de los bloques del extractor:
@@ -235,16 +253,30 @@ class ReadMixin:
         def tramos(ls):
             return [s for l in ls for s in l["spans"] if s.get("text", "").strip()]
 
+        def direccion(l):
+            return tuple(round(v) for v in l.get("dir", (1, 0)))
+
         def uniforme(ls) -> bool:
+            """Un solo estilo: misma fuente (no solo la misma base14: Calibri y Arial
+            no son la misma letra), mismo cuerpo, mismo color y misma dirección."""
             ss = tramos(ls)
             ref = ss[0]
-            dir0 = tuple(round(v) for v in ls[0].get("dir", (1, 0)))
+            dir0 = direccion(ls[0])
             return all(abs(s["size"] - ref["size"]) <= 0.6
-                       and self._base14_font(s.get("font")) == self._base14_font(ref.get("font"))
-                       for s in ss) and all(tuple(round(v) for v in l.get("dir", (1, 0))) == dir0 for l in ls)
+                       and self._fuente_limpia(s.get("font")) == self._fuente_limpia(ref.get("font"))
+                       and (int(s.get("color", 0)) & 0xFFFFFF) == (int(ref.get("color", 0)) & 0xFFFFFF)
+                       for s in ss) and all(direccion(l) == dir0 for l in ls)
 
+        horizontal_recto = all(direccion(l) == (1, 0) for l in lineas) and not page.rotation
+        con_runs = False
         if uniforme(lineas):
             modo, elegidas = ("block" if len(lineas) > 1 else "line"), lineas
+        elif horizontal_recto:
+            # Estilos mezclados en texto horizontal: se edita el párrafo entero y cada
+            # tramo conserva el suyo (`runs`). Antes caía a un tramo suelto, y si la
+            # palabra nueva era más larga se encimaba con la siguiente.
+            modo, elegidas = ("block" if len(lineas) > 1 else "line"), lineas
+            con_runs = True
         elif uniforme([linea]):
             modo, elegidas = "line", [linea]
         else:
@@ -266,6 +298,34 @@ class ReadMixin:
             maximo = max(largo(l) for l in elegidas)
             partes = []
             fuente = self._base14_font(ref.get("font"))
+            # Estilo de cada carácter del texto armado (índice en `estilos_info`), para
+            # devolver los tramos como `runs` cuando el párrafo mezcla estilos.
+            tabla_estilos: dict = {}
+            estilos_info: list = []
+            estilo_por_caracter: list = []
+
+            def indice_de(sp) -> int:
+                clave = self._estilo_de(sp)
+                if clave not in tabla_estilos:
+                    tabla_estilos[clave] = len(estilos_info)
+                    neg, cur = self._estilo_span(sp)
+                    estilos_info.append({
+                        "font": sp.get("font", ""), "size": sp.get("size", 12),
+                        "color": "#%06x" % (int(sp.get("color", 0)) & 0xFFFFFF),
+                        "bold": neg, "italic": cur,
+                    })
+                return tabla_estilos[clave]
+
+            def texto_linea(l):
+                """El texto de la línea sin espacios en los extremos y el estilo de cada
+                carácter que queda."""
+                crudo, est = "", []
+                for s in l["spans"]:
+                    t = s.get("text", "")
+                    crudo += t
+                    est.extend([indice_de(s)] * len(t))
+                izq, der = len(crudo) - len(crudo.lstrip()), len(crudo.rstrip())
+                return crudo[izq:der], est[izq:der]
 
             def cabia_la_siguiente(l, siguiente) -> bool:
                 # El corte es de ajuste si la primera palabra del renglón siguiente NO
@@ -278,15 +338,18 @@ class ReadMixin:
                 return largo(l) + ancho <= maximo + 0.5
 
             for i, l in enumerate(elegidas):
-                t = "".join(s.get("text", "") for s in l["spans"]).strip()
+                t, est = texto_linea(l)
                 if i == len(elegidas) - 1:
-                    partes.append(t)
+                    sep = ""
                 elif not cabia_la_siguiente(l, elegidas[i + 1]):
                     # Línea llena: el corte es del ajuste, no del autor. Un guion al
                     # final se conserva pegado (no se sabe si era de partición).
-                    partes.append(t if t.endswith("-") else t + " ")
+                    sep = "" if t.endswith("-") else " "
                 else:
-                    partes.append(t + "\n")
+                    sep = "\n"
+                partes.append(t + sep)
+                estilo_por_caracter.extend(est)
+                estilo_por_caracter.extend([est[-1] if est else 0] * len(sep))
             texto = "".join(partes)
             rect = fitz.Rect()
             for l in elegidas:
@@ -310,6 +373,44 @@ class ReadMixin:
                     alineacion = "center"
                 elif izq > 4 and der <= 2:
                     alineacion = "right"
+            # Justificado: todos los renglones menos el último terminan en el mismo borde
+            # derecho. Con menos de cuatro renglones podría ser casualidad de un texto
+            # ajustado a la izquierda, así que no se declara.
+            if horizontal and len(elegidas) >= 4 and alineacion == "left":
+                interiores = [fitz.Rect(l["bbox"]) for l in elegidas[:-1]]
+                if (max(c.x1 for c in interiores) - min(c.x1 for c in interiores) <= 1.5
+                        and max(c.x0 for c in interiores[1:]) - min(c.x0 for c in interiores[1:]) <= 1.5):
+                    alineacion = "justify"
+
+        # Dónde empieza cada renglón y la línea base de la primera: lo que hace falta para
+        # reescribir el párrafo en su sitio con sangría y estilos por tramo, sin que la
+        # caja de texto de PyMuPDF decida la posición.
+        runs = origen_y = x_primera = x_resto = None
+        if modo != "span" and horizontal_recto:
+            primeros = []
+            for l in elegidas:
+                s0 = next((s for s in l["spans"] if s.get("text", "").strip()), l["spans"][0])
+                primeros.append(s0["origin"])
+            origen_y = float(primeros[0][1])
+            x_primera = float(primeros[0][0])
+            resto = sorted(p[0] for p in primeros[1:])
+            x_resto = float(resto[len(resto) // 2]) if resto else x_primera
+            sangria = alineacion in ("left", "justify") and abs(x_primera - x_resto) > 2
+            if not sangria:
+                x_resto = x_primera
+            # Siempre que sea texto horizontal: aun con un solo estilo, escribir renglón a
+            # renglón respeta la línea base, el borde derecho exacto y la sangría, que la
+            # caja de texto de PyMuPDF no (el primer renglón subía ~1,4 pt y un justificado
+            # se pasaba ~0,6 cuerpos del borde).
+            if len(estilo_por_caracter) == len(texto) and texto:
+                runs = []
+                for i, ind in enumerate(estilo_por_caracter):
+                    if runs and runs[-1]["_i"] == ind:
+                        runs[-1]["end"] = i + 1
+                    else:
+                        runs.append({"_i": ind, "start": i, "end": i + 1, **estilos_info[ind]})
+                for r in runs:
+                    r.pop("_i")
 
         negrita, cursiva = self._estilo_span(ref)
         x0, y0, x1, y1 = self._a_vista(page, rect)
@@ -324,6 +425,10 @@ class ReadMixin:
             "italic": cursiva,
             "align": alineacion,
             "lineHeight": alto_linea,
+            "runs": runs,
+            "originY": origen_y,
+            "xFirst": x_primera,
+            "xRest": x_resto,
         }
 
     def get_text_clip(self, doc_id: str, page_num: int, x: float, y: float, w: float, h: float) -> str:

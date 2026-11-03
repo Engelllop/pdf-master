@@ -7,14 +7,14 @@ import {
   FileDown, GitCompare, RefreshCw, Scissors, Stamp, FileText, Presentation, ScrollText,
   Volume2, VolumeX, ScanText, ScanSearch, SearchX,
   Highlighter, Underline, Strikethrough, MessageSquare, PenTool, Signature,
-  Type, Image as ImageIcon, Images, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
+  Type, Image as ImageIcon, Images, Link2, Square, Circle, ArrowRight as ArrowRightTool, Ruler, Pencil,
   MoveDiagonal, LandPlot, MousePointer2, TextSelect, Copy, Crop, Lock, Shield,
   FileSpreadsheet, FileImage, Sparkles, MessageCircleQuestion, ListTree,
   FileType, Code2, LockOpen, FilePlus2, Tally5,
   Check as CheckIcon, Star, Cloud as CloudIcon, Hexagon, Pin, PinOff,
   Minus, MessageSquareQuote, Spline, Triangle, Diamond, LayoutGrid,
   TextCursorInput, CircleDot, List, Eraser, SquareCheck as CheckSquare,
-  Maximize2, MoveHorizontal, Rows3, ClipboardList, ArrowLeftRight, Droplets, ListOrdered, Info,
+  Maximize2, MoveHorizontal, Rows3, ClipboardList, ArrowLeftRight, Droplets, PaintBucket, ListOrdered, Info,
   type LucideIcon,
 } from 'lucide-react'
 import { usePdfStore, type CountSymbol } from '../store/usePdfStore'
@@ -121,7 +121,7 @@ export default function Toolbar() {
 
   const {
     handleExportWord, handleAddPageNumbers, handleMarkupSummary, handleMakeSearchable,
-    handleSaveWithPassword, handleWatermark, handleRedact, handleCrop,
+    handleSaveWithPassword, handleWatermark, handleBackground, handleRedact, handleCrop,
     handleExportExcel, handleExportPptx, handleOcr, handleSavePageAsImage,
     handleEditMetadata, handleHeaderFooter, handleMerge, handleCompress,
     handleBatchCompress, handleBatchWatermark, handleBatchExportWord,
@@ -225,6 +225,7 @@ export default function Toolbar() {
 
       { id: 'edit.header', group: 'Editar', label: 'Encabezado y pie', disabled: !hasDoc, run: handleHeaderFooter },
       { id: 'edit.watermark', group: 'Editar', label: 'Marca de agua', disabled: !hasDoc, run: handleWatermark },
+      { id: 'edit.background', group: 'Editar', label: 'Fondo de página', disabled: !hasDoc, run: handleBackground },
       { id: 'edit.numbers', group: 'Editar', label: 'Numerar páginas', disabled: !hasDoc, run: handleAddPageNumbers },
       { id: 'edit.metadata', group: 'Editar', label: 'Editar metadatos', disabled: !hasDoc, run: handleEditMetadata },
       { id: 'edit.formtext', group: 'Formulario', label: 'Campo de texto', disabled: !hasDoc, run: () => { setActiveRibbon('edit'); handleToolClick('formtext') } },
@@ -571,6 +572,7 @@ export default function Toolbar() {
               {toolBtn('text', Type, 'Agregar texto')}
               {toolBtn('image', ImageIcon, 'Imagen')}
               {toolBtn('editimage', Images, 'Editar imagen')}
+              {toolBtn('link', Link2, 'Enlace')}
             </RibbonGroup>
             <Sep />
             <RibbonGroup label="Formulario">
@@ -583,6 +585,7 @@ export default function Toolbar() {
             <RibbonGroup label="Documento">
               <RibbonButton icon={AlignVerticalJustifyCenter} label="Encabezado" tip="Encabezado y pie de página" onClick={handleHeaderFooter} />
               <RibbonButton icon={Droplets} label="Marca de agua" tip="Marca de agua" onClick={handleWatermark} />
+              <RibbonButton icon={PaintBucket} label="Fondo" tip="Fondo de página" onClick={handleBackground} />
               <RibbonButton icon={ListOrdered} label="Numerar" tip="Numerar páginas" onClick={handleAddPageNumbers} />
               <RibbonButton icon={Info} label="Propiedades" tip="Editar metadatos del documento" onClick={handleEditMetadata} />
             </RibbonGroup>

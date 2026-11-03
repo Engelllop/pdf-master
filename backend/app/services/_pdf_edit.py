@@ -11,6 +11,8 @@ from collections import OrderedDict
 from app.models.pdf import PdfInfo, PageRender, PdfOutlineItem, PageSize, Annotation
 from app.core.config import settings
 from app.services._pdf_base import PasswordRequiredError, DocumentNotFoundError, texto_estampable
+from app.services._pdf_fuentes import FuenteEdicion, resolver_fuente
+from app.services._pdf_parrafo import componer, estilos_por_caracter, tokenizar
 
 logger = logging.getLogger("pdfmaster")
 
@@ -192,6 +194,10 @@ class EditMixin:
                 # original, así que leído después no hay span que consultar y todo salía en
                 # negro al tamaño estimado por la altura del rect.
                 estilos = [self._style_at(page, r) for r in objetivos]
+                # La fuente por el mismo motivo: la del sistema que corresponde a la del
+                # texto reemplazado, o la base14 de siempre si no está instalada.
+                fuentes = [resolver_fuente(e[1], replace, None, None, base14=self._base14_font(e[1]))
+                           for e in estilos]
                 # Redact old text
                 for rect in objetivos:
                     page.add_redact_annot(rect)
@@ -208,10 +214,13 @@ class EditMixin:
                 # Una inserción por ocurrencia. Antes se insertaba solo en la primera y las
                 # demás quedaban borradas y sin reemplazo — texto que desaparecía del plano,
                 # y encima el aviso contaba todas como reemplazadas.
-                for rect, (size, fontname, rgb, base) in zip(objetivos, estilos):
+                for rect, (size, fontname, rgb, base), fuente in zip(objetivos, estilos, fuentes):
+                    # Primero `adaptar` (anota los glifos que hacen falta) y después
+                    # `registrar` (embebe solo esos).
+                    texto = fuente.adaptar(replace)
                     page.insert_text(
-                        (rect.x0, base), texto_estampable(replace), fontsize=size, color=rgb,
-                        fontname=self._base14_font(fontname), overlay=True,
+                        (rect.x0, base), texto, fontsize=size, color=rgb,
+                        fontname=fuente.registrar(page), overlay=True,
                     )
                 count += len(objetivos)
                 if not replace_all:
@@ -317,7 +326,7 @@ class EditMixin:
             base += " italic" if italic else ""
         return cls._base14_font(base)
 
-    def _escribir_en_caja(self, page, rect, text, fontname, fs, rgb, align, lineheight, giro):
+    def _escribir_en_caja(self, page, rect, text, fuente: FuenteEdicion, fs, rgb, align, lineheight, giro):
         """Escribe `text` ajustado al ancho de `rect`, respetando los saltos. Si no
         entra, estira el rect hacia donde se apilan las líneas hasta el borde de la
         página. Devuelve True si tuvo que pasarse del alto original."""
@@ -325,7 +334,7 @@ class EditMixin:
         borde = page.cropbox
         caja = fitz.Rect(rect)
         paso = fs * (lineheight or 1.2)
-        opciones = dict(fontsize=fs, fontname=fontname, color=rgb, align=align,
+        opciones = dict(fontsize=fs, fontname=fuente.nombre, color=rgb, align=align,
                         rotate=giro, overlay=True)
         if lineheight:
             opciones["lineheight"] = lineheight
@@ -333,6 +342,10 @@ class EditMixin:
         # entra, pero la medida hay que hacerla antes de tocar la de verdad.
         prueba = fitz.open()
         hoja = prueba.new_page(width=borde.width + borde.x0 + 1, height=borde.height + borde.y0 + 1)
+        # La fuente del sistema se registra en las dos hojas (la de prueba y la real)
+        # con el mismo nombre, así el ancho que se mide es el que se escribe.
+        fuente.registrar(hoja)
+        fuente.registrar(page)
         crecio = False
         for _ in range(400):
             try:
@@ -360,11 +373,126 @@ class EditMixin:
         page.insert_textbox(caja, text, **opciones)
         return crecio
 
+    def _escribir_parrafo(self, page, rect, texto, base_text, runs, origen_y, x_primera, x_resto,
+                          align, lineheight, cuerpo) -> Optional[bool]:
+        """Reescribe un párrafo conservando el estilo de cada tramo (negrita, color,
+        cuerpo, fuente), con la sangría que traía y en la misma línea base. Devuelve si
+        creció más allá del alto original, o None si no se puede (los tramos no
+        describen el texto base): el llamador escribe con un solo estilo."""
+        texto = texto.replace("\r\n", "\n").replace("\r", "\n")
+        estilos = estilos_por_caracter(base_text, runs, texto)
+        if estilos is None:
+            return None
+        # Por cada (fuente, negrita, cursiva) del párrafo, dos fuentes: la «normal» (la del
+        # documento si está instalada, o la base14 de siempre) y la «ampliada», que cubre
+        # los símbolos del texto nuevo. Se elige por PIEZA: solo la que trae una «→» o
+        # un «€» pasa a la ampliada y el resto del párrafo conserva su fuente.
+        texto_de: Dict[tuple, List[str]] = {}
+        for ch, idx in zip(texto, estilos):
+            r = runs[idx]
+            texto_de.setdefault((r["font"], bool(r["bold"]), bool(r["italic"])), []).append(ch)
+        pares: Dict[tuple, tuple] = {}
+        por_tramo = []  # (clave de fuente, cuerpo, color) de cada tramo
+        for r in runs:
+            clave = (r["font"], bool(r["bold"]), bool(r["italic"]))
+            if clave not in pares:
+                b14 = self._fuente_con_estilo(r["font"], r["bold"], r["italic"])
+                pares[clave] = (
+                    resolver_fuente(r["font"], "", r["bold"], r["italic"], base14=b14),
+                    resolver_fuente(r["font"], "".join(texto_de.get(clave, [])), r["bold"], r["italic"], base14=b14),
+                )
+            c = (r.get("color") or "#000000").lstrip("#")
+            rgb = tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(c) == 6 else (0.0, 0.0, 0.0)
+            por_tramo.append((clave, float(r["size"]), rgb))
+
+        def fuente_de(idx: int, pieza: str) -> FuenteEdicion:
+            normal, ampliada = pares[por_tramo[idx][0]]
+            if not normal.del_sistema and ampliada.del_sistema:
+                try:
+                    pieza.encode("latin-1")
+                except UnicodeEncodeError:
+                    return ampliada
+            return normal
+
+        def medir(pieza: str, idx: int) -> float:
+            f, tam = fuente_de(idx, pieza), por_tramo[idx][1]
+            t = f.adaptar(pieza)  # además anota los glifos que hay que embeber
+            if f.font is not None:
+                return f.font.text_length(t, fontsize=tam)
+            return fitz.get_text_length(t, fontname=f.nombre, fontsize=tam)
+
+        alineacion = align or "left"
+        justificar = alineacion == "justify"
+        # El ancho útil termina en el borde derecho del párrafo original; sin justificar
+        # se da un poco de holgura porque la fuente puede medir apenas distinto.
+        derecha = rect.x1 if justificar else rect.x1 + cuerpo * 0.3
+        a_la_izquierda = alineacion in ("left", "justify")
+        izq_primera = x_primera if a_la_izquierda else rect.x0
+        izq_resto = x_resto if a_la_izquierda else rect.x0
+        lineas = componer(tokenizar(texto, estilos), medir, derecha - izq_primera, derecha - izq_resto)
+
+        # Solo se registran las que se usaron (las que anotaron glifos): una fuente del
+        # sistema sin glifos anotados se embebería entera.
+        nombres = {}
+        for normal, ampliada in pares.values():
+            for f in (normal, ampliada):
+                if not f.ruta or f.simbolos:
+                    nombres[id(f)] = f.registrar(page)
+        lh = lineheight or 1.2
+        y = origen_y
+        ultimo_tam = cuerpo
+        for i, ln in enumerate(lineas):
+            tam_linea = max([por_tramo[s][1] for _, s in ln.piezas] or [cuerpo])
+            if i:
+                # Un tramo más grande que el cuerpo abre su renglón; si no, el paso es el
+                # medido del original (`lineheight` × cuerpo).
+                y += lh * max(cuerpo, tam_linea)
+            ultimo_tam = tam_linea
+            ini = izq_primera if i == 0 else izq_resto
+            extra = 0.0
+            if alineacion == "center":
+                x = (rect.x0 + rect.x1) / 2 - ln.ancho / 2
+            elif alineacion == "right":
+                x = rect.x1 - ln.ancho
+            else:
+                x = ini
+                if justificar and not ln.dura and ln.espacios:
+                    extra = max(0.0, (derecha - ini) - ln.ancho) / ln.espacios
+            # Se escribe cada tramo seguido, con sus espacios: así el texto extraído, la
+            # búsqueda y el copiar-pegar de cualquier visor ven «200 psi → 14 bar» y no
+            # palabras sueltas. Solo el justificado va pieza por pieza (cada hueco se
+            # estira); ahí también se escriben los espacios.
+            tramo_t, tramo_s, tramo_f, tramo_x = "", None, None, x
+
+            def volcar():
+                nonlocal tramo_t, tramo_s, tramo_f
+                if tramo_t:
+                    _, tam_, rgb_ = por_tramo[tramo_s]
+                    page.insert_text((tramo_x, y), tramo_f.adaptar(tramo_t), fontname=nombres[id(tramo_f)],
+                                     fontsize=tam_, color=rgb_, overlay=True)
+                tramo_t, tramo_s, tramo_f = "", None, None
+
+            for t, s in ln.piezas:
+                f = fuente_de(s, t)
+                if extra or s != tramo_s or f is not tramo_f:
+                    volcar()
+                if tramo_s is None:
+                    tramo_s, tramo_f, tramo_x = s, f, x
+                tramo_t += t
+                x += medir(t, s) + extra * t.count(" ")
+            volcar()
+        # Creció si el último renglón (con su descendente) pasa del fondo original más el
+        # aire del interlineado: es el mismo criterio que la escritura en caja.
+        return y + 0.22 * ultimo_tam > rect.y1 + cuerpo * max(0.0, lh - 0.9)
+
     def edit_text_span(self, doc_id: str, page_num: int, x0: float, y0: float,
                        x1: float, y1: float, text: str, size: Optional[float] = None,
                        color: str = "#000000", font: Optional[str] = None, stash: bool = True,
                        wrap: bool = False, bold: Optional[bool] = None, italic: Optional[bool] = None,
-                       align: Optional[str] = None, lineheight: Optional[float] = None) -> Optional[dict]:
+                       align: Optional[str] = None, lineheight: Optional[float] = None,
+                       runs: Optional[List[dict]] = None, base_text: Optional[str] = None,
+                       origin_y: Optional[float] = None, x_first: Optional[float] = None,
+                       x_rest: Optional[float] = None) -> Optional[dict]:
         """Edición in-situ: tapa el texto original con el color de fondo muestreado y
         reinserta el nuevo en la misma posición, mapeando la fuente a una base14
         aproximada (PyMuPDF no reusa fuentes incrustadas por nombre).
@@ -404,7 +532,23 @@ class EditMixin:
                                   images=fitz.PDF_REDACT_IMAGE_NONE)
             c = color.lstrip("#")
             rgb = tuple(int(c[i:i + 2], 16) / 255 for i in (0, 2, 4)) if len(c) == 6 else (0, 0, 0)
-            text = texto_estampable(text)
+            # Párrafo con estilos por tramo o con sangría: se reescribe renglón a renglón,
+            # cada tramo con el suyo. Solo en texto horizontal de página sin girar (lo
+            # demás sigue por la caja de siempre, con un solo estilo).
+            if (wrap and runs and base_text is not None and origin_y is not None
+                    and x_first is not None and x_rest is not None and not page.rotation
+                    and not (span_previo and span_previo[1])):
+                crecio = self._escribir_parrafo(page, rect, text, base_text, runs, origin_y,
+                                                x_first, x_rest, align, lineheight, size or 11.0)
+                if crecio is not None:
+                    self._dirty[doc_id] = True
+                    self._invalidate_render_cache(doc_id)
+                    return {"stash_id": stash_id, "crecio": crecio}
+            # La fuente del sistema que corresponde a la del texto editado (o la base14
+            # de siempre si no está instalada), y el texto tal como ella puede escribirlo.
+            fuente = resolver_fuente(font, text, bold, italic,
+                                     base14=self._fuente_con_estilo(font, bold, italic))
+            text = fuente.adaptar(text)
             if wrap:
                 giro = span_previo[1] if span_previo else 0
                 fs = size or 11.0
@@ -418,7 +562,10 @@ class EditMixin:
                 caja = fitz.Rect(rect)
                 aire = fs * max(0.0, (lineheight or 1.2) - 0.9)
                 if giro == 0:
-                    caja.x1 += fs * 0.6
+                    # Justificado: el renglón se estira hasta el borde, así que la holgura
+                    # lo pasaría de largo (~0,6 cuerpos) en vez de absorber una medida distinta.
+                    if alineacion != fitz.TEXT_ALIGN_JUSTIFY:
+                        caja.x1 += fs * 0.6
                     caja.y1 += aire
                 elif giro == 180:
                     caja.x0 -= fs * 0.6
@@ -429,7 +576,7 @@ class EditMixin:
                 else:
                     caja.y1 += fs * 0.6
                     caja.x0 -= aire
-                crecio = self._escribir_en_caja(page, caja, text, self._fuente_con_estilo(font, bold, italic),
+                crecio = self._escribir_en_caja(page, caja, text, fuente,
                                                 fs, rgb, alineacion, lineheight, giro)
                 self._dirty[doc_id] = True
                 self._invalidate_render_cache(doc_id)
@@ -446,9 +593,9 @@ class EditMixin:
                 fs = size or max(6.0, (y1 - y0) * 0.85)
                 opciones = dict(fontsize=fs, color=rgb, overlay=True)
             try:
-                page.insert_text(origen, text, fontname=self._fuente_con_estilo(font, bold, italic), **opciones)
+                page.insert_text(origen, text, fontname=fuente.registrar(page), **opciones)
             except Exception:
-                page.insert_text(origen, text, **opciones)
+                page.insert_text(origen, texto_estampable(text), **opciones)
             self._dirty[doc_id] = True
             # Editar un span cambia el bitmap: sin invalidar, `/pdf/page-image` (export
             # a PNG, contexto «página actual» de la IA) y los puntos de snap seguían

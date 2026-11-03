@@ -3,10 +3,16 @@ import { useStoreSlice } from './useStoreSlice'
 
 import { cropPageUndoable, redactAreaUndoable } from '../lib/pageUndo'
 import { isFormTool, placeFormField, type FormTool } from '../lib/formFields'
+import { pedirYCrearEnlace } from '../lib/enlaces'
 import { askConfirm } from '../lib/uiPrompt'
 
 export type AreaRect = { x0: number; y0: number; x1: number; y1: number }
-export type AreaTool = 'croparea' | 'redactarea' | FormTool
+export type AreaTool = 'croparea' | 'redactarea' | 'link' | FormTool
+
+/** Las herramientas que se manejan arrastrando un rectángulo sobre la página. */
+export function isAreaTool(tool: string | null | undefined): tool is AreaTool {
+  return tool === 'croparea' || tool === 'redactarea' || tool === 'link' || isFormTool(tool)
+}
 type PageData = { width: number; height: number; originalWidth: number; originalHeight: number } | null
 type ActiveDoc = { doc_id: string; currentPage: number } | null | undefined
 
@@ -35,6 +41,10 @@ export function useAreaSelect(activeDoc: ActiveDoc, pageData: PageData) {
       } catch { store.showToast('No se pudo crear el campo', 'error'); return false }
     }
     if (rx1 - rx0 < 3 || ry1 - ry0 < 3) { store.showToast('Selección demasiado pequeña', 'info'); return false }
+    if (tool === 'link') {
+      // Pide el destino y lo crea; avisa por sí mismo si algo falla.
+      return pedirYCrearEnlace(activeDoc.doc_id, activeDoc.currentPage, { x0: rx0, y0: ry0, x1: rx1, y1: ry1 })
+    }
     try {
       if (tool === 'croparea') {
         await cropPageUndoable(activeDoc.doc_id, activeDoc.currentPage, {

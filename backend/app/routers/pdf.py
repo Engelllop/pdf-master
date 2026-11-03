@@ -3,10 +3,10 @@ del servicio). main.py lo monta con prefix="/pdf"; las rutas no cambian."""
 from fastapi import APIRouter
 
 from app.routers.pdf_routes import (
-    annotations, documents, edit, export, forms, pages, read, render, sellos,
+    annotations, documents, edit, export, forms, links, pages, read, render, sellos,
 )
 
 router = APIRouter()
 
-for _module in (documents, render, read, pages, edit, annotations, export, forms, sellos):
+for _module in (documents, render, read, pages, edit, annotations, export, forms, sellos, links):
     router.include_router(_module.router)

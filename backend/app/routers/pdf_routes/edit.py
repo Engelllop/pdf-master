@@ -2,16 +2,28 @@
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.models.pdf import (
     HeaderFooterRequest, InsertImageRequest, MetadataRequest, MetadataResult,
     RedactRequest, ReplaceTextRequest, SaveResult, WatermarkRequest,
 )
 from app.routers.pdf_routes._shared import _IMAGE_EXTS, _validate_input_file
+from app.services._pdf_fuentes import familias_instaladas
 from app.services.pdf_service import pdf_service
 
 router = APIRouter()
+
+
+class RunIn(BaseModel):
+    """Un tramo del párrafo original con su estilo: caracteres [start, end) de `base_text`."""
+    start: int = Field(ge=0)
+    end: int = Field(ge=0)
+    font: str = ""
+    size: float = Field(gt=0, le=1000)
+    color: str = "#000000"
+    bold: bool = False
+    italic: bool = False
 
 
 class EditTextRequest(BaseModel):
@@ -31,6 +43,14 @@ class EditTextRequest(BaseModel):
     italic: Optional[bool] = None
     align: Optional[str] = None
     line_height: Optional[float] = None
+    # Estilo por tramo: el texto original (`base_text`), sus tramos y dónde empezaban los
+    # renglones. Con ellos el párrafo se reescribe conservando negrita, color y cuerpo de
+    # cada tramo; sin ellos (o si el usuario cambió el estilo de todo) se escribe con uno.
+    runs: Optional[List[RunIn]] = Field(default=None, max_length=5000)
+    base_text: Optional[str] = Field(default=None, max_length=200000)
+    origin_y: Optional[float] = None
+    x_first: Optional[float] = None
+    x_rest: Optional[float] = None
 
 
 class EditTextResult(BaseModel):
@@ -94,12 +114,21 @@ def set_metadata(doc_id: str, req: MetadataRequest):
         raise HTTPException(status_code=404, detail="Document not found")
     return MetadataResult(success=True, previous=MetadataRequest(**previous))
 
+@router.get("/fonts")
+def installed_fonts():
+    """Las familias instaladas con las que «Editar texto» puede escribir (selector de
+    fuente del editor). Vacío si no se pueden leer: el editor ofrece las tres de siempre."""
+    return {"families": familias_instaladas()}
+
+
 @router.post("/edit-text/{doc_id}", response_model=EditTextResult)
 def edit_text(doc_id: str, req: EditTextRequest):
     res = pdf_service.edit_text_span(
         doc_id, req.page_num, req.x0, req.y0, req.x1, req.y1, req.text, req.size, req.color, req.font,
         stash=req.stash, wrap=req.wrap, bold=req.bold, italic=req.italic, align=req.align,
         lineheight=req.line_height,
+        runs=[r.model_dump() for r in req.runs] if req.runs else None,
+        base_text=req.base_text, origin_y=req.origin_y, x_first=req.x_first, x_rest=req.x_rest,
     )
     if res is None:
         raise HTTPException(status_code=404, detail="Page not found")

@@ -1,4 +1,6 @@
 import type { CapaSello, SelloSpec } from '../lib/sellos'
+import type { TramoMotor } from '../lib/textoEditable'
+import type { DestinoEnlace, ZonaEnlace } from '../lib/enlaces'
 import { create } from 'zustand'
 import { revokePageUrl } from '../lib/blobUrl'
 import { normalizarRuta } from '../lib/rutas'
@@ -203,11 +205,14 @@ export type PageOp =
   | { type: 'watermark'; text: string; pages?: number[] }
   | { type: 'sello'; capa: CapaSello; spec: SelloSpec; pages?: number[] }
   | { type: 'quitarSello'; capa: CapaSello }
+  | { type: 'addLink'; page: number; zona: ZonaEnlace; destino: DestinoEnlace }
+  | { type: 'editLink'; page: number; index: number; destino: DestinoEnlace }
+  | { type: 'removeLink'; page: number; index: number }
   | { type: 'redactMatches'; query: string }
   | { type: 'headerFooter'; header?: string; footer?: string; pages?: number[] }
   | { type: 'pageNumbers'; prefix: string; start: number; position: string; pages?: number[] }
   | { type: 'replaceText'; query: string; replace: string; page?: number; caseSensitive: boolean; replaceAll: boolean }
-  | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string; wrap?: boolean; bold?: boolean; italic?: boolean; align?: string; line_height?: number }
+  | { type: 'editText'; page: number; x0: number; y0: number; x1: number; y1: number; text: string; size?: number; color: string; font?: string; wrap?: boolean; bold?: boolean; italic?: boolean; align?: string; line_height?: number; runs?: TramoMotor[]; base_text?: string; origin_y?: number; x_first?: number; x_rest?: number }
   | { type: 'transformImage'; page: number; xref: number; old: number[]; new?: number[]; delete?: boolean; replacePath?: string }
   | { type: 'metadata'; title?: string | null; author?: string | null; subject?: string | null; keywords?: string | null }
   | { type: 'makeSearchable'; page?: number }

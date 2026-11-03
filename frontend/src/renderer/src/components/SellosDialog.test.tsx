@@ -100,6 +100,83 @@ describe('diálogo de sellos', () => {
   })
 })
 
+describe('fondo de página', () => {
+  const abrirImagen = vi.fn()
+  beforeEach(() => {
+    abrirImagen.mockReset()
+    ;(window as unknown as { api: unknown }).api = { openFile: (...a: unknown[]) => abrirImagen(...a) }
+  })
+
+  const previewDe = () => JSON.parse(apiFetch.mock.calls.filter(([r]) => String(r).startsWith('/pdf/stamps/preview/')).at(-1)![1].body)
+
+  it('abre en la pestaña Fondo con un color por defecto y pide la vista previa de la hoja entera', async () => {
+    motor()
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Color #fdf6e3' }).getAttribute('aria-pressed')).toBe('true')
+    await waitFor(() => expect(apiFetch.mock.calls.some(([r]) => String(r).startsWith('/pdf/stamps/preview/'))).toBe(true))
+    expect(previewDe()).toMatchObject({ capa: 'fondo', area: 'full', spec: expect.objectContaining({ kind: 'color', color: '#fdf6e3' }) })
+    // El fondo cubre toda la hoja: no hay franjas de arriba/abajo que ampliar.
+    expect(screen.queryByRole('button', { name: 'Arriba' })).toBeNull()
+  })
+
+  it('un color de la paleta se aplica con el rango en índices base 0', async () => {
+    motor()
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Color #e8f1fb' }))
+    fireEvent.change(screen.getByLabelText('Páginas'), { target: { value: '2-3' } })
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Aplicar' })) })
+    expect(selloUndoable).toHaveBeenCalledWith('doc-1', 'fondo',
+      expect.objectContaining({ kind: 'color', color: '#e8f1fb', opacity: 1 }), [1, 2])
+  })
+
+  it('con imagen y sin elegirla no aplica y avisa', async () => {
+    motor()
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Imagen' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Aplicar' })) })
+    expect(selloUndoable).not.toHaveBeenCalled()
+    expect(usePdfStore.getState().toasts.at(-1)?.message).toMatch(/Elegí la imagen/)
+  })
+
+  it('elegir la imagen la manda con su ajuste, y no se recuerda para la próxima vez', async () => {
+    motor()
+    abrirImagen.mockResolvedValue('C:\\fotos\\membrete.png')
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Imagen' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Elegir imagen…' })) })
+    expect(abrirImagen).toHaveBeenCalledWith([expect.objectContaining({ name: 'Imágenes', extensions: expect.arrayContaining(['png', 'jpg']) })])
+    expect(await screen.findByText('membrete.png')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Entera' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Aplicar' })) })
+    expect(selloUndoable).toHaveBeenCalledWith('doc-1', 'fondo',
+      expect.objectContaining({ kind: 'image', image_path: 'C:\\fotos\\membrete.png', fit: 'contain' }), undefined)
+    // El archivo pudo moverse: lo que se recuerda no lleva la ruta.
+    const recuerdo = JSON.parse(localStorage.getItem('pdfmaster.sellos.ultimo') || '{}')
+    expect(recuerdo.fondo.image_path).toBe('')
+  })
+
+  it('cancelar el selector de archivos deja todo como estaba', async () => {
+    motor()
+    abrirImagen.mockResolvedValue(null)
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Imagen' }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Elegir imagen…' })) })
+    expect(screen.getByText('Ninguna elegida')).toBeTruthy()
+  })
+
+  it('se abre con el fondo ya aplicado y ofrece reemplazarlo o quitarlo', async () => {
+    motor({ encabezado: null, numeracion: null, marca: null,
+      fondo: { kind: 'image', image_path: 'C:\\fotos\\papel.jpg', fit: 'stretch', pages: [0, 1] } })
+    render(<SellosDialog capaInicial="fondo" onClose={() => {}} />)
+    expect(await screen.findByText('papel.jpg')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Estirar' }).getAttribute('aria-pressed')).toBe('true')
+    expect((screen.getByLabelText('Páginas') as HTMLInputElement).value).toBe('1-2')
+    expect(screen.getByRole('button', { name: 'Reemplazar' })).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Quitar del documento/ })) })
+    expect(quitarSelloUndoable).toHaveBeenCalledWith('doc-1', 'fondo')
+  })
+})
+
 describe('compactar', () => {
   it('vuelve los índices al rango que escribe una persona', () => {
     expect(compactar([0, 1, 2, 4, 5, 6, 9])).toBe('1-3, 5-7, 10')

@@ -1,4 +1,6 @@
 import type { CapaSello, SelloSpec } from './sellos'
+import type { TramoMotor } from './textoEditable'
+import type { DestinoEnlace, ZonaEnlace } from './enlaces'
 import { apiFetch } from './api'
 import { correrCola } from './batchQueue'
 import {
@@ -336,6 +338,36 @@ export async function applyPageOp(docId: string, op: PageOp, sibling?: PageOp): 
       body: JSON.stringify({ capa: op.capa, stash: false }),
     })
     if (!res.ok) throw new Error('No se pudo quitar el sello')
+    return
+  }
+
+  if (op.type === 'addLink') {
+    const res = await apiFetch(`/pdf/links/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_num: op.page, zona: op.zona, ...op.destino, stash: false }),
+    })
+    if (!res.ok) throw new Error('No se pudo crear el enlace')
+    return
+  }
+
+  if (op.type === 'editLink') {
+    const res = await apiFetch(`/pdf/links/update/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_num: op.page, index: op.index, ...op.destino, stash: false }),
+    })
+    if (!res.ok) throw new Error('No se pudo editar el enlace')
+    return
+  }
+
+  if (op.type === 'removeLink') {
+    const res = await apiFetch(`/pdf/links/remove/${docId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page_num: op.page, index: op.index, stash: false }),
+    })
+    if (!res.ok) throw new Error('No se pudo quitar el enlace')
     return
   }
 
@@ -750,6 +782,55 @@ export async function selloUndoable(docId: string, capa: CapaSello, spec: SelloS
   await refreshDocLayout(docId)
 }
 
+/** El motivo que da el motor (`detail`) cuando rechaza algo que la persona puede corregir
+ * (dirección inválida, zona chica, página inexistente); si no hay, el genérico. */
+async function motivoDelMotor(res: Response, generico: string): Promise<string> {
+  try {
+    const d = await res.json()
+    if (typeof d?.detail === 'string' && d.detail) return d.detail
+  } catch { /* sin cuerpo */ }
+  return generico
+}
+
+/** Crea un enlace (a una dirección web o a una página). Un paso de deshacer: se restaura
+ * el documento ENTERO, porque la copia de una sola página pierde los enlaces internos
+ * que apuntan a otras. */
+export async function crearEnlaceUndoable(docId: string, page: number, zona: ZonaEnlace, destino: DestinoEnlace) {
+  const res = await apiFetch(`/pdf/links/${docId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page_num: page, zona, ...destino, stash: true }),
+  })
+  if (!res.ok) throw new Error(await motivoDelMotor(res, 'No se pudo crear el enlace'))
+  const data = await res.json()
+  commitDocStash(docId, data.stash_id || '', { type: 'addLink', page, zona, destino })
+  await refreshDocLayout(docId)
+}
+
+export async function editarEnlaceUndoable(docId: string, page: number, index: number, destino: DestinoEnlace) {
+  const res = await apiFetch(`/pdf/links/update/${docId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page_num: page, index, ...destino, stash: true }),
+  })
+  if (!res.ok) throw new Error(await motivoDelMotor(res, 'No se pudo editar el enlace'))
+  const data = await res.json()
+  commitDocStash(docId, data.stash_id || '', { type: 'editLink', page, index, destino })
+  await refreshDocLayout(docId)
+}
+
+export async function quitarEnlaceUndoable(docId: string, page: number, index: number) {
+  const res = await apiFetch(`/pdf/links/remove/${docId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ page_num: page, index, stash: true }),
+  })
+  if (!res.ok) throw new Error(await motivoDelMotor(res, 'No se pudo quitar el enlace'))
+  const data = await res.json()
+  commitDocStash(docId, data.stash_id || '', { type: 'removeLink', page, index })
+  await refreshDocLayout(docId)
+}
+
 /** Quita la capa del sello de todo el documento. Devuelve cuántas páginas la tenían. */
 export async function quitarSelloUndoable(docId: string, capa: CapaSello): Promise<number> {
   const res = await apiFetch(`/pdf/stamps/remove/${docId}`, {
@@ -886,6 +967,11 @@ export async function editTextUndoable(
     italic?: boolean
     align?: string
     line_height?: number
+    runs?: TramoMotor[]
+    base_text?: string
+    origin_y?: number
+    x_first?: number
+    x_rest?: number
   },
 ): Promise<{ overflow: boolean }> {
   const res = await apiFetch(`/pdf/edit-text/${docId}`, {

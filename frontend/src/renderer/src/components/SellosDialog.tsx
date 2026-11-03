@@ -9,7 +9,7 @@ import { parsePagesField } from '../lib/pageRange'
 import { quitarSelloUndoable, selloUndoable } from '../lib/pageUndo'
 import { mensajeDeError } from '../lib/format'
 import {
-  ETIQUETA_CAPA, PT_POR_MM, SPEC_INICIAL, type CapaSello, type SelloSpec, type ZonaSello,
+  COLORES_FONDO, ETIQUETA_CAPA, PT_POR_MM, SPEC_INICIAL, type CapaSello, type SelloSpec, type ZonaSello,
 } from '../lib/sellos'
 
 const CLAVE_RECUERDO = 'pdfmaster.sellos.ultimo'
@@ -59,10 +59,15 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
   const [capa, setCapa] = useState<CapaSello>(capaInicial)
   const [specs, setSpecs] = useState<Record<CapaSello, SelloSpec>>(() => {
     const r = recordar()
-    return { encabezado: { ...SPEC_INICIAL.encabezado, ...r.encabezado }, numeracion: { ...SPEC_INICIAL.numeracion, ...r.numeracion }, marca: { ...SPEC_INICIAL.marca, ...r.marca } }
+    return {
+      encabezado: { ...SPEC_INICIAL.encabezado, ...r.encabezado }, numeracion: { ...SPEC_INICIAL.numeracion, ...r.numeracion },
+      marca: { ...SPEC_INICIAL.marca, ...r.marca },
+      // La imagen elegida no se recuerda entre sesiones: el archivo pudo moverse.
+      fondo: { ...SPEC_INICIAL.fondo, ...r.fondo, image_path: '' },
+    }
   })
-  const [rangos, setRangos] = useState<Record<CapaSello, string>>({ encabezado: '', numeracion: '', marca: '' })
-  const [aplicadas, setAplicadas] = useState<Record<CapaSello, boolean>>({ encabezado: false, numeracion: false, marca: false })
+  const [rangos, setRangos] = useState<Record<CapaSello, string>>({ encabezado: '', numeracion: '', marca: '', fondo: '' })
+  const [aplicadas, setAplicadas] = useState<Record<CapaSello, boolean>>({ encabezado: false, numeracion: false, marca: false, fondo: false })
   const [pagina, setPagina] = useState(doc?.currentPage ?? 0)
   const [preview, setPreview] = useState<string | null>(null)
   const [cargando, setCargando] = useState(false)
@@ -77,6 +82,8 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
   const ultimoCampo = useRef<{ input: HTMLInputElement; zona: ZonaSello } | null>(null)
 
   const spec = specs[capa]
+  // La marca de agua y el fondo cubren la hoja entera: no hay franja de arriba/abajo que ampliar.
+  const soloHoja = capa === 'marca' || capa === 'fondo'
   const cambiar = (c: Partial<SelloSpec>) => setSpecs((s) => ({ ...s, [capa]: { ...s[capa], ...c } }))
   const cambiarZona = (z: ZonaSello, v: string) => cambiar({ zones: { ...(spec.zones || {}), [z]: v } })
 
@@ -86,7 +93,7 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
     let vivo = true
     apiFetch(`/pdf/stamps/${docId}`).then((r) => (r.ok ? r.json() : null)).then((estado: Record<CapaSello, SelloSpec | null> | null) => {
       if (!vivo || !estado) return
-      setAplicadas({ encabezado: !!estado.encabezado, numeracion: !!estado.numeracion, marca: !!estado.marca })
+      setAplicadas({ encabezado: !!estado.encabezado, numeracion: !!estado.numeracion, marca: !!estado.marca, fondo: !!estado.fondo })
       setSpecs((s) => {
         const n = { ...s }
         for (const k of Object.keys(estado) as CapaSello[]) {
@@ -121,8 +128,8 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            capa, spec, page_num: pagina, area: capa === 'marca' ? 'full' : area,
-            width: Math.round((capa !== 'marca' && area !== 'full' ? 1400 : 520) * Math.min(2, window.devicePixelRatio || 1)),
+            capa, spec, page_num: pagina, area: soloHoja ? 'full' : area,
+            width: Math.round((!soloHoja && area !== 'full' ? 1400 : 520) * Math.min(2, window.devicePixelRatio || 1)),
           }),
         })
         if (!r.ok || !vivo) return
@@ -149,14 +156,16 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
     const pages = parsePagesField(rangos[capa], total)
     if (pages === null) { showToast(`Rango de páginas inválido (el documento tiene ${total})`, 'error'); return }
     if (capa === 'marca' && !(spec.text || '').trim()) { showToast('Escribí el texto de la marca de agua', 'info'); return }
-    if (capa !== 'marca' && !Object.values(spec.zones || {}).some((v) => (v || '').trim())) {
+    if (capa === 'fondo') {
+      if (spec.kind === 'image' && !spec.image_path) { showToast('Elegí la imagen del fondo', 'info'); return }
+    } else if (capa !== 'marca' && !Object.values(spec.zones || {}).some((v) => (v || '').trim())) {
       showToast('Escribí el texto en al menos una posición', 'info'); return
     }
     setTrabajando(true)
     try {
       const { pages: _p, ...limpio } = spec
       await selloUndoable(doc.doc_id, capa, limpio, pages)
-      guardarRecuerdo(capa, limpio)
+      guardarRecuerdo(capa, capa === 'fondo' ? { ...limpio, image_path: '' } : limpio)
       showToast(`${ETIQUETA_CAPA[capa]} aplicado${pages ? ` en ${pages.length} página(s)` : ''}. Ctrl+Z deshace.`, 'success')
       onClose()
     } catch (err) {
@@ -178,6 +187,11 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
     } finally {
       setTrabajando(false)
     }
+  }
+
+  const elegirImagen = async () => {
+    const ruta = await window.api.openFile([{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp', 'tif', 'tiff'] }])
+    if (ruta) cambiar({ image_path: ruta })
   }
 
   const insertarVariable = (v: string) => {
@@ -244,8 +258,8 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
   )
 
   return (
-    <DialogShell label="Encabezado, numeración y marca de agua" panelClass="w-[960px] flex flex-col" dismissible={!trabajando} onClose={onClose}>
-      <DialogHeader icon={Stamp} title="Encabezado, numeración y marca de agua" onClose={onClose}>
+    <DialogShell label="Encabezado, numeración, marca de agua y fondo" panelClass="w-[960px] flex flex-col" dismissible={!trabajando} onClose={onClose}>
+      <DialogHeader icon={Stamp} title="Encabezado, numeración, marca de agua y fondo" onClose={onClose}>
         <SegmentedGroup value={capa} onChange={setCapa}
           options={(Object.keys(ETIQUETA_CAPA) as CapaSello[]).map((k) => [k, ETIQUETA_CAPA[k] + (aplicadas[k] ? ' •' : ''),
             aplicadas[k] ? 'Ya aplicado en este documento' : undefined])} />
@@ -307,6 +321,56 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
             )
           })()}
 
+          {capa === 'fondo' && (() => {
+            const imagen = spec.kind === 'image'
+            const nombre = (spec.image_path || '').split(/[\\/]/).pop()
+            return (
+              <>
+                <Fila etiqueta="Tipo">
+                  <SegmentedGroup value={spec.kind || 'color'} onChange={(k) => cambiar({ kind: k })}
+                    options={[['color', 'Color'], ['image', 'Imagen']]} />
+                </Fila>
+                {!imagen ? (
+                  <>
+                    <Fila etiqueta="Color">
+                      {COLORES_FONDO.map((c) => (
+                        <button key={c} type="button" title={c} aria-label={`Color ${c}`} aria-pressed={spec.color === c}
+                          onClick={() => cambiar({ color: c })} style={{ backgroundColor: c }}
+                          className={`w-6 h-6 rounded-token-sm border ${spec.color === c ? 'border-accent ring-2 ring-accent' : 'border-border-control'}`} />
+                      ))}
+                      <label title="Otro color" className="relative w-6 h-6 rounded-token-sm border border-border-control cursor-pointer shrink-0 grid place-items-center text-micro text-muted"
+                        style={{ backgroundColor: COLORES_FONDO.includes(spec.color as typeof COLORES_FONDO[number]) ? undefined : spec.color }}>
+                        {COLORES_FONDO.includes(spec.color as typeof COLORES_FONDO[number]) ? '+' : ''}
+                        <input type="color" value={spec.color || '#ffffff'} onChange={(e) => cambiar({ color: e.target.value })} aria-label="Otro color"
+                          className="absolute inset-0 opacity-0 w-full h-full cursor-pointer" />
+                      </label>
+                    </Fila>
+                    <Fila etiqueta="Opacidad">
+                      <input type="range" min={5} max={100} step={5} value={Math.round((spec.opacity ?? 1) * 100)} aria-label="Opacidad"
+                        onChange={(e) => cambiar({ opacity: parseInt(e.target.value) / 100 })} className="flex-1" style={nativeAccent} />
+                      <span className="text-mini tabular w-9 text-right">{Math.round((spec.opacity ?? 1) * 100)} %</span>
+                    </Fila>
+                  </>
+                ) : (
+                  <>
+                    <Fila etiqueta="Imagen">
+                      <button type="button" onClick={elegirImagen} className={btnGhost}>{spec.image_path ? 'Cambiar…' : 'Elegir imagen…'}</button>
+                      <span className="text-mini text-muted truncate max-w-[220px]" title={spec.image_path}>{nombre || 'Ninguna elegida'}</span>
+                    </Fila>
+                    <Fila etiqueta="Ajuste">
+                      <SegmentedGroup value={spec.fit || 'cover'} onChange={(f) => cambiar({ fit: f })}
+                        options={[['cover', 'Llenar', 'Llena la hoja y recorta lo que sobra'], ['contain', 'Entera', 'La imagen entera, con franjas si no coincide la proporción'], ['stretch', 'Estirar', 'Ocupa toda la hoja aunque se deforme']]} />
+                    </Fila>
+                  </>
+                )}
+                {paginas}
+                <p className="text-micro text-muted leading-snug">
+                  Queda detrás del texto y el dibujo. Si la hoja ya trae un fondo propio (un escaneo o un relleno blanco), ese lo tapa.
+                </p>
+              </>
+            )
+          })()}
+
           {capa === 'marca' && (
             <>
               <Fila etiqueta="Texto">
@@ -354,7 +418,7 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
 
         <div className="flex-1 min-w-0 flex flex-col bg-surface">
           {(() => {
-            const franja = capa !== 'marca' && area !== 'full'
+            const franja = !soloHoja && area !== 'full'
             const derecha = Object.entries(spec.zones || {}).some(([z, v]) => z.endsWith('r') && (v || '').trim())
               && !Object.entries(spec.zones || {}).some(([z, v]) => !z.endsWith('r') && (v || '').trim())
             return (
@@ -373,7 +437,7 @@ export default function SellosDialog({ capaInicial, onClose }: { capaInicial: Ca
             )
           })()}
           <div className="flex items-center justify-center gap-1 py-2 px-3 border-t border-border text-mini">
-            {capa !== 'marca' && (
+            {!soloHoja && (
               <div className="mr-auto">
                 <SegmentedGroup value={area} onChange={setArea}
                   options={[['full', 'Hoja'], ['top', 'Arriba', 'La franja de arriba, ampliada'], ['bottom', 'Abajo', 'La franja de abajo, ampliada']]} />
