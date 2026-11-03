@@ -88,7 +88,15 @@ Editar texto/imagen existentes, find & replace (preserva fuente/tamaño/color y 
 **Enlaces** (`_pdf_links.py`, `routers/pdf_routes/links.py`, herramienta «Enlace» en Editar › Contenido). `GET /pdf/links/{doc}/{página}` los lista; `POST /pdf/links/{doc}` (crear), `/links/update/{doc}` y `/links/remove/{doc}`. Van a una dirección web (`uri`) o a una página (`target_page`, base 0), nunca a las dos. La dirección se normaliza (`www.x.com` → `https://…`, `a@b.com` → `mailto:`) y solo se admiten `http`, `https`, `mailto`, `tel` y `ftp`: `file:`, `javascript:`, `data:` y cualquier otro esquema dan 422 con el motivo (un PDF que abre archivos o ejecuta algo al hacer clic no es un enlace). Se identifican por su **índice** en `page.get_links()`, no por xref (al deshacer se restaura el documento ENTERO —la copia de una sola página perdía los enlaces internos a otras páginas— y los xref cambian, el orden no). Cuidado con PyMuPDF: `get_links()` devuelve las zonas en coordenadas del VISOR pero `insert_link`/`update_link` esperan las de la página SIN girar, y `get_links()` no ve lo recién insertado hasta `doc.reload_page`. La interfaz: arrastrar una zona crea (formulario con tipo, dirección y página); con la herramienta activa los enlaces existentes se dibujan y tocar uno lo edita o lo quita; la herramienta sigue activa hasta Esc.
 
 ### OCR
-Requiere Tesseract en PATH. Página actual o documento completo. `GET /pdf/ocr-available`.
+**Tesseract viaja dentro del motor** (`_internal/tesseract/`: `tesseract.exe`, 26 DLL y `tessdata/{spa,eng}.traineddata` de `tessdata_fast`; +122 MB sin comprimir). `backend/preparar_ocr.py` (o `preparar_ocr.ps1`, que además descarga e instala el Tesseract de la Universidad de Mannheim con huella SHA-256 fija) arma `backend/ocr/tesseract` siguiendo los imports de `tesseract.exe` (hace falta `pip install pefile`); la carpeta NO va en git y `pdf-engine.spec` la empaqueta con un `Tree` en el `COLLECT` (por `datas` PyInstaller analizaba las DLL y dejaba `libtesseract-5.dll` dos veces: +99 MB). `npm run verificar:motor` rechaza un motor sin OCR y le pregunta a `/pdf/ocr-available` si responde con `spa`+`eng`. `_ocr.py` busca, en orden: `PDFMASTER_TESSERACT`, la carpeta empaquetada (`sys._MEIPASS/tesseract`), `backend/ocr/tesseract`, el PATH y `Program Files`; los idiomas van por `TESSDATA_PREFIX` (el `--tessdata-dir "ruta"` de pytesseract pierde las barras en Windows). Usa `spa+eng` (o lo que haya).
+
+`GET /pdf/ocr-available` → `{available, languages}`; `GET /pdf/ocr-pending/{doc}` (páginas sin texto); `POST /pdf/make-searchable/{doc}?page=` (capa de texto invisible, deshacible; 503 si no hay motor); `GET /pdf/ocr/{doc}/{página}` (texto plano). La página se rasteriza como se ve (con su `/Rotate`) a 300 dpi, con tope de 7000 px por lado (un plano A0 no cabe a 300 dpi).
+
+**La capa de texto está hecha para EDITAR, no solo para buscar** (`_pdf_ocr.py`). Tesseract numera (bloque, párrafo) pero parte de más (la última línea corta de un párrafo sale como bloque aparte), así que `agrupar_parrafos` pega las líneas que siguen casi sin hueco, con el mismo margen izquierdo y el mismo tamaño de letra. Por párrafo: **cuerpo** por la altura de la tinta en Helvetica (mediana, menos ~1 px de holgura de la caja; la altura no depende de la fuente); **fuente** entre Helvetica/Times × normal/negrita **comparando imágenes** (se dibujan las 6 palabras más largas con cada candidata y se comparan con el recorte del escaneo a una rejilla de 64×28 con `ImageChops.difference`; una negrita solo gana si mejora un 8 %); y con la fuente ya sabida el cuerpo se afina por el **ancho** de las palabras (error ~3 % contra ~7 %). Lo que NO sirvió, medido: decidir serif o sans por la razón ancho/alto (Times y Helvetica difieren ~10 %, lo mismo que el ruido de medir una caja). Por línea: línea base (fondo de la caja menos la cola de g/p/y) y color de tinta (media del 12 % más oscuro; el negro de un escaneo queda negro, la tinta azul conserva su tono). Cada palabra va en su `x` como texto invisible (`render_mode=3`) con un espacio detrás, para que el texto extraído y copiado salga «una dos». En páginas con `/Rotate` el punto pasa por `derotation_matrix` y se escribe con `rotate=page.rotation`.
+
+Medido sobre un escaneo sintético (200 dpi, inclinado 0,6°, ruido): Times 11 → 11,1; Helvetica 10 → 10,0; Helvetica-Bold 12 → 11,9; el párrafo se abre entero en el editor (`mode: block`, `runs`, `originY`) y al confirmar el texto viejo desaparece de lo que SE VE (comprobado volviendo a leer con OCR la página renderizada). Límites: el texto nuevo sale perfectamente horizontal aunque el escaneo esté inclinado y siempre en Helvetica o Times (la fuente real del escaneo no se puede saber); el parche del fondo usa el color más claro del borde del párrafo y se nota con papel degradado o con textura.
+
+**Editar sobre un escaneo en la interfaz** (`lib/ocrEditar.ts`): con «Editar texto», un clic sobre una página SIN capa de texto pregunta «Esta página es una imagen… ¿Reconocer el texto ahora?»; al aceptar corre el OCR de la página (con su propio paso de deshacer) y el clic sigue su camino abriendo el editor del párrafo. Sin motor de OCR lo dice; si la página tiene texto, el aviso de siempre. Una página con texto más una imagen escaneada incrustada no se ofrece (ya tiene texto).
 
 ### Export
 Word, Excel (tablas con `find_tables`, si no hay tabla → líneas), PPT, TXT, HTML, página PNG, mediciones/conteos, resumen de marcas.
@@ -143,7 +151,7 @@ Export: `export-word`, `export-excel`, `export-pptx`, `export-txt`, `export-html
 ```powershell
 cd backend
 .\venv\Scripts\python.exe -m PyInstaller pdf-engine.spec --noconfirm --clean
-Copy-Item dist\pdf-engine.exe ..\frontend\resources\backend\ -Force
+Copy-Item dist\pdf-engine\* ..\frontend\resources\backend\ -Recurse -Force   # antes, una vez: ..\backend\preparar_ocr.ps1
 cd ..\frontend
 # bump version en package.json
 npm run build:win    # typecheck + build + verificar:motor + NSIS
@@ -175,7 +183,7 @@ CI (`.github/workflows/ci.yml`): pytest + typecheck + vitest + lint (tope de avi
 
 | Tema | Estado |
 |------|--------|
-| OCR | Tesseract externo; no va en el instalador |
+| OCR | Tesseract incluido en el motor (spa+eng); permite editar escaneos |
 | Escáner | No implementado (WIA) |
 | Firmas digitales | Solo dibujo |
 | Vista continua | Lee, selecciona texto, busca y permite dibujar/mover/redimensionar marcas |

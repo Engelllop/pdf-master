@@ -58,6 +58,19 @@ if (!existsSync(join(carpeta, '_internal'))) {
   )
 }
 
+// El OCR viaja dentro del motor (Tesseract + los idiomas): sin él «Reconocer texto» y editar
+// un escaneo no funcionan, y la app no tiene de dónde sacarlo en la máquina del usuario.
+const tesseract = join(carpeta, '_internal', 'tesseract')
+for (const f of ['tesseract.exe', 'libtesseract-5.dll', join('tessdata', 'spa.traineddata'), join('tessdata', 'eng.traineddata')]) {
+  if (!existsSync(join(tesseract, f))) {
+    morir(
+      `El motor no trae el OCR: falta ${join('_internal', 'tesseract', f)}.\n` +
+      `    Armá backend/ocr/tesseract y recompilá el motor:\n` +
+      `      ./backend/preparar_ocr.ps1   (o: python backend/preparar_ocr.py)\n${receta}`,
+    )
+  }
+}
+
 const bytes = pesoDe(carpeta)
 const mb = (bytes / 1024 / 1024).toFixed(1)
 if (bytes < MIN_BYTES) {
@@ -109,8 +122,11 @@ async function versionDelMotor() {
 }
 
 let version
+let ocr = null
 try {
   version = await versionDelMotor()
+  // Y que ese Tesseract responda desde el exe empaquetado (DLL, idiomas, rutas).
+  ocr = await (await fetch(`http://127.0.0.1:${puerto}/pdf/ocr-available`, { signal: AbortSignal.timeout(20_000) })).json()
 } catch (err) {
   matar()
   morir(`No se pudo verificar el motor: ${err.message}`)
@@ -125,4 +141,11 @@ if (version !== esperado) {
   )
 }
 
-console.log(`  ✓ motor ${version} al día con el producto\n`)
+if (!ocr?.available || !ocr.languages?.includes('spa') || !ocr.languages?.includes('eng')) {
+  morir(
+    `El OCR del motor empaquetado no responde (disponible=${ocr?.available}, idiomas=${ocr?.languages}).\n` +
+    `    Tesseract está en _internal/tesseract pero no arranca con sus idiomas spa + eng.`,
+  )
+}
+
+console.log(`  ✓ motor ${version} al día con el producto, con OCR (${ocr.languages.join('+')})\n`)

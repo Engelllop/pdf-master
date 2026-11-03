@@ -7,6 +7,16 @@
 # disco que el instalador NSIS ya comprime por su cuenta.
 
 
+import os
+
+# Tesseract para el OCR: lo arma `preparar_ocr.py` (no va en git, ~130 MB). Sin esa carpeta el
+# motor se compila igual pero SIN OCR, y `npm run verificar:motor` lo rechaza antes de empaquetar.
+# Va por `Tree` en el COLLECT y no por `datas`: PyInstaller analiza los .exe/.dll de `datas` y
+# copia sus dependencias a la raiz de _internal/ (libtesseract-5.dll quedaba dos veces: +99 MB).
+_tesseract = [Tree('ocr/tesseract', prefix='tesseract')] if os.path.isfile('ocr/tesseract/tesseract.exe') else []
+if not _tesseract:
+    print('AVISO: falta backend/ocr/tesseract (python preparar_ocr.py): el motor saldra sin OCR')
+
 a = Analysis(
     ['main.py'],
     pathex=[],
@@ -53,6 +63,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    *_tesseract,
     strip=False,
     upx=False,
     upx_exclude=[],

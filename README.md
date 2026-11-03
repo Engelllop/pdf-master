@@ -20,8 +20,9 @@ Editor profesional de PDFs inspirado en Bluebeam Revu, UPDF y PDFelement.
 
 - Node.js 20+ (el CI usa 22; Vite 7 ya no arranca con 18)
 - Python 3.10+ (el CI y el motor empaquetado usan 3.13)
-- Tesseract OCR **aparte**, solo para el OCR: el instalador no lo trae. Sin él, las
-  herramientas de OCR avisan y el resto de la app funciona igual.
+- Para compilar el motor: Tesseract OCR (solo en la máquina que compila; el usuario no instala
+  nada, viaja dentro de la app). `./backend/preparar_ocr.ps1` lo descarga, lo instala y arma
+  `backend/ocr/tesseract` (no va en git).
 
 ## Estructura del Proyecto
 
@@ -75,7 +76,7 @@ descomprimía entero en `%TEMP%` en cada arranque y eso costaba ~1 s. Se copia e
 **contenido** de `dist\pdf-engine\`, no la carpeta.
 
 ```powershell
-# 1. Motor
+# 1. Motor (antes, una vez: ./preparar_ocr.ps1 deja backend/ocr/tesseract con el OCR)
 cd backend
 .\venv\Scripts\python.exe -m PyInstaller pdf-engine.spec --noconfirm --clean
 Copy-Item dist\pdf-engine\* ..\frontend\resources\backend\ -Recurse -Force

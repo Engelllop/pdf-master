@@ -39,6 +39,7 @@ import { editTextUndoable } from '../lib/pageUndo'
 import { paramsDeEdicion, textoEditable, type TextoEditable } from '../lib/textoEditable'
 import { iguales, paramsDeEdicionRica, tramosDeBloque, type Tramo } from '../lib/textoRico'
 import EditorTextoRico from './viewer/EditorTextoRico'
+import { ofrecerOcrParaEditar } from '../lib/ocrEditar'
 import { cargarFuentesInstaladas, opcionesDeFuente } from '../lib/fuentesInstaladas'
 
 export default function Viewer() {
@@ -309,9 +310,20 @@ export default function Viewer() {
       e.preventDefault()
       const pdfX = pt.x * (pageData.originalWidth / pageData.width)
       const pdfY = pt.y * (pageData.originalHeight / pageData.height)
-      apiFetch(`/pdf/text-block/${activeDoc.doc_id}/${activeDoc.currentPage}?x=${pdfX}&y=${pdfY}`)
+      const docId = activeDoc.doc_id
+      const pagina = activeDoc.currentPage
+      const pedirBloque = () => apiFetch(`/pdf/text-block/${docId}/${pagina}?x=${pdfX}&y=${pdfY}`)
+      pedirBloque()
         .then(async (r) => {
-          if (r.status === 404) { store.showToast('Hacé clic justo sobre el texto que querés editar', 'info'); return }
+          if (r.status === 404) {
+            // Sin texto bajo el clic: si toda la página es una imagen (escaneo), se ofrece
+            // reconocerlo y el clic sigue su camino.
+            const o = await ofrecerOcrParaEditar(docId, pagina)
+            if (o === 'no-escaneada') store.showToast('Hacé clic justo sobre el texto que querés editar', 'info')
+            if (o !== 'listo') return
+            r = await pedirBloque()
+            if (r.status === 404) { store.showToast('Hacé clic justo sobre el texto que querés editar', 'info'); return }
+          }
           if (!r.ok) throw new Error(String(r.status))
           setEditSpan(textoEditable(await r.json()))
         })

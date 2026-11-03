@@ -1033,7 +1033,7 @@ export async function makeSearchableUndoable(docId: string, page?: number): Prom
   const qs = new URLSearchParams({ stash: 'true' })
   if (page != null) qs.set('page', String(page))
   const res = await apiFetch(`/pdf/make-searchable/${docId}?${qs}`, { method: 'POST' })
-  if (res.status === 503) throw new Error('Tesseract OCR no está instalado')
+  if (res.status === 503) throw new Error('El reconocimiento de texto (OCR) no está disponible')
   if (!res.ok) throw new Error('Error en OCR')
   const data = await res.json()
   const words = data.words ?? 0
@@ -1066,7 +1066,7 @@ export async function makeSearchableAllUndoable(
   let palabras = 0
   const r = await correrCola(paginas, async (p) => {
     const res = await apiFetch(`/pdf/make-searchable/${docId}?page=${p}&stash=false`, { method: 'POST' })
-    if (res.status === 503) throw new Error('Tesseract OCR no está instalado')
+    if (res.status === 503) throw new Error('El reconocimiento de texto (OCR) no está disponible')
     if (!res.ok) return false
     palabras += (await res.json()).words ?? 0
     return true

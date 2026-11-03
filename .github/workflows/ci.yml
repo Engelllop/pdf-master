@@ -33,6 +33,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
       - run: pip install -r backend/requirements-dev.txt
+      # Sin Tesseract las pruebas de OCR se saltan solas: en el CI tienen que correr de verdad.
+      - name: Tesseract para el OCR
+        shell: pwsh
+        run: ./backend/preparar_ocr.ps1
       - run: python -m pytest backend/tests -q
 
   frontend-typecheck:
@@ -136,6 +140,12 @@ jobs:
       # su _internal/. Se copia el CONTENIDO de esa carpeta (el `\*`), no la carpeta,
       # para que el motor quede en resources/backend/pdf-engine.exe y el main de
       # Electron siga buscandolo donde siempre.
+      # El OCR viaja dentro de la app: backend/ocr/tesseract (ejecutable, DLL y los idiomas
+      # spa + eng) lo empaqueta pdf-engine.spec en el motor. Sin esto el motor sale sin OCR y
+      # `verificar:motor` lo rechaza.
+      - name: Tesseract para el OCR
+        shell: pwsh
+        run: ./backend/preparar_ocr.ps1
       - name: Build del motor (onedir)
         run: |
           pip install -r backend/requirements.txt pyinstaller

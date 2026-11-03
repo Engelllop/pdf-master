@@ -27,7 +27,7 @@ def search_pdf(doc_id: str, query: str = Query(..., min_length=1), limit: int = 
 def ocr_page(doc_id: str, page_num: int):
     text = pdf_service.ocr_page(doc_id, page_num)
     if text is None:
-        raise HTTPException(status_code=400, detail="OCR failed or Tesseract not installed")
+        raise HTTPException(status_code=400, detail="OCR failed or the OCR engine is not available")
     return OcrResult(text=text)
 
 @router.get("/text/{doc_id}/{page_num}")
@@ -78,12 +78,13 @@ def ocr_pending(doc_id: str):
 
 @router.get("/ocr-available")
 def ocr_available():
-    return {"available": pdf_service.ocr_available()}
+    disponible = pdf_service.ocr_available()
+    return {"available": disponible, "languages": pdf_service.ocr_languages() if disponible else []}
 
 @router.post("/make-searchable/{doc_id}")
 def make_searchable(doc_id: str, page: Optional[int] = Query(None), stash: bool = Query(True)):
     pages = [page] if page is not None else None
     words, stash_id, stash_page = pdf_service.make_searchable(doc_id, pages, stash=stash)
     if words == -1:
-        raise HTTPException(status_code=503, detail="Tesseract OCR no está instalado")
+        raise HTTPException(status_code=503, detail="El motor de OCR no está disponible")
     return {"words": words, "stash_id": stash_id or None, "stash_page": stash_page}

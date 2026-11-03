@@ -245,7 +245,7 @@ export default function Toolbar() {
       { id: 'convert.html', group: 'Convertir', label: 'Exportar a HTML', disabled: !hasDoc, run: handleExportHtml },
       { id: 'convert.image', group: 'Convertir', label: 'Guardar página como imagen', disabled: !hasDoc, run: handleSavePageAsImage },
       { id: 'convert.imagestopdf', group: 'Convertir', label: 'Crear PDF a partir de imágenes', run: handleImagesToPdf },
-      { id: 'convert.ocr', group: 'Convertir', label: 'OCR: hacer la página buscable', disabled: !hasDoc, run: handleMakeSearchable },
+      { id: 'convert.ocr', group: 'Convertir', label: 'OCR: reconocer el texto de la página (buscar, copiar y editar)', disabled: !hasDoc, run: handleMakeSearchable },
       { id: 'convert.ocr.text', group: 'Convertir', label: 'OCR: extraer texto de la página', disabled: !hasDoc, run: handleOcr },
       { id: 'convert.compress', group: 'Convertir', label: 'Comprimir PDF', disabled: !hasDoc, run: handleCompress },
 
@@ -654,7 +654,7 @@ export default function Toolbar() {
             </RibbonGroup>
             <Sep />
             <RibbonGroup label="OCR">
-              <RibbonButton icon={ScanText} label="Hacer buscable" tip="OCR: hacer la página buscable" onClick={handleMakeSearchable} />
+              <RibbonButton icon={ScanText} label="Hacer buscable" tip="OCR: reconocer el texto de la página para buscarlo, copiarlo y editarlo" onClick={handleMakeSearchable} />
               <RibbonButton icon={ScanSearch} label="Extraer texto" tip="OCR: extraer el texto de la página" onClick={handleOcr} />
             </RibbonGroup>
             <Sep />

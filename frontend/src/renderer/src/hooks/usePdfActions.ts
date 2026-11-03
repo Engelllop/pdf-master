@@ -101,7 +101,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
     try {
       const avail = await (await apiFetch(`/pdf/ocr-available`)).json()
       if (!avail.available) {
-        showToast('Tesseract OCR no está instalado. Instalá tesseract-ocr y reiniciá la app.', 'error')
+        showToast('El reconocimiento de texto (OCR) no está disponible en esta instalación.', 'error')
         return
       }
       const v = await askForm('Hacer buscable (OCR)', [
@@ -158,8 +158,8 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         'Haciendo la página buscable (OCR)…',
         () => makeSearchableUndoable(activeDoc.doc_id, activeDoc.currentPage),
       )
-      if (words > 0) showToast(`OCR aplicado: ${words} palabra(s). Ctrl+Z deshace.`, 'success')
-      else if (words < 0) showToast('Tesseract OCR no está disponible', 'error')
+      if (words > 0) showToast(`Texto reconocido: ${words} palabra(s). Ya se puede buscar, copiar y editar. Ctrl+Z deshace.`, 'success')
+      else if (words < 0) showToast('El reconocimiento de texto (OCR) no está disponible', 'error')
       else showToast('Nada que OCR: la página ya tiene texto', 'info')
     } catch (err) { toastActionError(err) }
   }
@@ -283,7 +283,7 @@ export function usePdfActions(activeDoc: ActiveDoc, { askForm, askConfirm, toast
         await askForm(`Texto OCR · página ${activeDoc.currentPage + 1}`,
           [{ name: 't', label: '', type: 'textarea', defaultValue: data.text || 'Sin texto detectado', readOnly: true }], 'Cerrar')
       } else {
-        showToast('OCR falló o Tesseract no está instalado', 'error')
+        showToast('El OCR falló o no está disponible en esta instalación', 'error')
       }
     } catch (err) {
       toastActionError(err)
