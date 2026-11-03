@@ -37,6 +37,8 @@ import { Loader2, X } from 'lucide-react'
 import { apiFetch } from '../lib/api'
 import { editTextUndoable } from '../lib/pageUndo'
 import { paramsDeEdicion, textoEditable, type TextoEditable } from '../lib/textoEditable'
+import { iguales, paramsDeEdicionRica, tramosDeBloque, type Tramo } from '../lib/textoRico'
+import EditorTextoRico from './viewer/EditorTextoRico'
 import { cargarFuentesInstaladas, opcionesDeFuente } from '../lib/fuentesInstaladas'
 
 export default function Viewer() {
@@ -1086,6 +1088,37 @@ export default function Viewer() {
                 } catch { store.showToast('Error al editar texto', 'error') }
               }
               const cambiar = (c: Partial<TextoEditable>) => setEditSpan({ ...editSpan, ...c, dirty: true })
+              // Párrafo o línea horizontal de una página sin girar: editor con formato visible,
+              // donde cada tramo conserva (o cambia) su negrita, color, cuerpo y fuente.
+              // Lo demás (un tramo suelto, texto girado) sigue con el editor de un solo estilo.
+              const rico = enCaja && !!editSpan.runs && editSpan.originY !== null && editSpan.xFirst !== null && editSpan.xRest !== null
+              if (rico) {
+                const commitRico = async (tramos: Tramo[]) => {
+                  const span = editSpan
+                  setEditSpan(null)
+                  if (!span.dirty && iguales(tramosDeBloque(span), tramos)) return
+                  try {
+                    const { overflow } = await editTextUndoable(activeDoc.doc_id, {
+                      page: activeDoc.currentPage,
+                      ...paramsDeEdicionRica(span, tramos),
+                    })
+                    if (overflow) store.showToast('El texto nuevo no entraba en el párrafo y se estiró hacia abajo: revisá que no pise lo de abajo. Ctrl+Z deshace.', 'info')
+                    else store.showToast('Texto editado. Ctrl+Z deshace.', 'success')
+                  } catch { store.showToast('Error al editar texto', 'error') }
+                }
+                return (
+                  <EditorTextoRico x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
+                    wrapWidth={(editSpan.x1 - editSpan.x0) * sx2 * scale + editSpan.size * activeDoc.zoom * 0.6}
+                    minHeight={(editSpan.y1 - editSpan.y0) * sx2 * scale}
+                    sangria={((editSpan.xFirst ?? 0) - (editSpan.xRest ?? 0)) * sx2 * scale}
+                    inicial={tramosDeBloque(editSpan)}
+                    estiloBase={{ font: editSpan.fontPdf, size: editSpan.size, color: editSpan.color, bold: editSpan.bold, italic: editSpan.italic }}
+                    align={editSpan.align} lineHeight={editSpan.lineHeight} fuentes={fuentesInstaladas}
+                    onAlign={(a) => cambiar({ align: a })} onLineHeight={(v) => cambiar({ lineHeight: v })}
+                    onCommit={commitRico} onCancel={() => setEditSpan(null)}
+                    note={editSpan.mode === 'block' ? 'párrafo' : 'línea'} />
+                )
+              }
               return (
                 <TextBoxEditor x={s.x * scale} y={s.y * scale} zoom={activeDoc.zoom} wrapperWidth={displayWidth}
                   value={editSpan.value} onChange={(v) => cambiar({ value: v })}

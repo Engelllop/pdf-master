@@ -369,3 +369,77 @@ class TestPaginaGirada:
             "page_num": 0, "x0": b["x0"], "y0": b["y0"], "x1": b["x1"], "y1": b["y1"], "text": "Girado ok",
             "size": b["size"], "color": b["color"], "font": b["font"], "wrap": True})
         assert r2.status_code == 200, r2.text
+
+
+class TestEdicionConFormatoNuevo:
+    """El editor con formato manda los tramos sobre el texto NUEVO (`base_text` = `text`):
+    cada tramo trae su propio estilo, sea el original o uno que el usuario eligió."""
+
+    @staticmethod
+    def _run(ini, fin, font="Helvetica", size=11, color="#000000", bold=False, italic=False):
+        return {"start": ini, "end": fin, "font": font, "size": size, "color": color, "bold": bold, "italic": italic}
+
+    def _editar_nuevo(self, client, doc_id, b, texto, runs, tmp_path, **extra):
+        return _editar(client, doc_id, b, texto, tmp_path, runs=runs, base_text=texto, **extra)
+
+    def test_negrita_color_y_cuerpo_a_un_tramo_nuevo(self, client, pdf_mixto, tmp_path):
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        texto = "Todas las tuberias seran de PVC"
+        runs = [self._run(0, 5, bold=True, size=14, color="#0000ff"), self._run(5, len(texto))]
+        _, doc = self._editar_nuevo(client, doc_id, b, texto, runs, tmp_path)
+        todas = _span_con(doc, "Todas")
+        assert "bold" in todas["font"].lower() and todas["size"] == pytest.approx(14) and todas["color"] == 0x0000FF
+        resto = _span_con(doc, "las tuberias")
+        assert "bold" not in resto["font"].lower() and resto["size"] == pytest.approx(11) and resto["color"] == 0
+
+    def test_quitar_la_negrita_a_un_tramo_que_la_traia_en_el_nombre_de_la_fuente(self, client, pdf_mixto, tmp_path):
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        assert any("Bold" in r["font"] for r in b["runs"]), "el original trae «Helvetica-Bold»"
+        negrita = next(r for r in b["runs"] if "Bold" in r["font"])
+        texto = "PVC SDR-26 y todo lo demas"
+        runs = [self._run(0, len(texto), font=negrita["font"], bold=False)]
+        _, doc = self._editar_nuevo(client, doc_id, b, texto, runs, tmp_path)
+        span = _span_con(doc, "PVC")
+        assert span is not None and "bold" not in span["font"].lower()
+
+    def test_cursiva_a_un_tramo(self, client, pdf_mixto, tmp_path):
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        texto = "una palabra en cursiva aqui"
+        runs = [self._run(0, 4), self._run(4, 12, italic=True), self._run(12, len(texto))]
+        _, doc = self._editar_nuevo(client, doc_id, b, texto, runs, tmp_path)
+        assert "oblique" in _span_con(doc, "palabra")["font"].lower() or "italic" in _span_con(doc, "palabra")["font"].lower()
+
+    def test_un_tramo_con_otra_fuente_instalada(self, client, pdf_mixto, tmp_path):
+        from app.services._pdf_fuentes import familias_instaladas
+        if "Times New Roman" not in familias_instaladas():
+            pytest.skip("Times New Roman no está instalada")
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        texto = "texto en Helvetica y texto en Times"
+        runs = [self._run(0, 20), self._run(20, len(texto), font="Times New Roman")]
+        _, doc = self._editar_nuevo(client, doc_id, b, texto, runs, tmp_path)
+        assert "times" in _span_con(doc, "en Times")["font"].lower()
+        assert "times" not in _span_con(doc, "texto en Helvetica")["font"].lower()
+
+    def test_un_tramo_mas_grande_abre_su_renglon(self, client, pdf_mixto, tmp_path):
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        corto = "linea uno\nlinea dos"
+        _, doc1 = self._editar_nuevo(client, doc_id, b, corto, [self._run(0, len(corto))], tmp_path, nombre="a.pdf")
+        paso1 = _span_con(doc1, "linea dos")["origin"][1] - _span_con(doc1, "linea uno")["origin"][1]
+        doc_id2 = _abrir(client, pdf_mixto)
+        grande = [self._run(0, 9), self._run(9, len(corto), size=22)]
+        _, doc2 = self._editar_nuevo(client, doc_id2, b, corto, grande, tmp_path, nombre="b.pdf")
+        paso2 = _span_con(doc2, "linea dos")["origin"][1] - _span_con(doc2, "linea uno")["origin"][1]
+        assert paso2 > paso1 * 1.5, "el renglón con letra grande se separa más del anterior"
+
+    def test_texto_vaciado_no_rompe(self, client, pdf_mixto, tmp_path):
+        doc_id = _abrir(client, pdf_mixto)
+        b = _bloque(client, doc_id)
+        r = client.post(f"/pdf/edit-text/{doc_id}", json={
+            "page_num": 0, "x0": b["x0"], "y0": b["y0"], "x1": b["x1"], "y1": b["y1"], "text": "",
+            "wrap": True, "size": 11, "origin_y": b["originY"], "x_first": b["xFirst"], "x_rest": b["xRest"]})
+        assert r.status_code == 200, r.text
